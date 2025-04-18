@@ -1,0 +1,304 @@
+from django.db import models
+# from django.contrib.auth.models import User # Old way
+from django.conf import settings # Import Django settings
+from django.contrib.postgres.fields import ArrayField # Import ArrayField for lists
+
+# Imports needed for Generic Relations in Comment model
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
+
+# Define User using settings (best practice)
+User = settings.AUTH_USER_MODEL
+
+# Create your models here.
+
+class UserProfile(models.Model):
+    """
+    Stores extended information for a user, linked one-to-one with the base User model.
+    """
+    user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True) # Links to the User model
+    bio = models.TextField(blank=True, null=True) # Allows empty bio
+    location_city = models.CharField(max_length=100, blank=True, null=True)
+    location_state = models.CharField(max_length=100, blank=True, null=True)
+    college_name = models.CharField(max_length=255, blank=True, null=True)
+    major = models.CharField(max_length=255, blank=True, null=True)
+    graduation_year = models.IntegerField(blank=True, null=True)
+    linkedin_url = models.URLField(max_length=512, blank=True, null=True)
+    portfolio_url = models.URLField(max_length=512, blank=True, null=True)
+    # Use ArrayField for PostgreSQL to store lists of text
+    skills = ArrayField(models.CharField(max_length=100), blank=True, null=True, default=list)
+    interests = ArrayField(models.CharField(max_length=100), blank=True, null=True, default=list)
+    profile_picture_url = models.URLField(max_length=512, blank=True, null=True) # Simple URL field for now
+    updated_at = models.DateTimeField(auto_now=True) # Automatically updates on save
+
+    def __str__(self):
+        # Access username via the user relation correctly
+        # Assuming the related User model has a 'username' attribute
+        try:
+            return self.user.username
+        except AttributeError:
+            return f"UserProfile object (User ID: {self.user_id})"
+
+
+class Follow(models.Model):
+    """
+    Represents a relationship where one user follows another.
+    """
+    follower = models.ForeignKey(User, related_name='following', on_delete=models.CASCADE) # User doing the following
+    following = models.ForeignKey(User, related_name='followers', on_delete=models.CASCADE) # User being followed
+    created_at = models.DateTimeField(auto_now_add=True) # Automatically set on creation
+
+    class Meta:
+        # Ensures a user cannot follow the same person multiple times
+        unique_together = ('follower', 'following')
+        # Optional: Add ordering if needed when querying
+        # ordering = ['-created_at']
+        constraints = [
+            models.CheckConstraint(check=~models.Q(follower=models.F('following')), name='prevent_self_follow')
+        ]
+
+
+    def __str__(self):
+        # Ensure users exist before accessing username
+        follower_username = self.follower.username if self.follower else 'Unknown'
+        following_username = self.following.username if self.following else 'Unknown'
+        return f"{follower_username} follows {following_username}"
+
+class StatusPost(models.Model):
+    """
+    Represents a simple status update posted by a user, not tied to a specific forum or group.
+    """
+    author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='status_posts') # User who wrote the post
+    content = models.TextField() # The main text content of the post
+    created_at = models.DateTimeField(auto_now_add=True) # Timestamp when created
+    updated_at = models.DateTimeField(auto_now=True) # Timestamp when last updated
+
+    class Meta:
+        ordering = ['-created_at'] # Default order is newest first
+
+
+    def __str__(self):
+        # Ensure author exists before accessing username
+        author_username = self.author.username if self.author else 'Unknown Author'
+        return f"{author_username}: {self.content[:50]}..."
+
+class ForumCategory(models.Model):
+    """
+    Top-level categories for forums (e.g., Academics, Career Advice).
+    """
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True, null=True)
+    # slug = models.SlugField(unique=True) # Optional: for clean URLs later
+
+    class Meta:
+        verbose_name_plural = "Forum Categories" # Correct plural in admin
+
+    def __str__(self):
+        return self.name
+
+class Group(models.Model):
+    """
+    Represents a community group users can join.
+    """
+    name = models.CharField(max_length=150, unique=True)
+    description = models.TextField(blank=True, null=True)
+    creator = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_groups')
+    members = models.ManyToManyField(User, related_name='joined_groups', blank=True) # Users who are part of the group
+    created_at = models.DateTimeField(auto_now_add=True)
+    # slug = models.SlugField(unique=True) # Optional: for clean URLs later
+    # is_public = models.BooleanField(default=True) # To distinguish public/private later
+
+    def __str__(self):
+        return self.name
+
+class ForumPost(models.Model):
+    """
+    Represents a thread/post within a Forum Category or a Group.
+    Can also be used for Group posts.
+    """
+    author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='forum_posts')
+    category = models.ForeignKey(ForumCategory, on_delete=models.SET_NULL, blank=True, null=True, related_name='posts') # Link to ForumCategory (optional)
+    group = models.ForeignKey(Group, on_delete=models.CASCADE, blank=True, null=True, related_name='posts') # Link to Group (optional)
+    title = models.CharField(max_length=255)
+    content = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        # Add constraint to ensure a post belongs to EITHER a category OR a group, but not both/neither
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    (models.Q(category__isnull=False) & models.Q(group__isnull=True)) |
+                    (models.Q(category__isnull=True) & models.Q(group__isnull=False))
+                ),
+                name='forumpost_has_one_target'
+            )
+        ]
+
+    def __str__(self):
+        return self.title
+
+# Note: The line `ForumPost.add_to_class(...)` is no longer needed as 'group' is defined directly above.
+
+# --- Updated Comment Model using Generic Relations ---
+class Comment(models.Model):
+    """
+    Represents a comment using Generic Relations to link to various content types.
+    """
+    author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='comments')
+    content = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # --- Generic Relation Fields ---
+    # Stores the type of the object being commented on (e.g., StatusPost, ForumPost)
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    # Stores the ID (primary key) of the specific object being commented on
+    object_id = models.PositiveIntegerField()
+    # Helper field to easily access the related object (StatusPost, ForumPost, etc.)
+    # Uses the 'content_type' and 'object_id' fields above
+    content_object = GenericForeignKey('content_type', 'object_id')
+    # --- End of Generic Relation Fields ---
+
+    # parent = models.ForeignKey('self', on_delete=models.CASCADE, blank=True, null=True, related_name='replies') # Keep commented out for now (for nested replies later)
+
+    class Meta:
+        ordering = ['created_at'] # Show oldest comments first
+        # Add indexes for faster lookups based on the generic relation fields
+        indexes = [
+            models.Index(fields=["content_type", "object_id"]),
+        ]
+
+    def __str__(self):
+        # Ensure author exists
+        author_username = self.author.username if self.author else 'Unknown Author'
+        # Attempt to get the related object's string representation for clarity
+        try:
+            # Accessing self.content_object can trigger a DB query
+            target = self.content_object if self.content_object else f"{self.content_type} ID:{self.object_id}"
+            target_str = str(target) # Get string representation
+        except Exception: # Catch potential errors if object/content_type is missing
+             target_str = f"related object (ContentType ID: {self.content_type_id}, Object ID: {self.object_id})"
+        return f"Comment by {author_username} on {target_str[:50]}" # Limit length for display
+
+# --- End of Updated Comment Model ---
+
+
+class Like(models.Model):
+    """
+    Represents a user liking a specific piece of content (e.g., StatusPost or ForumPost).
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='likes')
+
+    # Link to ONE type of post - only one of these should be non-null per instance
+    status_post = models.ForeignKey(StatusPost, on_delete=models.CASCADE, blank=True, null=True, related_name='likes')
+    forum_post = models.ForeignKey(ForumPost, on_delete=models.CASCADE, blank=True, null=True, related_name='likes')
+    # Add other likeable models here later if needed (e.g., comment = models.ForeignKey(...) )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # Ensure a user can only like a specific post once
+        # Need separate constraints because unique_together doesn't handle NULL well across different DBs for this pattern
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'status_post'], condition=models.Q(forum_post__isnull=True), name='unique_user_status_like'),
+            models.UniqueConstraint(fields=['user', 'forum_post'], condition=models.Q(status_post__isnull=True), name='unique_user_forum_like'),
+            # Ensure only one foreign key field is set (prevents linking a like to multiple things)
+            models.CheckConstraint(
+                check=(
+                    (models.Q(status_post__isnull=False) & models.Q(forum_post__isnull=True)) |
+                    (models.Q(status_post__isnull=True) & models.Q(forum_post__isnull=False))
+                    # Add conditions for other FKs here if more likeable types are added
+                ),
+                name='like_has_one_target'
+            )
+        ]
+        ordering = ['-created_at']
+
+    def __str__(self):
+        # Ensure user exists
+        user_username = self.user.username if self.user else 'Unknown User'
+        target = self.status_post or self.forum_post # Find which link is set
+        # Ensure target exists and has an ID before formatting
+        if target and hasattr(target, 'id'):
+            target_info = f"{target.__class__.__name__} ID: {target.id}"
+        else:
+            target_info = "Unknown Target"
+        return f"{user_username} likes {target_info}"
+
+# --- Signals ---
+# Import necessary modules for signals
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
+# Ensure User is correctly defined above using settings.AUTH_USER_MODEL
+
+# --- Add these models for Private Messaging ---
+
+class Conversation(models.Model):
+    """
+    Represents a private conversation thread between two or more users.
+    For simplicity, starting with exactly two participants.
+    """
+    # Using ManyToManyField to link participants to the conversation
+    participants = models.ManyToManyField(User, related_name='conversations')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True) # Tracks last message time
+
+    class Meta:
+        ordering = ['-updated_at'] # Show most recently active conversations first
+
+    def __str__(self):
+        # Generate a string representation, e.g., listing participant usernames
+        usernames = ", ".join([user.username for user in self.participants.all()])
+        return f"Conversation between {usernames}" if usernames else "Empty Conversation"
+
+class Message(models.Model):
+    """
+    Represents a single message within a Conversation.
+    """
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='messages')
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_messages')
+    content = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+    # Optional: Add a 'read_at' field later for read receipts
+    # read_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['timestamp'] # Show messages in chronological order
+
+    def __str__(self):
+        return f"Message from {self.sender.username} in Convo ID {self.conversation.id} at {self.timestamp.strftime('%Y-%m-%d %H:%M')}"
+
+# --- End of Private Messaging Models ---
+
+@receiver(post_save, sender=User)
+def create_user_profile(sender, instance, created, **kwargs):
+    """
+    Signal receiver that creates a UserProfile instance automatically
+    when a new User instance is created and saved.
+    """
+    if created: # Only run for newly created User instances
+        UserProfile.objects.create(user=instance)
+
+# Note: The save_user_profile signal might be redundant if profile creation is robust
+# and updates happen via profile serializers/views. Consider if it's strictly needed.
+# If kept, ensure it handles potential race conditions or unique constraint errors if needed.
+# @receiver(post_save, sender=User)
+# def save_user_profile(sender, instance, **kwargs):
+#     """
+#     Signal receiver that saves the UserProfile instance automatically
+#     when the related User instance is saved.
+#     (Useful if UserProfile might be created by other means later)
+#     """
+#     # Check if profile exists before trying to save
+#     # This check might be slightly redundant if create_user_profile always runs first on creation,
+#     # but it adds robustness.
+#     if hasattr(instance, 'userprofile'):
+#          instance.userprofile.save()
+#     else:
+#         # If profile doesn't exist (e.g., for existing users created before this signal), create it.
+#         # This handles cases where the create_user_profile might have failed or wasn't active previously.
+#         UserProfile.objects.get_or_create(user=instance) # Use get_or_create for safety

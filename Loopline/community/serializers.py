@@ -1,0 +1,402 @@
+from rest_framework import serializers
+# from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
+from django.contrib.contenttypes.models import ContentType
+from .models import UserProfile, Follow, StatusPost, ForumCategory, Group, ForumPost, Comment, Like, Conversation, Message
+User = get_user_model() 
+# Basic serializer for the built-in User model (to nest in profile)
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        # Select only the fields needed publicly for the profile view
+        fields = ['id', 'username', 'first_name', 'last_name']
+        read_only_fields = ['id', 'username'] # Usually username isn't changed here
+
+# Serializer for our UserProfile model
+class UserProfileSerializer(serializers.ModelSerializer):
+    # Nest the UserSerializer to include basic user info when reading
+    user = UserSerializer(read_only=True)
+    # Explicitly declare ArrayFields if needed, though ModelSerializer might handle basic cases
+    skills = serializers.ListField(child=serializers.CharField(max_length=100), required=False, allow_null=True)
+    interests = serializers.ListField(child=serializers.CharField(max_length=100), required=False, allow_null=True)
+
+    class Meta:
+        model = UserProfile
+        # List all fields from UserProfile model you want in the API response
+        # Note: 'user' field here refers to the foreign key ID when writing,
+        # but the nested UserSerializer when reading (due to read_only=True above)
+        fields = [
+            'user',
+            'bio',
+            'location_city',
+            'location_state',
+            'college_name',
+            'major',
+            'graduation_year',
+            'linkedin_url',
+            'portfolio_url',
+            'skills',
+            'interests',
+            'profile_picture_url',
+            'updated_at'
+        ]
+        # Make profile fields writable (except user and updated_at)
+        # The 'user' field on the profile itself shouldn't be changed via this API
+        read_only_fields = ['user', 'updated_at']
+
+# Serializer specifically for UPDATING the profile (doesn't need nested user)
+class UserProfileUpdateSerializer(serializers.ModelSerializer):
+    # Explicitly declare ArrayFields for writing/updating
+    skills = serializers.ListField(child=serializers.CharField(max_length=100), required=False, allow_null=True)
+    interests = serializers.ListField(child=serializers.CharField(max_length=100), required=False, allow_null=True)
+
+    class Meta:
+        model = UserProfile
+        # Only include fields that the user is allowed to update
+        fields = [
+            'bio',
+            'location_city',
+            'location_state',
+            'college_name',
+            'major',
+            'graduation_year',
+            'linkedin_url',
+            'portfolio_url',
+            'skills',
+            'interests',
+            'profile_picture_url',
+        ]
+
+
+# Add this serializer below UserProfileUpdateSerializer
+
+class StatusPostSerializer(serializers.ModelSerializer):
+    """
+    Serializer for StatusPost model. Includes basic author info.
+    """
+    # Use the locally defined UserSerializer
+    author = UserSerializer(read_only=True)
+    # Optionally add fields for like counts or comment counts later
+
+    class Meta:
+        model = StatusPost # Uses the imported StatusPost model
+        fields = [
+            'id',
+            'author', # Nested UserSerializer on read
+            'content',
+            'created_at',
+            'updated_at',
+            # Add fields like 'like_count', 'comment_count' here later if needed
+        ]
+        # Author is set in the view, timestamps are automatic
+        read_only_fields = ['author', 'created_at', 'updated_at']
+
+
+# Add these serializers
+
+class ForumCategorySerializer(serializers.ModelSerializer):
+    """Serializer for ForumCategory model."""
+    class Meta:
+        model = ForumCategory
+        fields = ['id', 'name', 'description'] # Add 'slug' later if implemented
+
+class ForumPostSerializer(serializers.ModelSerializer):
+    """
+    Serializer for ForumPost model. Includes basic author info.
+    Used for listing posts and retrieving detail.
+    """
+    author = UserSerializer(read_only=True)
+    # category_id = serializers.PrimaryKeyRelatedField(queryset=ForumCategory.objects.all(), source='category', write_only=True, required=False, allow_null=True) # For writing category link
+    # group_id = serializers.PrimaryKeyRelatedField(queryset=Group.objects.all(), source='group', write_only=True, required=False, allow_null=True) # For writing group link
+    # We might need separate serializers for create/update if linking gets complex
+
+    # Optionally include category name when reading list/detail
+    category_name = serializers.CharField(source='category.name', read_only=True, allow_null=True)
+    # Optionally include group name when reading list/detail
+    group_name = serializers.CharField(source='group.name', read_only=True, allow_null=True)
+
+
+    class Meta:
+        model = ForumPost
+        fields = [
+            'id',
+            'author',
+            'category', # Foreign key ID on write/read (can be null)
+            'group',    # Foreign key ID on write/read (can be null)
+            'category_name', # Read-only name
+            'group_name',    # Read-only name
+            'title',
+            'content',
+            'created_at',
+            'updated_at',
+            # Add comment/like counts later
+        ]
+        read_only_fields = ['author', 'created_at', 'updated_at', 'category_name', 'group_name']
+        # Make category/group writable by ID, but author/timestamps read-only
+
+# Potentially needed for creating/updating posts, simpler input
+class ForumPostCreateUpdateSerializer(serializers.ModelSerializer):
+     class Meta:
+        model = ForumPost
+        fields = [
+            'category', # Expecting category ID
+            'group',    # Expecting group ID (only one should be provided)
+            'title',
+            'content',
+        ]
+        # Add validation later to ensure either category OR group is provided, not both/neither
+
+
+# Add this serializer for Groups
+
+class GroupSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the Group model. Includes creator info and member count.
+    """
+    # Use UserSerializer for creator, make read-only as creator doesn't change
+    creator = UserSerializer(read_only=True)
+    # Add a count of members (read-only)
+    member_count = serializers.IntegerField(source='members.count', read_only=True)
+
+    class Meta:
+        model = Group
+        fields = [
+            'id',
+            'name',
+            'description',
+            'creator',      # Nested UserSerializer on read
+            'member_count', # Calculated field
+            'members',      # Shows list of member IDs (can customize later if needed)
+            'created_at',
+            # 'slug',       # Add later if using slugs
+            # 'is_public',  # Add later if implementing privacy
+        ]
+        # Make certain fields read-only in this context
+        read_only_fields = ['creator', 'member_count', 'created_at']
+        # We might need a separate Create serializer if 'members' shouldn't be set directly on creation
+
+# Optional: A simpler serializer for creating a group if needed later
+# class GroupCreateSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = Group
+#         fields = ['name', 'description'] # Only allow setting these on creation
+
+
+# --- Add this new serializer ---
+
+class LikeSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the Like model.
+    Handles serialization for creating and viewing likes.
+    Uses the existing UserSerializer for author details.
+    """
+    # Use your existing UserSerializer for read-only user representation
+    user = UserSerializer(read_only=True)
+
+    # Fields for linking to the specific post type when CREATING a like.
+    # These are write-only because we don't need to send them back when reading a like.
+    # The 'source' argument maps these input fields to the actual model fields.
+    status_post_id = serializers.PrimaryKeyRelatedField(
+        queryset=StatusPost.objects.all(), source='status_post', write_only=True, required=False, allow_null=True
+    )
+    forum_post_id = serializers.PrimaryKeyRelatedField(
+        queryset=ForumPost.objects.all(), source='forum_post', write_only=True, required=False, allow_null=True
+    )
+
+    class Meta:
+        model = Like
+        fields = [
+            'id',
+            'user',          # Uses UserSerializer for reading (shows nested user info)
+            'status_post',   # Read-only representation (shows the related post ID by default)
+            'forum_post',    # Read-only representation (shows the related post ID by default)
+            'created_at',
+
+            # These fields are only used for INPUT (writing/creating):
+            'status_post_id',
+            'forum_post_id',
+        ]
+        # User is set automatically, timestamps are auto, linked posts are shown via read-only fields
+        read_only_fields = ['id', 'user', 'created_at', 'status_post', 'forum_post']
+
+    def validate(self, data):
+        """
+        Check that exactly one of status_post_id or forum_post_id is provided
+        when creating a like via the API.
+        Note: 'status_post' and 'forum_post' in 'data' here refer to the resolved
+        model instances derived from status_post_id/forum_post_id inputs.
+        """
+        status_post_linked = data.get('status_post') # Check if status_post was linked
+        forum_post_linked = data.get('forum_post')   # Check if forum_post was linked
+
+        if not status_post_linked and not forum_post_linked:
+            raise serializers.ValidationError("Input must include either 'status_post_id' or 'forum_post_id'.")
+        if status_post_linked and forum_post_linked:
+            raise serializers.ValidationError("Input cannot include both 'status_post_id' and 'forum_post_id'.")
+        return data
+    
+
+# --- Add this new serializer ---
+
+class CommentSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the Comment model. Uses Generic Relations.
+    """
+    # Use your existing UserSerializer for read-only author representation
+    author = UserSerializer(read_only=True)
+
+    # Fields for identifying the parent object when CREATING a comment
+    # These are write-only; they are not part of the Comment model itself.
+    # We'll use these in the view to find the parent object.
+    # content_type = serializers.CharField(write_only=True, help_text="Model name of the parent object (e.g., 'statuspost', 'forumpost')")
+    # object_id = serializers.IntegerField(write_only=True, help_text="ID of the parent object")
+
+    class Meta:
+        model = Comment
+        fields = [
+            'id',
+            'author',       # Nested UserSerializer for reading
+            'content',
+            'created_at',
+            'updated_at',
+            # Read-only fields related to the generic foreign key (useful for frontend)
+            'content_type_id', # ID of the ContentType model instance
+            'object_id',       # ID of the related object
+
+            # Write-only fields for creation input
+            # 'content_type',
+            #'object_id',
+        ]
+        read_only_fields = [
+            'id',
+            'author',
+            'created_at',
+            'updated_at',
+            'content_type_id', # Read-only representation of the GenericFK link
+            'object_id',       # Read-only representation of the GenericFK link
+        ]
+        # Note: The 'content_type' and 'object_id' fields in the Meta.fields list
+        # are overridden by the explicit field definitions above for write_only behavior.
+        # We explicitly list 'content_type_id' and 'object_id' (from the model)
+        # for read operations.
+
+    # No need for a specific validate method here for the GFK link itself,
+    # the view will handle resolving content_type string to ContentType object.
+    # Validation for 'content' length etc. could be added if needed.
+
+    # We will set the author and link the comment to the content_object
+    # within the API view's perform_create method.
+
+
+# --- Add this new Serializer for Feed Items ---
+
+class FeedItemSerializer(serializers.Serializer):
+    """
+    Serializer for items appearing in the user's feed.
+    Can represent different types of underlying objects (e.g., StatusPost, ForumPost).
+    """
+    # Common fields we want for every feed item
+    id = serializers.IntegerField(source='pk', read_only=True) # Use pk for consistency
+    post_type = serializers.SerializerMethodField() # To distinguish between types
+    author = UserSerializer(read_only=True) # Author of the original post
+    created_at = serializers.DateTimeField(read_only=True)
+    updated_at = serializers.DateTimeField(read_only=True)
+
+    # Fields that might exist on only some types (marked as read_only, method fields handle logic)
+    title = serializers.SerializerMethodField()
+    content = serializers.CharField(read_only=True) # Assuming both have a 'content' field
+    # Optional: Add fields for group/category context later if needed
+
+    # Define methods to get the type-specific fields
+
+    def get_post_type(self, obj):
+        """Determine the type of the post object."""
+        if isinstance(obj, StatusPost):
+            return 'statuspost'
+        elif isinstance(obj, ForumPost):
+            return 'forumpost'
+        return 'unknown' # Fallback
+
+    def get_title(self, obj):
+        """Get the title if it exists (only for ForumPost)."""
+        return getattr(obj, 'title', None) # Return None if no 'title' attribute
+
+    # We assume the 'author', 'content', 'created_at', 'updated_at' fields
+    # exist on both StatusPost and ForumPost models and can be accessed directly.
+    # The 'author = UserSerializer()' handles fetching nested author data automatically.
+    # The 'content = serializers.CharField()' handles fetching content automatically.
+
+# --- End of FeedItemSerializer ---
+
+# --- Add these serializers for Private Messaging ---
+
+class MessageSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the Message model.
+    """
+    # Use UserSerializer for nested sender details (read-only)
+    sender = UserSerializer(read_only=True)
+
+    class Meta:
+        model = Message
+        fields = [
+            'id',
+            'conversation', # Show the conversation ID it belongs to
+            'sender',       # Nested user details
+            'content',
+            'timestamp',
+            # 'read_at' # Add later if implementing read receipts
+        ]
+        # On creation via API, we only need 'content' and 'conversation' ID.
+        # Sender will be set from request.user in the view.
+        read_only_fields = ['id', 'sender', 'timestamp']
+
+class ConversationSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the Conversation model. Includes participant details.
+    """
+    # Use UserSerializer for nested participant details (read-only)
+    # `many=True` because participants is a ManyToManyField
+    participants = UserSerializer(many=True, read_only=True)
+    # Optional: Include latest message snippet or unread count later
+
+    class Meta:
+        model = Conversation
+        fields = [
+            'id',
+            'participants', # List of nested user details
+            'created_at',
+            'updated_at', # Useful for sorting conversations by last activity
+            # Add latest_message or unread_count fields later if needed
+        ]
+        # Most fields are read-only in this context, as conversations
+        # might be created implicitly when the first message is sent.
+        read_only_fields = ['id', 'participants', 'created_at', 'updated_at']
+
+# --- End of Private Messaging Serializers ---
+
+# --- Add this simple serializer for SendMessageView Input ---
+
+class MessageCreateSerializer(serializers.Serializer):
+    """Serializer for validating input when sending a message."""
+    recipient_username = serializers.CharField(max_length=150, write_only=True)
+    content = serializers.CharField(write_only=True)
+
+    def validate_recipient_username(self, value):
+        """Check if the recipient user exists."""
+        # Need to get User model correctly here too
+        User = get_user_model() # Get User model inside the method or ensure it's available globally
+        if not User.objects.filter(username=value).exists():
+            raise serializers.ValidationError("Recipient user does not exist.")
+        # Optional: Prevent sending messages to oneself
+        # Check context if request object is passed in view
+        # request = self.context.get('request')
+        # if request and request.user.username == value:
+        #     raise serializers.ValidationError("You cannot send a message to yourself.")
+        return value
+
+# --- End of MessageCreateSerializer ---
+
+
+# --- End of new serializer ---
+
