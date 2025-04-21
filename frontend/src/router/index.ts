@@ -10,6 +10,16 @@ const router = createRouter({
   // It's currently empty because we deleted the example views.
   // We will add our application's routes here later.
   routes: [
+    // --- ADD LOGIN ROUTE HERE ---
+    {
+      path: '/login', // The URL path for the login page
+      name: 'login',  // A unique name for this route (optional but good practice)
+      // Lazy-load the component for better performance
+      // This means LoginView.vue code is only downloaded when the user
+      // actually navigates to /login
+      component: () => import('../views/LoginView.vue')
+    },
+    // --- END OF LOGIN ROUTE ---
     /*
     EXAMPLES of routes we might add later:
 
