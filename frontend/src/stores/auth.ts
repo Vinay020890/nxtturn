@@ -3,6 +3,7 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import axiosInstance from '@/services/axiosInstance';
+
 // Later: import router from '@/router'; // For potential redirects
 
 // Define the shape of the User object we might store (adjust as needed)
@@ -14,6 +15,15 @@ interface User {
   // Add other relevant fields from your UserSerializer if login returns them
   // email?: string;
 }
+
+// --- ADD THIS INTERFACE ---
+interface RegistrationData {
+    email?: string;
+    username?: string;
+    password1?: string;
+    password2?: string; // dj-rest-auth typically uses password2
+}
+// --- END ---
 
 // Define the store
 // 'auth' is the unique ID of this store
@@ -80,6 +90,7 @@ export const useAuthStore = defineStore('auth', () => {
                    console.log('User set from login response:', response.data.user);
                 } else {
                    console.log('Login successful. Token obtained. User details may need separate fetch.');
+                   await fetchUserProfile();
                 }
                 return true; // Indicate login success to the component
     
@@ -111,21 +122,60 @@ export const useAuthStore = defineStore('auth', () => {
 
   // Action to fetch user profile (if not included in login response)
   async function fetchUserProfile() {
-      if (!isAuthenticated.value) return; // Don't fetch if not logged in
-      try {
-          console.log('Fetching user profile...');
-          // --- TODO: Call API ---
-          // const response = await axiosInstance.get('/auth/user/'); // DRF default user endpoint
-          // setUser(response.data);
-          console.log('User profile fetched (mocked)');
-      } catch (error) {
-          console.error('Failed to fetch user profile:', error);
-          // Handle error, maybe log out if token is invalid (401 error)
-          // if (error.response && error.response.status === 401) {
-          //   logout();
-          // }
-      }
+    // Ensure there's a token before trying to fetch
+    if (!authToken.value) {
+        console.log('fetchUserProfile: No auth token found, skipping fetch.');
+        return;
+    }
+    // Note: The interceptor should automatically add the token header
+    try {
+        console.log('Fetching user profile...');
+        // --- REPLACE PLACEHOLDER WITH REAL API CALL ---
+        const response = await axiosInstance.get('/auth/user/'); // Call the user detail endpoint
+        // --- END OF API CALL ---
+
+        if (response.data) {
+            // If successful, store user data
+            setUser(response.data); // Assuming response.data is the User object shape we expect
+            console.log('User profile fetched and stored:', response.data);
+        } else {
+             // Handle unexpected empty response
+             console.warn('Fetched user profile but response data was empty.');
+             setUser(null);
+        }
+    } catch (error: any) {
+        console.error('Failed to fetch user profile:', error);
+        // If we get 401 Unauthorized, the token is likely invalid/expired
+        if (error.response && error.response.status === 401) {
+          console.log('Token invalid/expired. Logging out.');
+          // Automatically log out if token is bad
+          logout(); // Call the logout action to clear state
+        } else {
+          // For other errors, just clear user state
+          setUser(null);
+        }
+    }
   }
+  // --- END OF fetchUserProfile modification ---
+
+  // --- ADD THE REGISTER FUNCTION HERE ---
+async function register(registrationData: RegistrationData) {
+    console.log("Sending registration details to backend:", registrationData);
+    try {
+      // Send the 'registrationData' to the backend URL '/auth/registration/'
+      // Ensure this URL matches your Django dj-rest-auth setup
+      const response = await axiosInstance.post('/auth/registration/', registrationData);
+      console.log("Backend registration request finished successfully:", response.data);
+      // Registration usually doesn't log the user in, so no need to setToken or setUser here.
+      // We don't need to return anything specific here unless the backend response is useful.
+    } catch (error) {
+      // If the backend sends back an error (like username taken)
+      console.error("Backend registration failed!", error);
+      // We need to tell the component that called this function there was an error.
+      throw error; // Re-throw the error for the component to catch
+    }
+  }
+  // --- END OF REGISTER FUNCTION ---
 
   // --- Return state, getters, and actions ---
   return {
@@ -137,6 +187,7 @@ export const useAuthStore = defineStore('auth', () => {
     setUser,
     login,
     logout,
-    fetchUserProfile
+    fetchUserProfile,
+    register
   }
 })

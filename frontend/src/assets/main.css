@@ -3,7 +3,7 @@
 #app {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 2rem; /* This padding might still affect centering on small screens */
   font-weight: normal;
 }
 
@@ -21,15 +21,25 @@ a,
   }
 }
 
+/* Styles for screens wider than 1024px */
 @media (min-width: 1024px) {
+  /* Commenting out body flex centering for now, might not be needed with App.vue's layout */
+  /*
   body {
     display: flex;
     place-items: center;
   }
+  */
 
   #app {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    /* Removing the grid layout that caused the two-column split */
+    /* display: grid; */
+    /* grid-template-columns: 1fr 1fr; */
+
+    /* Keep padding, adjust if necessary */
     padding: 0 2rem;
   }
 }
+
+/* --- Consider also checking base.css if issues persist --- */
+/* The @import './base.css'; at the top might contain other conflicting styles */

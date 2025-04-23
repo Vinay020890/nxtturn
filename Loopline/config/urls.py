@@ -22,7 +22,7 @@ urlpatterns = [
     # Add the following line for dj-rest-auth endpoints
     path('api/auth/', include('dj_rest_auth.urls')),
     # We will also need registration endpoints later
-    path('api/auth/registration/', include('dj_rest_auth.registration.urls')), # Keep this commented for now
+    path('api/auth/registration/', include('dj_rest_auth.registration.urls')), 
      # Add Community App URLs under '/api/' namespace
     path('api/', include('community.urls')), # Add this line
 ]

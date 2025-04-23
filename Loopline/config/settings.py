@@ -169,8 +169,14 @@ REST_FRAMEWORK = {
 
 # Ensure REST_AUTH is configured correctly (defaults are often okay)
 # Example: Tell dj-rest-auth to use TokenAuthentication
+# Ensure REST_AUTH is configured correctly
 REST_AUTH = {
     'TOKEN_AUTHENTICATOR_CLASS': 'rest_framework.authentication.TokenAuthentication',
+    # --- ADD THIS LINE ---
+    'REGISTER_SERIALIZER': 'dj_rest_auth.registration.serializers.RegisterSerializer',
+    # --- END OF ADDITION ---
+
+    # You might have other keys here too
 }
 
 

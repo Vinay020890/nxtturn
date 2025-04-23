@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useAuthStore } from '@/stores/auth'; // Import the auth store
+import { useRouter } from 'vue-router'; 
 
 const username = ref('');
 const password = ref('');
 const errorMessage = ref<string | null>(null); // To store potential login errors
 
 const authStore = useAuthStore(); // Get the auth store instance
+const router = useRouter();
 
 const handleLogin = async () => {
   errorMessage.value = null; // Clear previous errors
@@ -21,8 +23,9 @@ const handleLogin = async () => {
     });
 
     // If the above line doesn't throw an error, it succeeded (in our mock)
-    console.log('LoginView: Login action succeeded (mocked).');
+    console.log('LoginView: Login action succeeded.');
     // --- WE WILL ADD REDIRECTION LATER ---
+    router.push({ name: 'feed' }); // <-- ADD THIS LINE to redirect
 
   } catch (error: any) {
     // Handle errors thrown by the authStore.login action

@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
+// RegisterView is already imported, which is fine, but we'll use lazy loading below
+// import RegisterView from '../views/RegisterView.vue';
 
 // We removed the imports for HomeView and AboutView
 
@@ -7,44 +9,38 @@ const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
 
   // The 'routes' array defines the pages of our application.
-  // It's currently empty because we deleted the example views.
-  // We will add our application's routes here later.
   routes: [
-    // --- ADD LOGIN ROUTE HERE ---
+
+     // --- FEED ROUTE ---
+     {
+      path: '/', // The root path of the application
+      name: 'feed', // Name for programmatic navigation
+      // Lazy-load the component for better performance
+      component: () => import('../views/FeedView.vue') // Points to the FeedView component
+    },
+    // --- END OF FEED ROUTE ---
+
+    // --- LOGIN ROUTE ---
     {
       path: '/login', // The URL path for the login page
       name: 'login',  // A unique name for this route (optional but good practice)
-      // Lazy-load the component for better performance
-      // This means LoginView.vue code is only downloaded when the user
-      // actually navigates to /login
+      // Lazy-load the component
       component: () => import('../views/LoginView.vue')
     },
     // --- END OF LOGIN ROUTE ---
+
+    // --- ADD REGISTER ROUTE HERE ---
+    {
+      path: '/register', // The URL path for the registration page
+      name: 'register', // A unique name for this route
+      // Lazy-load the component for better performance
+      component: () => import('../views/RegisterView.vue')
+    },
+    // --- END OF REGISTER ROUTE ---
+
     /*
     EXAMPLES of routes we might add later:
-
-    {
-      path: '/', // The root URL, maybe for the feed?
-      name: 'feed',
-      // Use dynamic import for lazy loading components
-      component: () => import('../views/FeedView.vue') // We need to create FeedView.vue
-    },
-    {
-      path: '/login',
-      name: 'login',
-      component: () => import('../views/LoginView.vue') // We need to create LoginView.vue
-    },
-    {
-      path: '/register',
-      name: 'register',
-      component: () => import('../views/RegisterView.vue') // We need to create RegisterView.vue
-    },
-    {
-      path: '/profile/:username', // Route with a dynamic parameter
-      name: 'profile',
-      component: () => import('../views/ProfileView.vue'), // We need to create ProfileView.vue
-      props: true // Pass route params as props to the component
-    }
+    ... (rest of your comments remain the same) ...
     */
   ],
 })
