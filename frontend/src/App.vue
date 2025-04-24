@@ -1,4 +1,8 @@
 <script setup lang="ts">
+
+// Import onMounted lifecycle hook from Vue
+import { onMounted } from 'vue'; // <-- ADD THIS IMPORT
+
 // Import RouterView for displaying pages, useRouter for navigation
 import { RouterView, useRouter, RouterLink } from 'vue-router';
 // Import the Pinia store to check authentication status and call logout
@@ -7,6 +11,14 @@ import { useAuthStore } from '@/stores/auth';
 // Get instances of the store and router
 const authStore = useAuthStore();
 const router = useRouter();
+
+// --- ADD onMounted HOOK ---
+onMounted(() => {
+  // Call initializeAuth when the App component is first mounted
+  console.log('App.vue: Component mounted, calling initializeAuth...');
+  authStore.initializeAuth();
+});
+// --- END onMounted HOOK ---
 
 // Method to handle the logout process
 const handleLogout = () => {

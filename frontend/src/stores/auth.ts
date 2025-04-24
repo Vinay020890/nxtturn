@@ -177,6 +177,32 @@ async function register(registrationData: RegistrationData) {
   }
   // --- END OF REGISTER FUNCTION ---
 
+  // --- ADD THE initializeAuth FUNCTION DEFINITION ---
+async function initializeAuth() {
+    console.log("Initializing auth store...");
+    // Check localStorage directly first
+    const tokenFromStorage = localStorage.getItem('authToken');
+  
+    if (tokenFromStorage && !authToken.value) {
+      // If token exists in storage but not in state, update state
+      console.log("Found token in localStorage, setting it in store.");
+      setToken(tokenFromStorage); // Use the existing setToken action
+    }
+  
+    // Now check if we have a token in the state (either loaded or already present)
+    // and if the user profile hasn't been loaded yet
+    if (authToken.value && !currentUser.value) {
+      console.log("Token exists in store, attempting to fetch user profile.");
+      // Use existing fetchUserProfile action, it handles the token internally
+      await fetchUserProfile();
+    } else if (!authToken.value) {
+      console.log("No auth token found during initialization.");
+    } else {
+      console.log("User profile already loaded or initialization not needed now.");
+    }
+  }
+  // --- END OF initializeAuth FUNCTION DEFINITION ---
+
   // --- Return state, getters, and actions ---
   return {
     authToken,
@@ -188,6 +214,7 @@ async function register(registrationData: RegistrationData) {
     login,
     logout,
     fetchUserProfile,
-    register
+    register,
+    initializeAuth
   }
 })
