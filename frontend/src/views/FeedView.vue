@@ -2,10 +2,6 @@
 import { useAuthStore } from '@/stores/auth';
 import { onMounted } from 'vue';
 import { useFeedStore } from '@/stores/feed';
-// Import necessary Composition API functions or stores later if needed
-// import { onMounted } from 'vue';
-
-
 
 const authStore = useAuthStore();
 const feedStore = useFeedStore();
@@ -16,15 +12,40 @@ onMounted(() => {
   feedStore.fetchFeed(); // Call the action to fetch page 1
 });
 
+// Method to fetch the previous page
+function fetchPreviousPage() {
+  // Check if we are not on the first page
+  if (feedStore.currentPage > 1) {
+    // If not, call the store's fetchFeed action with the previous page number
+    console.log("FeedView: Fetching previous page..."); // Log click
+    feedStore.fetchFeed(feedStore.currentPage - 1);
+  } else {
+    console.log("FeedView: Already on first page."); // Log if disabled logic fails
+  }
+}
+
+// Method to fetch the next page
+function fetchNextPage() {
+  // Check if the store indicates there is a next page
+  if (feedStore.hasNextPage) {
+    // If yes, call the store's fetchFeed action with the next page number
+    console.log("FeedView: Fetching next page..."); // Log click
+    feedStore.fetchFeed(feedStore.currentPage + 1);
+  } else {
+     console.log("FeedView: Already on last page."); // Log if disabled logic fails
+  }
+}
+
 </script>
 
 <template>
-    <div class="feed-view">
-      <!-- Changed h1 to display welcome message -->
-      <h1>Welcome, {{ authStore.userDisplay }}!</h1>
-      <!-- Added h2 for original title -->
-      <h2>Your Feed</h2>
-          <!-- Loading State -->
+  <div class="feed-view">
+    <!-- Changed h1 to display welcome message -->
+    <h1>Welcome, {{ authStore.userDisplay }}!</h1>
+    <!-- Added h2 for original title -->
+    <h2>Your Feed</h2>
+
+    <!-- Loading State -->
     <div v-if="feedStore.isLoading && feedStore.posts.length === 0" class="loading">
       Loading feed...
     </div>
@@ -59,9 +80,17 @@ onMounted(() => {
       <div v-if="!feedStore.isLoading && feedStore.posts.length === 0 && !feedStore.error" class="empty-feed">
         Your feed is empty. Follow some users or create a post!
       </div>
+    </div> <!-- End of posts-list -->
+
+    <!-- Pagination Controls -->
+    <div class="pagination-controls">
+        <button :disabled="feedStore.currentPage <= 1" @click="fetchPreviousPage">Previous</button>
+        <span>Page {{ feedStore.currentPage }} of {{ feedStore.totalPages }}</span>
+        <button :disabled="!feedStore.hasNextPage" @click="fetchNextPage">Next</button>
     </div>
-    </div>
-  </template>
+
+  </div> <!-- End of feed-view -->
+</template>
 
 <style scoped>
 .feed-view {
@@ -137,5 +166,34 @@ onMounted(() => {
 .post-footer span {
     margin-right: 1rem;
 }
+
+.pagination-controls {
+    margin-top: 2rem;
+    text-align: center;
+}
+
+.pagination-controls button {
+    padding: 0.5rem 1rem;
+    margin: 0 0.5rem;
+    cursor: pointer;
+    /* Add basic button styling as needed */
+    background-color: #eee;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.pagination-controls button:disabled { /* Style for disabled state */
+    cursor: not-allowed;
+    opacity: 0.6;
+    background-color: #f8f8f8;
+}
+ .pagination-controls button:not(:disabled):hover { /* Hover for enabled */
+    background-color: #ddd;
+ }
+
+ .pagination-controls span { /* Style for the page text */
+     margin: 0 1rem;
+     color: #555;
+ }
 /* Add more styles later */
 </style>
