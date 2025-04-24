@@ -546,10 +546,17 @@ class FeedListView(views.APIView):
 
         # 3. Fetch recent StatusPosts from followed users
         # Remove the [:limit] slice for now, fetch all relevant ones first
+        # NEW LINE:
         status_posts = StatusPost.objects.filter(
-            author_id__in=list(following_user_ids)
+        Q(author_id__in=list(following_user_ids)) | Q(author=user) # Posts from followed OR self
         ).select_related('author__userprofile').order_by('-created_at')
         status_posts_list = list(status_posts)
+
+
+  
+
+    # 4. Fetch recent ForumPosts from joined groups
+    # ... rest of the code ...
 
         # 4. Fetch recent ForumPosts from joined groups
         # Remove the [:limit] slice for now

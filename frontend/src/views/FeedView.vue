@@ -2,6 +2,7 @@
 import { useAuthStore } from '@/stores/auth';
 import { onMounted } from 'vue';
 import { useFeedStore } from '@/stores/feed';
+import CreatePostForm from '@/components/CreatePostForm.vue';
 
 const authStore = useAuthStore();
 const feedStore = useFeedStore();
@@ -44,6 +45,8 @@ function fetchNextPage() {
     <h1>Welcome, {{ authStore.userDisplay }}!</h1>
     <!-- Added h2 for original title -->
     <h2>Your Feed</h2>
+
+    <CreatePostForm />
 
     <!-- Loading State -->
     <div v-if="feedStore.isLoading && feedStore.posts.length === 0" class="loading">
@@ -153,6 +156,7 @@ function fetchNextPage() {
   /* Handle long words/links */
   word-wrap: break-word;
   overflow-wrap: break-word;
+  color: #333;
 }
 
 .post-footer {

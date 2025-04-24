@@ -135,6 +135,59 @@ async function fetchFeed(page: number = 1) {
   } // --- End of fetchFeed function ---
 
 
+  // Action to create a new status post
+async function createPost(content: string) {
+    // Note: We might want a separate loading/error state for creation later
+    console.log("FeedStore: Attempting to create post...");
+  
+    // Basic validation (could also be done in component)
+    if (!content || content.trim().length === 0) {
+      console.error("FeedStore: Post content cannot be empty.");
+      throw new Error("Post content cannot be empty."); // Throw error to component
+    }
+  
+    try {
+      // Get auth store to ensure user is logged in
+      // (axios interceptor handles token, but this prevents unnecessary calls)
+      const authStore = useAuthStore();
+      if (!authStore.isAuthenticated) {
+        console.warn("FeedStore: User not authenticated, cannot create post.");
+        throw new Error("User not authenticated.");
+      }
+  
+      // Make the POST request to the backend endpoint for creating StatusPosts
+      // Ensure '/posts/' matches the URL defined in community/urls.py for StatusPostListCreateView
+      const response = await axiosInstance.post<Post>('/posts/', {
+        content: content // Send the content in the request body
+      });
+  
+      console.log("FeedStore: Post created successfully", response.data);
+  
+      // --- Strategy after successful post creation ---
+      // Option 1: Re-fetch the first page of the feed to show the new post
+      // await fetchFeed(1); // Uncomment this line to refresh the feed
+  
+      // Option 2: (More advanced - Optimistic Update) Prepend the new post to the local state
+       posts.value.unshift(response.data); // Add the new post to the beginning of the array
+                                           // Make sure the API returns the created Post object!
+  
+      // Let's use Option 2 (unshift) for now for better UX, assuming API returns the post
+      return response.data; // Return the created post data
+  
+    } catch (err: any) {
+      console.error("FeedStore: Error creating post:", err);
+      const errorMessage = err.response?.data?.detail || err.message || 'Failed to create post.';
+      // We don't update the main feed 'error' state here,
+      // as that's for fetch errors. We throw instead.
+      throw new Error(errorMessage); // Throw error for the component to handle
+    } finally {
+      // Reset creation-specific loading state if we add one later
+      console.log("FeedStore: Create post attempt finished.");
+    }
+  } // --- End of createPost function ---
+  
+
+
   return {
     posts,
     isLoading,
@@ -144,5 +197,6 @@ async function fetchFeed(page: number = 1) {
     hasNextPage,
     // statusPosts, // Expose getters if defined
     fetchFeed, // Action will be added and exposed later
+    createPost
   };
 });
