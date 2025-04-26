@@ -1,3 +1,4 @@
+from django.apps import apps
 from django.db.models import Q, Count
 # from django.contrib.auth.models import User
 from django.contrib.auth import get_user_model 
@@ -322,64 +323,69 @@ class GroupMembershipView(views.APIView):
 
 # --- Add this new View ---
 
+# --- Replace your existing LikeToggleAPIView class with this ---
+
 class LikeToggleAPIView(views.APIView):
     """
-    API view to allow users to like (POST) or unlike (DELETE)
-    a specific StatusPost or ForumPost.
+    API view to toggle a like on a StatusPost or ForumPost using a POST request.
     Expects 'content_type' (e.g., 'statuspost' or 'forumpost') and 'object_id'
     as URL parameters.
+    Returns the current liked status and the new like count.
     """
     permission_classes = [IsAuthenticated] # Only logged-in users can like/unlike
-    serializer_class = LikeSerializer # Use the serializer we created
-
-    def get_target_object(self, content_type_str, object_id):
-        """Helper method to find the actual post object being liked/unliked."""
-        if content_type_str == 'statuspost':
-            model = StatusPost
-        elif content_type_str == 'forumpost':
-            model = ForumPost
-        # Add more 'elif' blocks here if you add other likeable models later
-        else:
-            return None # Invalid content type string
-
-        try:
-            # Find the specific post instance by its ID
-            return model.objects.get(pk=object_id)
-        except model.DoesNotExist:
-            return None # Object not found
+    # serializer_class = LikeSerializer # No longer strictly needed for this response format
 
     def post(self, request, content_type, object_id, format=None):
-        """Handle Liking a post (Create a Like instance)."""
-        target_object = self.get_target_object(content_type, object_id)
-        if not target_object:
-            return Response({"error": "Invalid content type or object not found."}, status=status.HTTP_404_NOT_FOUND)
+        """Handles POST requests to toggle a like."""
+        user = request.user
 
-        # Prepare data for creating the Like
-        like_data = {'user': request.user}
-        if isinstance(target_object, StatusPost):
-            like_data['status_post'] = target_object
-        elif isinstance(target_object, ForumPost):
-            like_data['forum_post'] = target_object
-        else:
-            # Should not happen if get_target_object worked, but good practice
-            return Response({"error": "Unsupported object type for liking."}, status=status.HTTP_400_BAD_REQUEST)
+        # Validate content_type string and get the corresponding model class
+        try:
+            # Ensure content_type is lowercase as used in URLs usually
+            content_type_name = content_type.lower()
+            # Use apps registry to get the model from 'community' app
+            model_class = apps.get_model(app_label='community', model_name=content_type_name)
+            # Ensure the model we got is actually one we allow liking (optional but good practice)
+            if model_class not in [StatusPost, ForumPost]: # Add any other likable models here
+                 raise LookupError("Liking not allowed for this content type.")
+        except LookupError:
+            return Response(
+                {"detail": f"Invalid content type: {content_type}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        # Try to create the Like. Use get_or_create to handle existing likes gracefully.
-        # The model's unique constraint will prevent duplicates anyway, but get_or_create is cleaner.
+        # Get the object instance (e.g., the specific StatusPost or ForumPost)
+        target_object = get_object_or_404(model_class, pk=object_id)
+
+        # Get the ContentType instance for the target object's model
+        content_type_instance = ContentType.objects.get_for_model(target_object)
+
+        # Try to get the like, or create it if it doesn't exist
         like, created = Like.objects.get_or_create(
-            user=request.user,
-            status_post=like_data.get('status_post'),
-            forum_post=like_data.get('forum_post')
-            # Defaults are handled by get_or_create/model constraints
+            user=user,
+            content_type=content_type_instance,
+            object_id=target_object.id
         )
 
-        if created:
-            serializer = self.serializer_class(like)
-            return Response(serializer.data, status=status.HTTP_201_CREATED) # Successfully created
-        else:
-            # If get_or_create found an existing like, maybe return it or just confirm existence
-            serializer = self.serializer_class(like)
-            return Response(serializer.data, status=status.HTTP_200_OK) # Like already exists
+        is_liked_now = True # Assume liked if created (or if it already existed before get_or_create)
+
+        if not created:
+            # If 'created' is False, it means the like already existed.
+            # So, we delete it to toggle OFF.
+            like.delete()
+            is_liked_now = False # The post is now NOT liked by the user
+
+        # Calculate the new total like count for the target object
+        # Assumes your StatusPost/ForumPost models have a 'likes' GenericRelation field
+        like_count = target_object.likes.count()
+
+        # Return the simplified success response
+        return Response({
+            "liked": is_liked_now,
+            "like_count": like_count
+        }, status=status.HTTP_200_OK) # Use 200 OK for a successful toggle action
+
+# --- End of cleaned-up LikeToggleAPIView ---
 
 
     def delete(self, request, content_type, object_id, format=None):

@@ -72,6 +72,15 @@ function fetchNextPage() {
           <p>{{ post.content }}</p>
         </div>
         <footer class="post-footer">
+            <!-- ADD LIKE BUTTON HERE -->
+        <button
+          @click="feedStore.toggleLike(post)"
+          :class="{ 'liked': post.is_liked_by_user }"
+          class="like-button"
+        >
+          {{ post.is_liked_by_user ? 'Unlike' : 'Like' }}
+        </button>
+        <!-- END OF LIKE BUTTON -->
           <!-- Placeholder for likes/comments count -->
           <!-- Make sure fields exist in Post interface in feed.ts -->
           <span>Likes: {{ post.like_count || 0 }}</span> |
@@ -199,5 +208,31 @@ function fetchNextPage() {
      margin: 0 1rem;
      color: #555;
  }
+
+ /* Add these styles */
+.like-button {
+  background-color: transparent;
+  border: 1px solid #ccc;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-right: 1rem;
+  color: #337ab7; /* Default blue-ish */
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.like-button:hover {
+  background-color: #f0f0f0;
+}
+
+.like-button.liked { /* Style when liked */
+  background-color: #007bff; /* Blue background */
+  color: white;
+  border-color: #0056b3;
+}
+
+.like-button.liked:hover {
+    background-color: #0056b3;
+}
 /* Add more styles later */
 </style>

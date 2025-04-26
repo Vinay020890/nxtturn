@@ -4,7 +4,7 @@ from django.conf import settings # Import Django settings
 from django.contrib.postgres.fields import ArrayField # Import ArrayField for lists
 
 # Imports needed for Generic Relations in Comment model
-from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
 from django.contrib.contenttypes.models import ContentType
 
 # Define User using settings (best practice)
@@ -73,6 +73,11 @@ class StatusPost(models.Model):
     created_at = models.DateTimeField(auto_now_add=True) # Timestamp when created
     updated_at = models.DateTimeField(auto_now=True) # Timestamp when last updated
 
+    # Inside class StatusPost(models.Model):
+    # ... author, content, created_at, updated_at fields ...
+
+    likes = GenericRelation('Like', related_query_name='statuspost_likes') # <-- ADD THIS LINE
+
     class Meta:
         ordering = ['-created_at'] # Default order is newest first
 
@@ -123,6 +128,11 @@ class ForumPost(models.Model):
     content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    # Inside class ForumPost(models.Model):
+    # ... other fields like author, group, title, content etc. ...
+
+    likes = GenericRelation('Like', related_query_name='forumpost_likes') # <-- ADD THIS LINE
 
     class Meta:
         ordering = ['-created_at']
@@ -186,47 +196,40 @@ class Comment(models.Model):
 # --- End of Updated Comment Model ---
 
 
+# --- Replace your existing Like model with this in models.py ---
 class Like(models.Model):
     """
-    Represents a user liking a specific piece of content (e.g., StatusPost or ForumPost).
+    Represents a 'like' given by a user to another object (e.g., StatusPost, ForumPost).
+    Uses Generic Relations to point to different types of objects.
     """
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='likes')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='likes')
 
-    # Link to ONE type of post - only one of these should be non-null per instance
-    status_post = models.ForeignKey(StatusPost, on_delete=models.CASCADE, blank=True, null=True, related_name='likes')
-    forum_post = models.ForeignKey(ForumPost, on_delete=models.CASCADE, blank=True, null=True, related_name='likes')
-    # Add other likeable models here later if needed (e.g., comment = models.ForeignKey(...) )
+    # --- Fields required for Generic Relation ---
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.PositiveIntegerField() # Stores the ID of the liked object
+    content_object = GenericForeignKey('content_type', 'object_id') # The actual generic link
+    # --- End of Generic Relation fields ---
 
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        # Ensure a user can only like a specific post once
-        # Need separate constraints because unique_together doesn't handle NULL well across different DBs for this pattern
-        constraints = [
-            models.UniqueConstraint(fields=['user', 'status_post'], condition=models.Q(forum_post__isnull=True), name='unique_user_status_like'),
-            models.UniqueConstraint(fields=['user', 'forum_post'], condition=models.Q(status_post__isnull=True), name='unique_user_forum_like'),
-            # Ensure only one foreign key field is set (prevents linking a like to multiple things)
-            models.CheckConstraint(
-                check=(
-                    (models.Q(status_post__isnull=False) & models.Q(forum_post__isnull=True)) |
-                    (models.Q(status_post__isnull=True) & models.Q(forum_post__isnull=False))
-                    # Add conditions for other FKs here if more likeable types are added
-                ),
-                name='like_has_one_target'
-            )
-        ]
+        # Ensure a user cannot like the same object multiple times
+        unique_together = ('user', 'content_type', 'object_id')
         ordering = ['-created_at']
+        # Add indexes for faster lookups
+        indexes = [
+            models.Index(fields=["content_type", "object_id"]),
+        ]
 
     def __str__(self):
-        # Ensure user exists
-        user_username = self.user.username if self.user else 'Unknown User'
-        target = self.status_post or self.forum_post # Find which link is set
-        # Ensure target exists and has an ID before formatting
-        if target and hasattr(target, 'id'):
-            target_info = f"{target.__class__.__name__} ID: {target.id}"
-        else:
-            target_info = "Unknown Target"
-        return f"{user_username} likes {target_info}"
+        # Try to get a meaningful representation
+        try:
+            # Limit target object string length for admin/logs if needed
+            target_str = str(self.content_object)
+            return f'{self.user.username} likes "{target_str[:30]}..."'
+        except Exception:
+             return f'{self.user.username} liked object ID {self.object_id} of type {self.content_type.model}'
+# --- End of replacement ---
 
 # --- Signals ---
 # Import necessary modules for signals

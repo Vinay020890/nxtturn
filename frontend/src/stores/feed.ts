@@ -25,7 +25,7 @@ interface Post {
   // Add other fields you expect: like_count, comment_count, is_liked_by_user, etc.
   like_count?: number;
   comment_count?: number;
-  // is_liked_by_user?: boolean;
+  is_liked_by_user?: boolean;
 }
 
 // Define the structure of the paginated response from the API
@@ -187,6 +187,66 @@ async function createPost(content: string) {
   } // --- End of createPost function ---
   
 
+  // --- ADD THIS ACTION ---
+// Action to toggle like status for a post
+async function toggleLike(postToToggle: Post) {
+    console.log(`FeedStore: Toggling like for post ID ${postToToggle.id}`);
+  
+    // Find the index of the post in the current state array
+    const postIndex = posts.value.findIndex(p => p.id === postToToggle.id && p.post_type === postToToggle.post_type);
+    if (postIndex === -1) {
+      console.error("FeedStore: Post to toggle not found in current feed state.");
+      return; // Or throw error?
+    }
+  
+    // --- Optimistic Update (Optional but good UX) ---
+    // Immediately update the local state before waiting for the API response.
+    // Store the original values in case we need to revert on error.
+    const originalLiked = posts.value[postIndex].is_liked_by_user;
+    const originalCount = posts.value[postIndex].like_count ?? 0; // Handle undefined count
+  
+    // Toggle liked status and adjust count locally
+    posts.value[postIndex].is_liked_by_user = !originalLiked;
+    posts.value[postIndex].like_count = originalLiked ? originalCount - 1 : originalCount + 1;
+    // --- End of Optimistic Update ---
+  
+  
+    try {
+      // Prepare API request data
+      const contentType = postToToggle.post_type.toLowerCase(); // e.g., 'statuspost'
+      const objectId = postToToggle.id;
+      const url = `/${contentType}/${objectId}/like/`; // Construct the URL
+  
+      // Call the backend toggle endpoint
+      const response = await axiosInstance.post<{ liked: boolean, like_count: number }>(url);
+  
+      // --- Update with actual API response (Verify Optimistic) ---
+      // It's good practice to update the state with the exact values
+      // returned by the API to ensure consistency.
+      posts.value[postIndex].is_liked_by_user = response.data.liked;
+      posts.value[postIndex].like_count = response.data.like_count;
+      console.log(`FeedStore: Like toggled successfully for post ${objectId}`, response.data);
+      // --- End of API response update ---
+  
+    } catch (err: any) {
+      console.error(`FeedStore: Error toggling like for post ${postToToggle.id}:`, err);
+  
+      // --- Revert Optimistic Update on Error ---
+      if (postIndex !== -1) { // Check index again just in case
+         posts.value[postIndex].is_liked_by_user = originalLiked;
+         posts.value[postIndex].like_count = originalCount;
+      }
+      // --- End of Revert ---
+  
+      // Optionally set a general error state or re-throw
+      // error.value = err.response?.data?.detail || err.message || 'Failed to toggle like.';
+      // For now, just logging the error and reverting is sufficient
+    } finally {
+      // Optional: Add loading state specific to this post ID if needed
+    }
+  } // --- End of toggleLike function ---
+  
+
 
   return {
     posts,
@@ -197,6 +257,7 @@ async function createPost(content: string) {
     hasNextPage,
     // statusPosts, // Expose getters if defined
     fetchFeed, // Action will be added and exposed later
-    createPost
+    createPost,
+    toggleLike
   };
 });
