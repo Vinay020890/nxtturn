@@ -3,6 +3,8 @@ import { useAuthStore } from '@/stores/auth';
 import { onMounted } from 'vue';
 import { useFeedStore } from '@/stores/feed';
 import CreatePostForm from '@/components/CreatePostForm.vue';
+import { format } from 'date-fns';
+import PostItem from '@/components/PostItem.vue';
 
 const authStore = useAuthStore();
 const feedStore = useFeedStore();
@@ -60,33 +62,7 @@ function fetchNextPage() {
 
     <!-- Posts List -->
     <div v-if="!feedStore.isLoading || feedStore.posts.length > 0" class="posts-list">
-      <article v-for="post in feedStore.posts" :key="post.id" class="post-item">
-        <header class="post-header">
-          <!-- Display author username (add link later) -->
-          <span class="author-username">{{ post.author.username }}</span>
-          <!-- Display post timestamp (format later) -->
-          <span class="timestamp">{{ post.created_at }}</span>
-        </header>
-        <div class="post-content">
-          <!-- Display post content -->
-          <p>{{ post.content }}</p>
-        </div>
-        <footer class="post-footer">
-            <!-- ADD LIKE BUTTON HERE -->
-        <button
-          @click="feedStore.toggleLike(post.id)"
-          :class="{ 'liked': post.is_liked_by_user }"
-          class="like-button"
-        >
-          {{ post.is_liked_by_user ? 'Unlike' : 'Like' }}
-        </button>
-        <!-- END OF LIKE BUTTON -->
-          <!-- Placeholder for likes/comments count -->
-          <!-- Make sure fields exist in Post interface in feed.ts -->
-          <span>Likes: {{ post.like_count || 0 }}</span> |
-          <span>Comments: {{ post.comment_count || 0 }}</span>
-        </footer>
-      </article>
+      <PostItem v-for="post in feedStore.posts" :key="post.id" :post="post" />
 
       <!-- Message if feed is empty -->
       <div v-if="!feedStore.isLoading && feedStore.posts.length === 0 && !feedStore.error" class="empty-feed">
