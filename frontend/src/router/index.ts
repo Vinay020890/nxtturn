@@ -53,6 +53,17 @@ const router = createRouter({
     },
     // --- END OF REGISTER ROUTE ---
 
+    // --- ADD THE NEW PROFILE ROUTE ---
+    {
+      path: '/profile/:username', // Dynamic segment ':username'
+      name: 'profile',
+      // Lazy-load the component (we'll create ProfileView.vue next)
+      component: () => import('@/views/ProfileView.vue'), // Use alias @
+      // Let's allow anyone (logged in or not) to view profiles for now
+      meta: { requiresAuth: false }
+    },
+    // --- END OF PROFILE ROUTE ---
+
     /*
     EXAMPLES of routes we might add later:
     ... (rest of your comments remain the same) ...

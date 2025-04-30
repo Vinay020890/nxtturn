@@ -74,7 +74,7 @@ function fetchNextPage() {
         <footer class="post-footer">
             <!-- ADD LIKE BUTTON HERE -->
         <button
-          @click="feedStore.toggleLike(post)"
+          @click="feedStore.toggleLike(post.id)"
           :class="{ 'liked': post.is_liked_by_user }"
           class="like-button"
         >

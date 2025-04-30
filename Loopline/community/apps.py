@@ -9,7 +9,7 @@ class CommunityConfig(AppConfig):
     def ready(self):
         # Import signals here so they are registered when Django starts
         try:
-            import community.models # Or specifically import community.signals if you move the code later
+            import community.signals # Import the signals module directly # Or specifically import community.signals if you move the code later
         except ImportError:
             pass
     # Add this method ^^^

@@ -1,48 +1,93 @@
-from django.apps import apps
+# community/views.py
+
+# --- Django Imports ---
+from django.apps import apps # Keep if used elsewhere (e.g., old Like view)
 from django.db.models import Q, Count
-# from django.contrib.auth.models import User
-from django.contrib.auth import get_user_model 
+from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
+from django.contrib.contenttypes.models import ContentType
+from django.http import Http404 # Import Http404
+
+# --- DRF Imports ---
 from rest_framework import generics, status, views, serializers
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
-# from rest_framework.views import APIView
-from django.contrib.contenttypes.models import ContentType
-from .models import UserProfile, Follow, StatusPost, ForumCategory, Group, ForumPost, Comment, Like, Conversation, Message # Ensure all models are imported
-from .serializers import UserSerializer, UserProfileSerializer, UserProfileUpdateSerializer, StatusPostSerializer, ForumCategorySerializer, ForumPostSerializer, ForumPostCreateUpdateSerializer, GroupSerializer, LikeSerializer, CommentSerializer, FeedItemSerializer, ConversationSerializer, MessageSerializer, MessageCreateSerializer # Ensure all serializers are imported
+from rest_framework.views import APIView # Import APIView directly
+from rest_framework.pagination import PageNumberPagination # Use DRF's built-in pagination
+
+# --- Local Imports ---
+from .models import (
+    UserProfile, Follow, StatusPost, ForumCategory, Group, ForumPost,
+    Comment, Like, Conversation, Message
+)
+from .serializers import (
+    UserSerializer, UserProfileSerializer, UserProfileUpdateSerializer,
+    StatusPostSerializer, ForumCategorySerializer, ForumPostSerializer,
+    ForumPostCreateUpdateSerializer, GroupSerializer, LikeSerializer,
+    CommentSerializer, FeedItemSerializer, ConversationSerializer,
+    MessageSerializer, MessageCreateSerializer
+)
 from .permissions import IsOwnerOrReadOnly
-from rest_framework.pagination import PageNumberPagination
 
 
 User = get_user_model()
 
-# Create your views here.
+# ==================================
+# User Profile & Follower Views
+# ==================================
 
 class UserProfileDetailView(generics.RetrieveUpdateAPIView):
     """
-    API view to retrieve or update a user's profile.
-    Uses the username from the URL to look up the user.
+    Retrieve or update a user's profile (GET, PUT, PATCH).
+    Lookup by username.
     """
     queryset = UserProfile.objects.select_related('user').all()
     lookup_field = 'user__username'
     lookup_url_kwarg = 'username'
+    # serializer_class assignment handled by get_serializer_class
 
     def get_serializer_class(self):
         if self.request.method in ['PUT', 'PATCH']:
-            return UserProfileUpdateSerializer
-        return UserProfileSerializer
+            return UserProfileUpdateSerializer # Handles updates
+        return UserProfileSerializer # Handles retrieval (GET)
 
     def get_permissions(self):
         if self.request.method in ['PUT', 'PATCH']:
+            # Only authenticated owner can update
             return [IsAuthenticated(), IsOwnerOrReadOnly()]
+        # Anyone can view profiles
         return [AllowAny()]
 
-
-class FollowToggleView(views.APIView):
+# --- ADD THIS NEW VIEW for User's Posts ---
+class UserPostListView(generics.ListAPIView):
     """
-    API view to allow an authenticated user to follow (POST)
-    or unfollow (DELETE) another user.
-    Uses the URL: /api/users/{username}/follow/
+    List posts created by a specific user (GET).
+    Lookup by username. Uses standard pagination.
+    """
+    serializer_class = StatusPostSerializer
+    permission_classes = [AllowAny] # Anyone can view any user's posts
+    pagination_class = PageNumberPagination # Use DRF's standard pagination
+
+    def get_queryset(self):
+        """ Filter posts by the username provided in the URL. """
+        username = self.kwargs.get('username')
+        # Ensure user exists before filtering posts
+        user = get_object_or_404(User, username=username)
+        # Filter posts by the found user's ID for efficiency
+        return StatusPost.objects.filter(
+            author=user
+        ).select_related('author__userprofile').prefetch_related('likes').order_by('-created_at') # Use author__userprofile
+
+    def get_serializer_context(self):
+        """ Pass request context to serializer (for is_liked_by_user). """
+        return {'request': self.request}
+# --- End of UserPostListView ---
+
+
+class FollowToggleView(APIView): # Use APIView directly
+    """
+    Follow (POST) or unfollow (DELETE) another user.
+    URL: /api/users/{username}/follow/
     """
     permission_classes = [IsAuthenticated]
 
@@ -51,651 +96,437 @@ class FollowToggleView(views.APIView):
         follower = request.user
         if follower == user_to_follow:
             return Response({"detail": "You cannot follow yourself."}, status=status.HTTP_400_BAD_REQUEST)
-        if Follow.objects.filter(follower=follower, following=user_to_follow).exists():
+        # Use get_or_create for atomicity (though less likely needed here than likes)
+        follow_instance, created = Follow.objects.get_or_create(follower=follower, following=user_to_follow)
+        if not created:
             return Response({"detail": "You are already following this user."}, status=status.HTTP_400_BAD_REQUEST)
-        Follow.objects.create(follower=follower, following=user_to_follow)
         return Response({"detail": f"You are now following {username}."}, status=status.HTTP_201_CREATED)
 
     def delete(self, request, username, format=None):
         user_to_unfollow = get_object_or_404(User, username=username)
         follower = request.user
         if follower == user_to_unfollow:
+             # Not strictly necessary as filter won't find it, but good check
             return Response({"detail": "You cannot unfollow yourself."}, status=status.HTTP_400_BAD_REQUEST)
-
-        follow_instance = Follow.objects.filter(follower=follower, following=user_to_unfollow).first()
-        if not follow_instance:
-            return Response({"detail": "You are not following this user."}, status=status.HTTP_400_BAD_REQUEST)
-
-        follow_instance.delete()
-        # Return standard 204 No Content for successful DELETE
+        # Use filter().delete() for simplicity and efficiency
+        deleted_count, _ = Follow.objects.filter(follower=follower, following=user_to_unfollow).delete()
+        if deleted_count == 0:
+            return Response({"detail": "You were not following this user."}, status=status.HTTP_404_NOT_FOUND)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class FollowingListView(generics.ListAPIView):
-    """
-    API view to list users that a specific user is following.
-    Uses URL like /api/users/{username}/following/
-    """
+    """ List users that a specific user is following (GET). """
     serializer_class = UserSerializer
     permission_classes = [AllowAny]
+    pagination_class = PageNumberPagination # Add pagination
 
     def get_queryset(self):
         target_username = self.kwargs['username']
         target_user = get_object_or_404(User, username=target_username)
-        following_ids = Follow.objects.filter(follower=target_user).values_list('following_id', flat=True)
-        return User.objects.filter(id__in=following_ids)
+        # Directly query Users followed by target_user
+        return User.objects.filter(followers__follower=target_user) # Use related name 'followers'
 
 
 class FollowersListView(generics.ListAPIView):
-    """
-    API view to list users who are following a specific user.
-    Uses URL like /api/users/{username}/followers/
-    """
+    """ List users who are following a specific user (GET). """
     serializer_class = UserSerializer
     permission_classes = [AllowAny]
+    pagination_class = PageNumberPagination # Add pagination
 
     def get_queryset(self):
         target_username = self.kwargs['username']
         target_user = get_object_or_404(User, username=target_username)
-        follower_ids = Follow.objects.filter(following=target_user).values_list('follower_id', flat=True)
-        return User.objects.filter(id__in=follower_ids)
+         # Directly query Users following target_user
+        return User.objects.filter(following__following=target_user) # Use related name 'following'
 
+
+# ==================================
+# Status Post Views
+# ==================================
 
 class StatusPostListCreateView(generics.ListCreateAPIView):
     """
-    API view to list status posts (GET) or create a new one (POST).
-    - GET (list): Filters posts by the username specified in the URL if present.
-    - POST (create): Creates a post for the currently authenticated user.
+    List *all* status posts (GET) or create a new one (POST).
+    Use UserPostListView for user-specific posts.
     """
+    # Use select_related/prefetch_related here too
+    queryset = StatusPost.objects.select_related('author__profile').prefetch_related('likes').order_by('-created_at')
     serializer_class = StatusPostSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
+    permission_classes = [IsAuthenticatedOrReadOnly] # Read all, create if authenticated
+    pagination_class = PageNumberPagination # Add pagination
 
-    def get_queryset(self):
-        queryset = StatusPost.objects.select_related('author__userprofile').all()
-        username = self.kwargs.get('username') # Get username from URL if present (e.g., from user-post-list URL)
-        if username:
-            queryset = queryset.filter(author__username=username)
-        # If no username (e.g., accessing /api/posts/ directly via GET), this returns ALL posts. Refine later.
-        return queryset
+    # No longer need get_queryset filtering by username here, as UserPostListView handles that.
+    # def get_queryset(self): ...
 
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
 
+    def get_serializer_context(self):
+        """ Pass request context to serializer (for is_liked_by_user). """
+        return {'request': self.request}
 
-# --- Add this view for single StatusPost operations ---
 
 class StatusPostRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
-    """
-    API view to retrieve (GET), update (PUT/PATCH), or delete (DELETE)
-    a single StatusPost instance by its primary key (ID).
-    Ensures only the author can update or delete their post.
-    Example URL: /api/posts/5/ (where 5 is the StatusPost ID)
-    """
-    queryset = StatusPost.objects.select_related('author__userprofile').all()
+    """ Retrieve, update, or delete a single StatusPost (GET, PUT, PATCH, DELETE). """
+    queryset = StatusPost.objects.select_related('author__profile').prefetch_related('likes').all()
     serializer_class = StatusPostSerializer
-    # Apply permissions: Must be authenticated, and must be owner for update/delete
-    permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
-    lookup_field = 'pk' # Explicitly state we are looking up by primary key (default, but good practice)
+    permission_classes = [IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly] # Read if public/auth, write if owner
+    lookup_field = 'pk'
 
-    # We rely on the IsOwnerOrReadOnly permission to check 'author' field
-    # Generic view handles GET, PUT, PATCH, DELETE logic based on pk.
+    def get_serializer_context(self):
+        """ Pass request context to serializer (for is_liked_by_user). """
+        return {'request': self.request}
 
-# --- End of StatusPostRetrieveUpdateDestroyView ---
+# ==================================
+# Like View (Corrected Version)
+# ==================================
 
+# --- REPLACE the old LikeToggleAPIView with this one ---
+class LikeToggleAPIView(APIView): # Use APIView directly
+    """
+    Toggle a like on a compatible object (e.g., StatusPost, ForumPost).
+    Uses POST for both liking and unliking.
+    URL: /api/content/<int:content_type_id>/<int:object_id>/like/
+    Returns {"liked": bool, "like_count": int}
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        content_type_id = kwargs.get('content_type_id')
+        object_id = kwargs.get('object_id')
+        user = request.user
+
+        # Validate ContentType ID and get the corresponding model
+        try:
+            content_type = ContentType.objects.get_for_id(content_type_id)
+            model_class = content_type.model_class()
+            # Optional: Check if model_class is one you allow liking
+            # if model_class not in [StatusPost, ForumPost]:
+            #     return Response({"error": "Liking not supported for this content type"}, status=status.HTTP_400_BAD_REQUEST)
+        except ContentType.DoesNotExist:
+            return Response({"error": "Invalid content type ID"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Get the target object instance
+        target_object = get_object_or_404(model_class, pk=object_id)
+
+        # Use get_or_create to handle like/unlike atomically
+        like, created = Like.objects.get_or_create(
+            user=user,
+            content_type=content_type,
+            object_id=object_id # Use object_id directly
+        )
+
+        liked = False
+        if created:
+            # Like was just created
+            liked = True
+        else:
+            # Like already existed, so delete it (unlike)
+            like.delete()
+            liked = False
+
+        # Get the updated like count from the target object's 'likes' relation
+        # Assumes target_object has a GenericRelation named 'likes'
+        like_count = target_object.likes.count()
+
+        # Return the current status and count
+        return Response({
+            "liked": liked,
+            "like_count": like_count
+        }, status=status.HTTP_200_OK)
+# --- End of CORRECTED LikeToggleAPIView ---
+
+
+# ==================================
+# Forum Views
+# ==================================
 
 class ForumCategoryListView(generics.ListAPIView):
-    """
-    API view to list all forum categories.
-    Uses URL like /api/forums/
-    """
+    """ List all forum categories (GET). """
     queryset = ForumCategory.objects.all()
     serializer_class = ForumCategorySerializer
     permission_classes = [AllowAny]
+    # pagination_class = PageNumberPagination # Optional: Paginate categories?
 
-
-# Modify this existing view
 
 class ForumPostListCreateView(generics.ListCreateAPIView):
-    """
-    API view to list posts within a specific category OR group (GET)
-    or create a new post within that category OR group (POST).
-    Uses URL like /api/forums/{category_id}/posts/ OR /api/groups/{group_id}/posts/
-    """
-    # Keep using ForumPostSerializer by default for GET list
-    serializer_class = ForumPostSerializer
+    """ List posts in a category/group (GET) or create one (POST). """
     permission_classes = [IsAuthenticatedOrReadOnly]
+    pagination_class = PageNumberPagination # Add pagination
 
     def get_serializer_class(self):
-        # Still use the simpler serializer for POST requests
         if self.request.method == 'POST':
             return ForumPostCreateUpdateSerializer
-        return ForumPostSerializer
+        return ForumPostSerializer # Use for GET list
 
     def get_queryset(self):
-        """
-        Filter posts by EITHER category_id OR group_id from the URL.
-        """
-        queryset = ForumPost.objects.select_related('author__userprofile', 'category', 'group').all()
+        queryset = ForumPost.objects.select_related(
+            'author__profile', 'category', 'group'
+        ).prefetch_related('likes').order_by('-created_at') # Add prefetch_related
+
         category_id = self.kwargs.get('category_id')
-        group_id = self.kwargs.get('group_id') # Get group_id as well
+        group_id = self.kwargs.get('group_id')
 
         if category_id:
+            # Ensure category exists before filtering
+            get_object_or_404(ForumCategory, pk=category_id)
             queryset = queryset.filter(category_id=category_id)
-        elif group_id: # Add condition for group_id
+        elif group_id:
+             # Ensure group exists before filtering
+            get_object_or_404(Group, pk=group_id)
             queryset = queryset.filter(group_id=group_id)
         else:
-            # If neither is specified on GET, return nothing (or maybe all posts later?)
-             return ForumPost.objects.none()
+            # If neither specified, perhaps raise error or return none?
+            # Depending on URL setup, this might indicate an issue.
+            # For now, return empty if no context provided.
+            return ForumPost.objects.none()
         return queryset
 
     def perform_create(self, serializer):
-        """
-        Set author and EITHER category OR group based on the URL used.
-        """
         category_id = self.kwargs.get('category_id')
-        group_id = self.kwargs.get('group_id') # Get group_id as well
+        group_id = self.kwargs.get('group_id')
         category = None
         group = None
 
         if category_id:
             category = get_object_or_404(ForumCategory, pk=category_id)
-        elif group_id: # Add condition for group_id
+        elif group_id:
             group = get_object_or_404(Group, pk=group_id)
         else:
-            # This case shouldn't happen if URL patterns are set up correctly for POST
-            # (i.e., POST should only go to /forums/.../posts/ or /groups/.../posts/)
-            # You could raise a validation error here if needed.
-            pass
+            # Should not happen with correct URL patterns for POST
+             raise serializers.ValidationError("Missing category or group context for post creation.")
 
-        # Pass author, and EITHER category or group (the other will be None)
         serializer.save(author=self.request.user, category=category, group=group)
 
+    def get_serializer_context(self):
+        """ Pass request context to serializer (for is_liked_by_user). """
+        return {'request': self.request}
 
-# --- Add this view for single ForumPost operations ---
 
 class ForumPostRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
-    """
-    API view to retrieve (GET), update (PUT/PATCH), or delete (DELETE)
-    a single ForumPost instance by its primary key (ID).
-    Ensures only the author can update or delete their post.
-    Example URL: /api/forumposts/5/ (where 5 is the ForumPost ID)
-    """
-    # Optimize query by prefetching related author/profile, category, group
+    """ Retrieve, update, or delete a single ForumPost (GET, PUT, PATCH, DELETE). """
     queryset = ForumPost.objects.select_related(
-        'author__userprofile', 'category', 'group'
-    ).all()
-    serializer_class = ForumPostSerializer # Use the main serializer for GET, PUT, PATCH
-    permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
+        'author__profile', 'category', 'group'
+    ).prefetch_related('likes').all() # Add prefetch_related
+    serializer_class = ForumPostSerializer
+    permission_classes = [IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
     lookup_field = 'pk'
 
-    # We rely on the IsOwnerOrReadOnly permission to check the 'author' field.
-    # Generic view handles GET, PUT, PATCH, DELETE logic based on pk.
+    def get_serializer_context(self):
+        """ Pass request context to serializer (for is_liked_by_user). """
+        return {'request': self.request}
 
-    # Optional: If you want to use a different serializer for Update (PUT/PATCH)
-    # you can override get_serializer_class like this:
-    # def get_serializer_class(self):
-    #     if self.request.method in ['PUT', 'PATCH']:
-    #         # Choose the appropriate serializer for updates
-    #         return ForumPostCreateUpdateSerializer # Or keep ForumPostSerializer
-    #     return ForumPostSerializer # Default for GET
-
-# --- End of ForumPostRetrieveUpdateDestroyView ---
-
-# Add this view for Groups
+# ==================================
+# Group Views
+# ==================================
 
 class GroupListView(generics.ListAPIView):
-    """
-    API view to list all Groups.
-    (Later, might filter for public groups only if privacy is added)
-    Uses URL like /api/groups/
-    """
-    # For now, list all groups. Add filtering later if needed.
-    queryset = Group.objects.prefetch_related('creator', 'members').all() # Optimize queries
+    """ List all Groups (GET). """
+    queryset = Group.objects.prefetch_related('creator__profile', 'members').all() # Optimize members
     serializer_class = GroupSerializer
-    permission_classes = [AllowAny] # Anyone can list groups for now
+    permission_classes = [AllowAny]
+    pagination_class = PageNumberPagination # Add pagination
 
-
-# --- Add this view for single Group retrieval ---
 
 class GroupRetrieveAPIView(generics.RetrieveAPIView):
-    """
-    API view to retrieve (GET) the details of a single Group instance
-    by its primary key (ID).
-    Example URL: /api/groups/1/ (where 1 is the Group ID)
-    """
-    # Optimize query by prefetching members and creator details
-    queryset = Group.objects.prefetch_related('members', 'creator__userprofile').all()
+    """ Retrieve details of a single Group (GET). """
+    queryset = Group.objects.prefetch_related('members__profile', 'creator__profile').all() # Optimize further
     serializer_class = GroupSerializer
-    permission_classes = [AllowAny] # Anyone can view group details for now
-    lookup_field = 'pk' # Use the primary key from the URL
-
-# --- End of GroupRetrieveAPIView ---
+    permission_classes = [AllowAny]
+    lookup_field = 'pk'
 
 
-# Add this view for Group Membership
-
-class GroupMembershipView(views.APIView):
-    """
-    API view to allow an authenticated user to join (POST)
-    or leave (DELETE) a specific group.
-    Uses URL like /api/groups/{group_id}/membership/
-    """
-    permission_classes = [IsAuthenticated] # Must be logged in to join/leave
+class GroupMembershipView(APIView): # Use APIView directly
+    """ Join (POST) or leave (DELETE) a group. """
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, group_id, format=None):
-        """Handles joining a group."""
         group = get_object_or_404(Group, pk=group_id)
         user = request.user
-
-        # Check if user is already a member
         if group.members.filter(pk=user.pk).exists():
-            return Response(
-                {"detail": "You are already a member of this group."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Add the user to the group's members
+            return Response({"detail": "You are already a member."}, status=status.HTTP_400_BAD_REQUEST)
         group.members.add(user)
-        return Response(
-            {"detail": f"You have joined the group '{group.name}'."},
-            status=status.HTTP_200_OK # Or 201 Created, 200 is fine too
-        )
+        return Response({"detail": f"Joined group '{group.name}'."}, status=status.HTTP_200_OK)
 
     def delete(self, request, group_id, format=None):
-        """Handles leaving a group."""
         group = get_object_or_404(Group, pk=group_id)
         user = request.user
-
-        # Check if user is actually a member
         if not group.members.filter(pk=user.pk).exists():
-            return Response(
-                {"detail": "You are not a member of this group."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Remove the user from the group's members
+            return Response({"detail": "You are not a member."}, status=status.HTTP_400_BAD_REQUEST)
         group.members.remove(user)
-        return Response(
-            {"detail": f"You have left the group '{group.name}'."},
-            status=status.HTTP_204_NO_CONTENT
-        )
-    
-
-# --- Add this new View ---
-
-# --- Replace your existing LikeToggleAPIView class with this ---
-
-class LikeToggleAPIView(views.APIView):
-    """
-    API view to toggle a like on a StatusPost or ForumPost using a POST request.
-    Expects 'content_type' (e.g., 'statuspost' or 'forumpost') and 'object_id'
-    as URL parameters.
-    Returns the current liked status and the new like count.
-    """
-    permission_classes = [IsAuthenticated] # Only logged-in users can like/unlike
-    # serializer_class = LikeSerializer # No longer strictly needed for this response format
-
-    def post(self, request, content_type, object_id, format=None):
-        """Handles POST requests to toggle a like."""
-        user = request.user
-
-        # Validate content_type string and get the corresponding model class
-        try:
-            # Ensure content_type is lowercase as used in URLs usually
-            content_type_name = content_type.lower()
-            # Use apps registry to get the model from 'community' app
-            model_class = apps.get_model(app_label='community', model_name=content_type_name)
-            # Ensure the model we got is actually one we allow liking (optional but good practice)
-            if model_class not in [StatusPost, ForumPost]: # Add any other likable models here
-                 raise LookupError("Liking not allowed for this content type.")
-        except LookupError:
-            return Response(
-                {"detail": f"Invalid content type: {content_type}"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Get the object instance (e.g., the specific StatusPost or ForumPost)
-        target_object = get_object_or_404(model_class, pk=object_id)
-
-        # Get the ContentType instance for the target object's model
-        content_type_instance = ContentType.objects.get_for_model(target_object)
-
-        # Try to get the like, or create it if it doesn't exist
-        like, created = Like.objects.get_or_create(
-            user=user,
-            content_type=content_type_instance,
-            object_id=target_object.id
-        )
-
-        is_liked_now = True # Assume liked if created (or if it already existed before get_or_create)
-
-        if not created:
-            # If 'created' is False, it means the like already existed.
-            # So, we delete it to toggle OFF.
-            like.delete()
-            is_liked_now = False # The post is now NOT liked by the user
-
-        # Calculate the new total like count for the target object
-        # Assumes your StatusPost/ForumPost models have a 'likes' GenericRelation field
-        like_count = target_object.likes.count()
-
-        # Return the simplified success response
-        return Response({
-            "liked": is_liked_now,
-            "like_count": like_count
-        }, status=status.HTTP_200_OK) # Use 200 OK for a successful toggle action
-
-# --- End of cleaned-up LikeToggleAPIView ---
+        # 204 No Content preferred for successful DELETE with no body
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-    def delete(self, request, content_type, object_id, format=None):
-        """Handle Unliking a post (Delete the Like instance)."""
-        target_object = self.get_target_object(content_type, object_id)
-        if not target_object:
-            # Don't need to check target existence strictly for delete,
-            # as maybe the post was deleted, but we still want to remove the like record.
-            # However, we do need to know the type to construct the filter.
-            if content_type == 'statuspost':
-                filter_kwargs = {'status_post_id': object_id}
-            elif content_type == 'forumpost':
-                filter_kwargs = {'forum_post_id': object_id}
-            else:
-                return Response({"error": "Invalid content type."}, status=status.HTTP_400_BAD_REQUEST)
-
-        else: # Target object exists, construct filter based on its type
-            if isinstance(target_object, StatusPost):
-                filter_kwargs = {'status_post': target_object}
-            elif isinstance(target_object, ForumPost):
-                filter_kwargs = {'forum_post': target_object}
-            else:
-                return Response({"error": "Unsupported object type."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Find the specific like by the current user for the target object
-        try:
-            like_instance = Like.objects.get(user=request.user, **filter_kwargs)
-            like_instance.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT) # Successfully deleted
-        except Like.DoesNotExist:
-            # The user hadn't liked this object, or already unliked it.
-            return Response({"error": "Like not found."}, status=status.HTTP_404_NOT_FOUND)
-        
-
-# --- Add this new View for Comments ---
+# ==================================
+# Comment Views
+# ==================================
 
 class CommentListCreateAPIView(generics.ListCreateAPIView):
-    """
-    API view to list comments for a specific object (GET)
-    or create a new comment for that object (POST).
-    Uses Generic Relations via URL parameters 'content_type' and 'object_id'.
-    Example URL: /api/comments/statuspost/1/
-    """
+    """ List comments for an object (GET) or create one (POST). """
     serializer_class = CommentSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly] # Allow reading comments, require auth for posting
+    permission_classes = [IsAuthenticatedOrReadOnly]
+    pagination_class = PageNumberPagination # Add pagination
 
     def get_queryset(self):
-        """
-        Filter comments based on the parent object's content type and ID
-        provided in the URL.
-        """
-        # Get the parent object's type and ID from URL kwargs
         content_type_str = self.kwargs.get('content_type')
         object_id = self.kwargs.get('object_id')
 
         if not content_type_str or not object_id:
-            # This shouldn't happen if URL patterns are correct, but good practice
-            return Comment.objects.none() # Return empty queryset if params missing
+             raise Http404("Missing content type or object ID in URL.")
 
         try:
-            # Find the ContentType object corresponding to the string name
-            # Ensure your model names are lowercase in the URL (e.g., 'statuspost')
             content_type = ContentType.objects.get(model=content_type_str.lower())
+            # Optional: Check if model is commentable
+            # model_class = content_type.model_class()
+            # if model_class not in [StatusPost, ForumPost]: ...
         except ContentType.DoesNotExist:
-            # Invalid model name provided in URL
-            return Comment.objects.none() # Return empty queryset
+             raise Http404("Invalid content type specified.")
 
-        # Filter comments belonging to the specific parent object
+        # Check if parent object actually exists (good practice)
+        parent_model = content_type.model_class()
+        get_object_or_404(parent_model, pk=object_id) # Raises 404 if parent doesn't exist
+
         queryset = Comment.objects.filter(
             content_type=content_type,
             object_id=object_id
-        ).select_related('author__userprofile') # Optimize by fetching author details
-
+        ).select_related('author__profile').order_by('created_at') # Order comments chronologically
         return queryset
 
     def perform_create(self, serializer):
-        """
-        Set the author and link the comment to the correct parent object
-        before saving the new comment.
-        """
-        # Get parent object details from URL
         content_type_str = self.kwargs.get('content_type')
         object_id = self.kwargs.get('object_id')
-
         try:
-            # Find the ContentType object
             content_type = ContentType.objects.get(model=content_type_str.lower())
+            # Check parent existence again before saving (optional but safer)
+            parent_model = content_type.model_class()
+            get_object_or_404(parent_model, pk=object_id)
         except ContentType.DoesNotExist:
-            # Handle error - though validation should ideally catch this earlier
-            # For now, let serializer validation handle it or raise an error here
-            # This scenario is less likely if URL routing is correct.
-            # Consider adding validation in the view or serializer if needed.
              raise serializers.ValidationError("Invalid content_type specified in URL.")
+        except parent_model.DoesNotExist:
+              raise serializers.ValidationError("Parent object does not exist.")
 
-
-        # We don't strictly need to fetch the parent object itself here,
-        # just need its content_type and object_id to save the comment.
-        # The serializer expects 'author', 'content', 'content_type', 'object_id'
-        # Author is set from the request, content from request data.
-        # We need to provide the resolved content_type object and object_id.
-
-        # Save the comment, associating it with the logged-in user and the parent object
         serializer.save(
             author=self.request.user,
-            content_type=content_type, # The actual ContentType instance
-            object_id=object_id       # The ID from the URL
+            content_type=content_type,
+            object_id=object_id
         )
 
 
-# --- Add this view for single comment operations ---
-
 class CommentRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
-    """
-    API view to retrieve (GET), update (PUT/PATCH), or delete (DELETE)
-    a single comment instance by its primary key (ID).
-    Ensures only the author can update or delete their comment.
-    Example URL: /api/comments/123/  (where 123 is the comment ID)
-    """
-    queryset = Comment.objects.all() # Base queryset - view handles filtering by pk
+    """ Retrieve, update, or delete a single comment (GET, PUT, PATCH, DELETE). """
+    queryset = Comment.objects.select_related('author__profile').all() # Optimize author fetch
     serializer_class = CommentSerializer
-    # Apply permissions: Must be authenticated, and must be owner for update/delete
-    permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
-
-    # No need to override methods like get_object, perform_update, perform_destroy
-    # unless you need custom logic beyond what the generic view and permissions provide.
-    # The lookup is handled by generics.RetrieveUpdateDestroyAPIView using 'pk' from URL.
-    # The permission class handles ownership checks for unsafe methods (PUT, PATCH, DELETE).
-
-# --- End of CommentRetrieveUpdateDestroyAPIView ---
-
-# --- End of CommentListCreateAPIView ---
-
-# --- Add this new View for the Feed ---
-
-# Use 'views.APIView' if you imported 'views', otherwise use 'APIView' if imported directly
+    permission_classes = [IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
+    lookup_field = 'pk'
 
 
-# --- Replace the OLD FeedListView with THIS one ---
+# ==================================
+# Feed View
+# ==================================
 
-# In community/views.py
-from rest_framework.pagination import PageNumberPagination # Make sure this import is added at the top
-
-# Use 'views.APIView' or 'APIView' based on your import convention
-class FeedListView(views.APIView):
+class FeedListView(APIView): # Use APIView directly
     """
-    API view to retrieve the personalized feed for the logged-in user.
-    Combines StatusPosts from followed users and ForumPosts from joined groups.
-    Sorted by creation date (newest first). NOW WITH PAGINATION.
+    Personalized feed combining StatusPosts (followed users + self)
+    and ForumPosts (joined groups). Paginated. (GET)
     """
     permission_classes = [IsAuthenticated]
-    pagination_class = PageNumberPagination # Define the pagination class to use
+    pagination_class = PageNumberPagination # Use DRF's standard pagination
 
     def get(self, request, format=None):
-        """Handles GET requests to fetch the user's feed."""
         user = request.user
-        # Remove the manual limit = 20 here, pagination handles limits
-        # limit = 20
 
-        # 1. Get IDs of users the current user follows
-        following_user_ids = Follow.objects.filter(follower=user).values_list('following_id', flat=True)
+        # Get IDs of users the current user follows (including self for simplicity later)
+        following_user_ids = list(Follow.objects.filter(follower=user).values_list('following_id', flat=True))
+        # Ensure user's own posts are included
+        user_ids_for_status_posts = following_user_ids + [user.id]
 
-        # 2. Get IDs of groups the current user is a member of
-        joined_group_ids = user.joined_groups.values_list('id', flat=True)
+        # Get IDs of groups the current user is a member of
+        joined_group_ids = list(user.joined_groups.values_list('id', flat=True)) # Access via related_name
 
-        # 3. Fetch recent StatusPosts from followed users
-        # Remove the [:limit] slice for now, fetch all relevant ones first
-        # NEW LINE:
+        # Fetch relevant StatusPosts
         status_posts = StatusPost.objects.filter(
-        Q(author_id__in=list(following_user_ids)) | Q(author=user) # Posts from followed OR self
-        ).select_related('author__userprofile').order_by('-created_at')
-        status_posts_list = list(status_posts)
+            author_id__in=user_ids_for_status_posts
+        ).select_related('author__userprofile').prefetch_related('likes') # Include likes prefetch
 
-
-  
-
-    # 4. Fetch recent ForumPosts from joined groups
-    # ... rest of the code ...
-
-        # 4. Fetch recent ForumPosts from joined groups
-        # Remove the [:limit] slice for now
+        # Fetch relevant ForumPosts
         group_posts = ForumPost.objects.filter(
-            group_id__in=list(joined_group_ids)
-        ).select_related('author__userprofile', 'group', 'category').order_by('-created_at')
-        group_posts_list = list(group_posts)
+            group_id__in=joined_group_ids
+        ).select_related('author__userprofile', 'group', 'category').prefetch_related('likes') # Include likes prefetch
 
-        # 5. Combine the lists
+        # Combine the querysets efficiently using union (requires compatible fields/annotations)
+        # Or, fetch separately and sort in Python if union is complex
+        # Python sorting approach:
+        status_posts_list = list(status_posts)
+        group_posts_list = list(group_posts)
         combined_feed_items = status_posts_list + group_posts_list
 
-        # 6. Sort the combined list by 'created_at' date, newest first
+        # Sort the combined list by 'created_at' date, newest first
+        # Ensure both models have 'created_at'
         sorted_feed_items = sorted(
             combined_feed_items,
             key=lambda item: item.created_at,
             reverse=True
         )
 
-        # --- ADD PAGINATION LOGIC ---
-        # Instantiate the paginator defined in the class or settings
+        # Paginate the sorted list
         paginator = self.pagination_class()
-        # Paginate the sorted list based on request parameters (e.g., ?page=2)
         paginated_list = paginator.paginate_queryset(sorted_feed_items, request, view=self)
-        # --- END PAGINATION LOGIC ---
 
-        # 7. Serialize the PAGINATED list
-        # Pass the paginated subset of items to the serializer
-        serializer = FeedItemSerializer(paginated_list, many=True)
+        # Serialize the paginated list using the dedicated FeedItemSerializer
+        # Ensure FeedItemSerializer handles both StatusPost and ForumPost objects
+        serializer = FeedItemSerializer(paginated_list, many=True, context={'request': request}) # Pass context
 
-        # 8. Return the PAGINATED response
-        # The paginator provides a method to get the response structure
-        # which includes 'count', 'next', 'previous', 'results' keys.
+        # Return the paginated response
         return paginator.get_paginated_response(serializer.data)
-        # --- End of changes ---
 
-# --- End of UPDATED FeedListView ---
 
-# --- Add these views for Private Messaging ---
+# ==================================
+# Private Messaging Views
+# ==================================
 
 class ConversationListView(generics.ListAPIView):
-    """
-    API view to list all conversations the current user participates in.
-    Sorted by the last message time (updated_at descending).
-    Example URL: /api/conversations/
-    """
+    """ List conversations the current user participates in (GET). """
     serializer_class = ConversationSerializer
-    permission_classes = [IsAuthenticated] # Must be logged in to see conversations
+    permission_classes = [IsAuthenticated]
+    pagination_class = PageNumberPagination # Add pagination
 
     def get_queryset(self):
-        """
-        Return a queryset of conversations involving the current user.
-        """
         user = self.request.user
-        # Filter conversations where the user is one of the participants
-        # Order by 'updated_at' descending (defined in Conversation.Meta)
-        # Prefetch participants and their profiles for efficiency
-        return user.conversations.prefetch_related('participants__userprofile').all()
+        # Order by 'updated_at' (should be on Conversation model)
+        return user.conversations.prefetch_related('participants__profile').order_by('-updated_at')
 
-# --- End of ConversationListView ---
 
 class MessageListView(generics.ListAPIView):
-    """
-    API view to list all messages within a specific conversation.
-    Ensures the requesting user is a participant of the conversation.
-    Example URL: /api/conversations/5/messages/ (where 5 is the Conversation ID)
-    """
+    """ List messages within a specific conversation (GET). """
     serializer_class = MessageSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = PageNumberPagination # Add pagination (maybe reverse order?)
 
     def get_queryset(self):
-        """
-        Return messages for the specified conversation, ensuring the user
-        is a participant.
-        """
         user = self.request.user
-        # Get conversation ID from URL kwargs
         conversation_id = self.kwargs.get('conversation_id')
-
-        # Get the specific conversation, ensuring the current user is a participant
+        # Ensure user is part of the conversation
         conversation = get_object_or_404(
-            Conversation.objects.prefetch_related('participants'), # Prefetch for check
+            Conversation.objects.prefetch_related('participants'),
             pk=conversation_id,
-            participants=user # Filter: user must be in participants
+            participants=user
         )
+        # Order messages chronologically (oldest first - typical for chat)
+        # Add prefetch_related for sender profile
+        return conversation.messages.select_related('sender__profile').order_by('timestamp')
 
-        # If the user is a participant (get_object_or_404 didn't fail),
-        # return the messages for that conversation.
-        # Ordered by 'timestamp' ascending (defined in Message.Meta)
-        # Select related sender details for efficiency
-        return conversation.messages.select_related('sender__userprofile').all()
-
-    # We will add POST logic here later to create messages within this conversation.
-
-    # --- Add this simple serializer for SendMessageView Input ---
-
-class MessageCreateSerializer(serializers.Serializer):
-    """Serializer for validating input when sending a message."""
-    recipient_username = serializers.CharField(max_length=150, write_only=True)
-    content = serializers.CharField(write_only=True)
-
-    def validate_recipient_username(self, value):
-        """Check if the recipient user exists."""
-        # Need to get User model correctly here too
-        User = get_user_model() # Get User model inside the method or ensure it's available globally
-        if not User.objects.filter(username=value).exists():
-            raise serializers.ValidationError("Recipient user does not exist.")
-        # Optional: Prevent sending messages to oneself
-        # Check context if request object is passed in view
-        # request = self.context.get('request')
-        # if request and request.user.username == value:
-        #     raise serializers.ValidationError("You cannot send a message to yourself.")
-        return value
-
-# --- End of MessageCreateSerializer ---
+    # POST method could be added here or in Conversation detail view to create message
+    # For now, SendMessageView handles creation
 
 
-
-# --- Add this view for Sending Messages ---
-
-# Use views.APIView since you import 'views' from rest_framework
-class SendMessageView(views.APIView):
-    """
-    API view to send a private message to another user.
-    If a conversation exists between the sender and recipient, adds the message.
-    If not, creates a new conversation first.
-    Expects 'recipient_username' and 'content' in request data.
-    Example URL: POST /api/messages/send/
-    """
+class SendMessageView(APIView): # Use APIView directly
+    """ Send a private message to another user (POST). """
     permission_classes = [IsAuthenticated]
-    # We use the input serializer manually inside post() for validation
 
     def post(self, request, format=None):
-        # Validate input data using the specific input serializer
+        # Use the MessageCreateSerializer for input validation
         input_serializer = MessageCreateSerializer(data=request.data, context={'request': request})
         if not input_serializer.is_valid():
             return Response(input_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -706,55 +537,37 @@ class SendMessageView(views.APIView):
         sender = request.user
 
         try:
-            # User variable is defined globally via get_user_model()
             recipient = User.objects.get(username=recipient_username)
         except User.DoesNotExist:
-            # This case *should* be caught by serializer validation,
-            # but this provides an extra layer of safety.
-            return Response({"error": "Recipient not found."}, status=status.HTTP_404_NOT_FOUND)
+             # Should be caught by serializer, but good backup check
+             raise Http404("Recipient user not found.")
 
-        # Prevent sending messages to oneself
         if sender == recipient:
              return Response({"error": "You cannot send messages to yourself."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Find or create the conversation between sender and recipient
-        # This looks for conversations that have *at least* these two participants.
-        # We need to ensure it finds one with *exactly* these two for 1-on-1 chat.
-        # Let's refine the query slightly for exact 2-person conversations.
-
-        # Query using annotation to count participants first
-        from django.db.models import Count # Add this import if needed near top of file
+        # Find or create the 1-on-1 conversation
         conversation = Conversation.objects.annotate(
             num_participants=Count('participants')
         ).filter(
-            participants=sender
+            participants=sender, num_participants=2 # Filter conversations with sender and exactly 2 people
         ).filter(
-            participants=recipient
-        ).filter(
-            num_participants=2 # Ensure it's exactly a 2-person chat
+             participants=recipient # Check if the recipient is the other person
         ).first()
 
-
         if not conversation:
-             # Create a new conversation if none exists with exactly these two
              conversation = Conversation.objects.create()
              conversation.participants.add(sender, recipient)
 
-        # Create the message within the conversation
+        # Create the message
         message = Message.objects.create(
             conversation=conversation,
             sender=sender,
             content=content
         )
 
-        # Important: Update conversation's updated_at timestamp by saving it
+        # Trigger conversation update (e.g., update updated_at timestamp)
         conversation.save()
 
-        # Serialize the newly created message to return it using the main MessageSerializer
-        output_serializer = MessageSerializer(message)
+        # Return the created message data
+        output_serializer = MessageSerializer(message, context={'request': request}) # Pass context
         return Response(output_serializer.data, status=status.HTTP_201_CREATED)
-
-# --- End of SendMessageView ---
-
-# --- End of new View ---
-    

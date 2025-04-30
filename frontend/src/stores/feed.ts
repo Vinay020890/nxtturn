@@ -4,8 +4,7 @@ import { defineStore } from 'pinia';
 import axiosInstance from '@/services/axiosInstance';
 import { useAuthStore } from './auth'; // May need auth status later
 
-// Define the expected shape of a Post object from the API
-// (Adjust based on your actual serializer output seen in the API test)
+// Define the expected shape of an Author object from the API
 interface PostAuthor {
   id: number;
   username: string;
@@ -14,19 +13,30 @@ interface PostAuthor {
   // profile_image_url?: string; // Add if you have it
 }
 
-interface Post {
-  id: number;
-  post_type: string; // e.g., 'statuspost', 'forumpost'
+// ==========================================
+// === UPDATED Post Interface Definition ===
+// ==========================================
+export interface Post {
+  id: number; // This should be the same as object_id
+  // post_type: string; // Can remove if not used elsewhere, content_type_id is used for liking
   author: PostAuthor;
   created_at: string; // Consider using Date object later
   updated_at: string;
-  title: string | null;
+  title: string | null; // Keep if ForumPosts have titles
   content: string;
-  // Add other fields you expect: like_count, comment_count, is_liked_by_user, etc.
-  like_count?: number;
-  comment_count?: number;
-  is_liked_by_user?: boolean;
+  like_count: number; // Mandatory field from serializer
+  comment_count?: number; // Optional if not always present
+  is_liked_by_user: boolean; // Mandatory field from serializer
+
+  // --- Fields needed for the new Like URL ---
+  content_type_id: number; // The numeric ID for the ContentType model
+  object_id: number;       // The numeric ID for this specific post object (should match 'id')
+  // --- End of fields for Like URL ---
+
+  // Optional frontend-only state for better UX
+  isLiking?: boolean; // Flag to disable button during API call
 }
+// ==========================================
 
 // Define the structure of the paginated response from the API
 interface PaginatedFeedResponse {
@@ -46,208 +56,185 @@ interface FeedState {
   hasNextPage: boolean;
 }
 
-// Define the feed store
+// Define the feed store using Setup Store syntax
 export const useFeedStore = defineStore('feed', () => {
   // --- State ---
-  const posts = ref<Post[]>([]); // Holds the posts for the current view
-  const isLoading = ref(false);   // Tracks loading state
-  const error = ref<string | null>(null); // Stores any error message
-  const currentPage = ref(1);     // Tracks the current page number
-  const totalPages = ref(1);      // Total pages available
-  const hasNextPage = ref(false); // Indicates if there's a next page
+  const posts = ref<Post[]>([]);
+  const isLoading = ref(false);
+  const error = ref<string | null>(null);
+  const currentPage = ref(1);
+  const totalPages = ref(1);
+  const hasNextPage = ref(false);
 
   // --- Getters (Computed) ---
-  // Example: Maybe filter posts later?
-  // const statusPosts = computed(() => posts.value.filter(p => p.post_type === 'statuspost'));
-
-  // --- Actions ---
-  // Action to fetch the feed will be added here
-
-  // --- Return ---
-  // Expose state, getters, and actions
+  // (Example: No active getters currently defined)
 
   // --- Actions ---
 
-// Action to fetch feed posts from the backend
-async function fetchFeed(page: number = 1) {
-    // Don't fetch if already loading
+  // Action to fetch feed posts from the backend
+  async function fetchFeed(page: number = 1) {
     if (isLoading.value) return;
-  
+
     console.log(`FeedStore: Fetching feed page ${page}`);
     isLoading.value = true;
-    error.value = null; // Clear previous errors
-  
-    // If fetching the first page, clear existing posts
-    // If fetching subsequent pages (for infinite scroll later), we would append
+    error.value = null;
+
     if (page === 1) {
       posts.value = [];
     }
-  
+
     try {
-      // Get auth token status - needed to ensure user is logged in?
-      // Although axiosInstance handles sending the token, we might prevent
-      // fetch attempts if the user logs out while feed is loading.
       const authStore = useAuthStore();
       if (!authStore.isAuthenticated) {
         console.warn("FeedStore: User not authenticated, aborting fetch.");
-        // Optionally set an error message or handle appropriately
         isLoading.value = false;
         return;
       }
-  
-      // Make the API call using the page parameter
-      const response = await axiosInstance.get<PaginatedFeedResponse>('/feed/', {
-        params: { page } // Send page number as query parameter
+
+      const response = await axiosInstance.get<PaginatedFeedResponse>('/feed/', { // Use /api/feed/
+        params: { page }
       });
-  
+
       console.log("FeedStore: API response received", response.data);
-  
-      // Update state with data from the response
-      // Append posts for infinite scroll, replace for first page load
+
+      // Add isLiking flag to posts coming from API
+      const fetchedPosts = response.data.results.map(post => ({
+          ...post,
+          isLiking: false // Initialize flag
+      }));
+
       if (page === 1) {
-          posts.value = response.data.results;
+          posts.value = fetchedPosts;
       } else {
-          // For future infinite scroll: posts.value.push(...response.data.results);
-          // For basic pagination, we might just replace: posts.value = response.data.results;
-          // Let's stick with replacing for now for simplicity
-           posts.value = response.data.results;
+          // For future infinite scroll: posts.value.push(...fetchedPosts);
+          // For basic pagination, replace:
+          posts.value = fetchedPosts;
       }
-  
-  
-      // Update pagination state
+
       currentPage.value = page;
-      hasNextPage.value = response.data.next !== null; // Check if 'next' URL exists
-      // Calculate total pages (optional but useful)
-      const pageSize = response.data.results.length > 0 ? response.data.results.length : 10; // Use actual results length or default page size
+      hasNextPage.value = response.data.next !== null;
+      const pageSize = fetchedPosts.length > 0 ? fetchedPosts.length : 10;
       totalPages.value = Math.ceil(response.data.count / pageSize);
-  
-  
+
     } catch (err: any) {
       console.error("FeedStore: Error fetching feed:", err);
       error.value = err.response?.data?.detail || err.message || 'Failed to fetch feed.';
-      // Clear posts on error? Optional, depends on desired UX
-      // posts.value = [];
     } finally {
-      // This always runs, regardless of success or error
-      isLoading.value = false; // Set loading state back to false
+      isLoading.value = false;
       console.log("FeedStore: Fetch finished.");
     }
-  } // --- End of fetchFeed function ---
-
+  }
 
   // Action to create a new status post
-async function createPost(content: string) {
-    // Note: We might want a separate loading/error state for creation later
+  async function createPost(content: string) {
     console.log("FeedStore: Attempting to create post...");
-  
-    // Basic validation (could also be done in component)
     if (!content || content.trim().length === 0) {
       console.error("FeedStore: Post content cannot be empty.");
-      throw new Error("Post content cannot be empty."); // Throw error to component
+      throw new Error("Post content cannot be empty.");
     }
-  
+
     try {
-      // Get auth store to ensure user is logged in
-      // (axios interceptor handles token, but this prevents unnecessary calls)
       const authStore = useAuthStore();
       if (!authStore.isAuthenticated) {
         console.warn("FeedStore: User not authenticated, cannot create post.");
         throw new Error("User not authenticated.");
       }
-  
-      // Make the POST request to the backend endpoint for creating StatusPosts
-      // Ensure '/posts/' matches the URL defined in community/urls.py for StatusPostListCreateView
+
+      // Use /api/posts/ which maps to StatusPostListCreateView
       const response = await axiosInstance.post<Post>('/posts/', {
-        content: content // Send the content in the request body
+        content: content
       });
-  
+
       console.log("FeedStore: Post created successfully", response.data);
-  
-      // --- Strategy after successful post creation ---
-      // Option 1: Re-fetch the first page of the feed to show the new post
-      // await fetchFeed(1); // Uncomment this line to refresh the feed
-  
-      // Option 2: (More advanced - Optimistic Update) Prepend the new post to the local state
-       posts.value.unshift(response.data); // Add the new post to the beginning of the array
-                                           // Make sure the API returns the created Post object!
-  
-      // Let's use Option 2 (unshift) for now for better UX, assuming API returns the post
-      return response.data; // Return the created post data
-  
+
+      // Optimistic Update: Prepend the new post with isLiking flag
+       posts.value.unshift({ ...response.data, isLiking: false });
+
+      return response.data;
+
     } catch (err: any) {
       console.error("FeedStore: Error creating post:", err);
       const errorMessage = err.response?.data?.detail || err.message || 'Failed to create post.';
-      // We don't update the main feed 'error' state here,
-      // as that's for fetch errors. We throw instead.
-      throw new Error(errorMessage); // Throw error for the component to handle
+      throw new Error(errorMessage);
     } finally {
-      // Reset creation-specific loading state if we add one later
       console.log("FeedStore: Create post attempt finished.");
     }
-  } // --- End of createPost function ---
-  
+  }
 
-  // --- ADD THIS ACTION ---
-// Action to toggle like status for a post
-async function toggleLike(postToToggle: Post) {
-    console.log(`FeedStore: Toggling like for post ID ${postToToggle.id}`);
-  
-    // Find the index of the post in the current state array
-    const postIndex = posts.value.findIndex(p => p.id === postToToggle.id && p.post_type === postToToggle.post_type);
+  // ========================================
+  // === UPDATED toggleLike Action ===
+  // ========================================
+  async function toggleLike(postId: number) { // Accept postId for easier finding
+    console.log(`FeedStore: Toggling like for post ID ${postId}`);
+
+    const postIndex = posts.value.findIndex(p => p.id === postId);
     if (postIndex === -1) {
       console.error("FeedStore: Post to toggle not found in current feed state.");
-      return; // Or throw error?
+      return;
     }
-  
-    // --- Optimistic Update (Optional but good UX) ---
-    // Immediately update the local state before waiting for the API response.
-    // Store the original values in case we need to revert on error.
-    const originalLiked = posts.value[postIndex].is_liked_by_user;
-    const originalCount = posts.value[postIndex].like_count ?? 0; // Handle undefined count
-  
-    // Toggle liked status and adjust count locally
-    posts.value[postIndex].is_liked_by_user = !originalLiked;
-    posts.value[postIndex].like_count = originalLiked ? originalCount - 1 : originalCount + 1;
-    // --- End of Optimistic Update ---
-  
-  
+
+    // Get the actual post object
+    const post = posts.value[postIndex];
+
+    // Prevent rapid clicks if already processing
+    if (post.isLiking) {
+        console.log(`FeedStore: Like toggle already in progress for post ${postId}`);
+        return;
+    }
+    post.isLiking = true; // Set flag to true
+
+    const originalLikedStatus = post.is_liked_by_user;
+    const originalLikeCount = post.like_count;
+
+    // --- Optimistic Update ---
+    post.is_liked_by_user = !originalLikedStatus;
+    post.like_count += post.is_liked_by_user ? 1 : -1;
+    // -------------------------
+
     try {
-      // Prepare API request data
-      const contentType = postToToggle.post_type.toLowerCase(); // e.g., 'statuspost'
-      const objectId = postToToggle.id;
-      const url = `/${contentType}/${objectId}/like/`; // Construct the URL
-  
-      // Call the backend toggle endpoint
-      const response = await axiosInstance.post<{ liked: boolean, like_count: number }>(url);
-  
-      // --- Update with actual API response (Verify Optimistic) ---
-      // It's good practice to update the state with the exact values
-      // returned by the API to ensure consistency.
+      // --- CONSTRUCT THE CORRECT URL ---
+      // Use content_type_id and object_id from the post data
+      const apiUrl = `/content/${post.content_type_id}/${post.object_id}/like/`;
+      console.log(`FeedStore: Calling API: POST ${apiUrl}`);
+      // ----------------------------------
+
+      // --- Make the POST request ---
+      const response = await axiosInstance.post<{ liked: boolean, like_count: number }>(apiUrl);
+      // -----------------------------
+
+      // --- Update with actual data from backend response ---
+      // It's safer to use the response data to ensure consistency
       posts.value[postIndex].is_liked_by_user = response.data.liked;
       posts.value[postIndex].like_count = response.data.like_count;
-      console.log(`FeedStore: Like toggled successfully for post ${objectId}`, response.data);
-      // --- End of API response update ---
-  
+      console.log(`FeedStore: Like toggled successfully for post ${postId}`, response.data);
+      // -----------------------------------------------------
+
     } catch (err: any) {
-      console.error(`FeedStore: Error toggling like for post ${postToToggle.id}:`, err);
-  
+      console.error(`FeedStore: Error toggling like for post ${postId}:`, err);
       // --- Revert Optimistic Update on Error ---
-      if (postIndex !== -1) { // Check index again just in case
-         posts.value[postIndex].is_liked_by_user = originalLiked;
-         posts.value[postIndex].like_count = originalCount;
+      // Check index again in case the post was removed while request was in flight
+      if (posts.value[postIndex]?.id === postId) {
+         posts.value[postIndex].is_liked_by_user = originalLikedStatus;
+         posts.value[postIndex].like_count = originalLikeCount;
+         console.log(`FeedStore: Reverted optimistic like state for post ${postId}`);
       }
-      // --- End of Revert ---
-  
-      // Optionally set a general error state or re-throw
-      // error.value = err.response?.data?.detail || err.message || 'Failed to toggle like.';
-      // For now, just logging the error and reverting is sufficient
+      // Set general error state or re-throw if needed by component
+      error.value = err.response?.data?.detail || err.message || 'Failed to toggle like.';
+      // -----------------------------------------
     } finally {
-      // Optional: Add loading state specific to this post ID if needed
+      // --- Reset the isLiking flag ---
+      // Check index again
+      if (posts.value[postIndex]?.id === postId) {
+         posts.value[postIndex].isLiking = false;
+      }
+       console.log(`FeedStore: Like toggle finished for post ${postId}`);
+      // -------------------------------
     }
-  } // --- End of toggleLike function ---
-  
+  }
+  // ========================================
 
 
+  // --- Return exposed state, getters, and actions ---
   return {
     posts,
     isLoading,
@@ -255,8 +242,8 @@ async function toggleLike(postToToggle: Post) {
     currentPage,
     totalPages,
     hasNextPage,
-    // statusPosts, // Expose getters if defined
-    fetchFeed, // Action will be added and exposed later
+    // getters can be exposed here if defined
+    fetchFeed,
     createPost,
     toggleLike
   };

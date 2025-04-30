@@ -24,5 +24,5 @@ urlpatterns = [
     # We will also need registration endpoints later
     path('api/auth/registration/', include('dj_rest_auth.registration.urls')), 
      # Add Community App URLs under '/api/' namespace
-    path('api/', include('community.urls')), # Add this line
+    path('api/', include('community.urls', namespace='community')), # Add this line
 ]

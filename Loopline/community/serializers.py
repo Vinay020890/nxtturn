@@ -70,26 +70,85 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
 
 # Add this serializer below UserProfileUpdateSerializer
 
+# --- UPDATED StatusPostSerializer ---
 class StatusPostSerializer(serializers.ModelSerializer):
     """
-    Serializer for StatusPost model. Includes basic author info.
+    Serializer for StatusPost model. Includes author info, like status, and IDs for liking.
     """
-    # Use the locally defined UserSerializer
-    author = UserSerializer(read_only=True)
-    # Optionally add fields for like counts or comment counts later
+    author = UserSerializer(read_only=True) # Use the UserSerializer
+    is_liked_by_user = serializers.SerializerMethodField()
+    like_count = serializers.SerializerMethodField() # Use the model property
+    content_type_id = serializers.SerializerMethodField()
+    object_id = serializers.SerializerMethodField()
 
     class Meta:
-        model = StatusPost # Uses the imported StatusPost model
+        model = StatusPost
         fields = [
             'id',
-            'author', # Nested UserSerializer on read
+            'author',           # Nested UserSerializer
             'content',
             'created_at',
             'updated_at',
-            # Add fields like 'like_count', 'comment_count' here later if needed
+            'like_count',       # Added
+            'is_liked_by_user', # Added
+            'content_type_id',  # Added for constructing like URL
+            'object_id',        # Added for constructing like URL
         ]
-        # Author is set in the view, timestamps are automatic
-        read_only_fields = ['author', 'created_at', 'updated_at']
+        # Ensure all read-only fields are listed
+        read_only_fields = [
+            'id', 'author', 'created_at', 'updated_at', 'like_count',
+            'is_liked_by_user', 'content_type_id', 'object_id'
+        ]
+
+     # --- Add this method ---
+    def get_like_count(self, obj):
+        """
+        Returns the like count for the post instance.
+        Accesses the 'like_count' property or calculates it.
+        """
+        # Check if the object is already saved (has a pk)
+        # For a newly created object *before* the response, obj.likes might work if relations are set up
+        # Or access the property if defined on the model
+        if hasattr(obj, 'like_count'): # Check if property exists (preferred)
+             # For a new object, this property should return 0
+             return obj.like_count
+        elif hasattr(obj, 'pk') and obj.pk is not None and hasattr(obj, 'likes'): # Fallback if property doesn't exist but object is saved
+             return obj.likes.count()
+        return 0 # Default for unsaved or non-likable objects
+    # --- End added method ---
+
+    def get_is_liked_by_user(self, obj):
+        """ Check if the current user (from context) has liked this post. """
+        user = self.context.get('request').user
+        if user and user.is_authenticated:
+            content_type = ContentType.objects.get_for_model(obj)
+            return Like.objects.filter(
+                content_type=content_type,
+                object_id=obj.pk,
+                user=user
+            ).exists()
+        return False
+
+    def get_content_type_id(self, obj):
+        """ Get the ContentType ID for the StatusPost model. """
+        content_type = ContentType.objects.get_for_model(obj)
+        return content_type.id
+
+    def get_object_id(self, obj):
+        """ Get the primary key of the StatusPost instance. """
+        return obj.pk
+
+    # Ensure the create method sets the author from the request context if needed
+    # (This might be handled in the View, but good practice to have here too
+    # if this serializer is used for creation directly)
+    def create(self, validated_data):
+        request = self.context.get('request')
+        if request and hasattr(request, 'user'):
+            validated_data['author'] = request.user
+        # Ensure required fields are present if called directly
+        if 'content' not in validated_data:
+             raise serializers.ValidationError({"content": "Content field is required."})
+        return super().create(validated_data)
 
 
 # Add these serializers
@@ -292,41 +351,70 @@ class CommentSerializer(serializers.ModelSerializer):
 
 class FeedItemSerializer(serializers.Serializer):
     """
-    Serializer for items appearing in the user's feed.
-    Can represent different types of underlying objects (e.g., StatusPost, ForumPost).
+    Serializes different feed item types (StatusPost, ForumPost)
+    into a common format for the /api/feed/ endpoint.
     """
-    # Common fields we want for every feed item
-    id = serializers.IntegerField(source='pk', read_only=True) # Use pk for consistency
-    post_type = serializers.SerializerMethodField() # To distinguish between types
-    author = UserSerializer(read_only=True) # Author of the original post
+    # --- Common fields expected by the frontend ---
+    id = serializers.IntegerField(read_only=True) # Usually the object's pk
+    author = UserSerializer(read_only=True) # Use the consistent UserSerializer
+    content = serializers.CharField(read_only=True) # Assuming 'content' exists
     created_at = serializers.DateTimeField(read_only=True)
     updated_at = serializers.DateTimeField(read_only=True)
-
-    # Fields that might exist on only some types (marked as read_only, method fields handle logic)
-    title = serializers.SerializerMethodField()
-    content = serializers.CharField(read_only=True) # Assuming both have a 'content' field
-    # Optional: Add fields for group/category context later if needed
-
-    # Define methods to get the type-specific fields
+    like_count = serializers.SerializerMethodField()       # <-- ADDED
+    is_liked_by_user = serializers.SerializerMethodField() # <-- ADDED
+    content_type_id = serializers.SerializerMethodField()  # <-- ADDED
+    object_id = serializers.SerializerMethodField()        # <-- ADDED (will be same as id)
+    post_type = serializers.SerializerMethodField()        # <-- ADDED (e.g., 'statuspost')
+    title = serializers.SerializerMethodField() # Use method field for consistency
 
     def get_post_type(self, obj):
-        """Determine the type of the post object."""
-        if isinstance(obj, StatusPost):
-            return 'statuspost'
-        elif isinstance(obj, ForumPost):
-            return 'forumpost'
-        return 'unknown' # Fallback
+        """ Return a string identifying the type of the post object. """
+        return obj.__class__.__name__.lower() # e.g., 'statuspost', 'forumpost'
 
     def get_title(self, obj):
-        """Get the title if it exists (only for ForumPost)."""
+        """ Get the title if it exists. """
         return getattr(obj, 'title', None) # Return None if no 'title' attribute
 
-    # We assume the 'author', 'content', 'created_at', 'updated_at' fields
-    # exist on both StatusPost and ForumPost models and can be accessed directly.
-    # The 'author = UserSerializer()' handles fetching nested author data automatically.
-    # The 'content = serializers.CharField()' handles fetching content automatically.
+    def get_like_count(self, obj):
+        """ Get like count using the 'likes' relation. """
+        if hasattr(obj, 'likes'): # Check if the object has the 'likes' relation manager
+             return obj.likes.count()
+        return 0 # Default if not likable
 
-# --- End of FeedItemSerializer ---
+    def get_is_liked_by_user(self, obj):
+        """ Check if the current user liked this object. """
+        # Ensure context with request is passed to the serializer in the view
+        request = self.context.get('request')
+        if not request or not request.user or not request.user.is_authenticated:
+             return False
+
+        user = request.user
+        if hasattr(obj, 'likes'):
+            content_type = ContentType.objects.get_for_model(obj)
+            # Check efficiently if a Like object exists
+            return Like.objects.filter(
+                content_type=content_type,
+                object_id=obj.pk,
+                user=user
+            ).exists()
+        return False
+
+    # --- Method to get ContentType ID ---
+    def get_content_type_id(self, obj):
+        content_type = ContentType.objects.get_for_model(obj)
+        return content_type.id
+
+    # --- Method to get Object ID (which is the primary key) ---
+    def get_object_id(self, obj):
+        # This should be the same as the 'id' field, but explicit is okay
+        return obj.pk
+
+    # Optional: Override to_representation if needed for more complex scenarios
+    # def to_representation(self, instance):
+    #     representation = super().to_representation(instance)
+    #     # Add any custom logic here if base fields aren't sufficient
+    #     return representation
+# --- End of CORRECTED FeedItemSerializer ---
 
 # --- Add these serializers for Private Messaging ---
 

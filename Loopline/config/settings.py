@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'allauth.socialaccount',    # Add this (optional but often needed)
     'dj_rest_auth.registration',# Add this for registration views specifically    # Add this
     'corsheaders',
+    'django_extensions', 
 
     # Your Apps
     'community', # Or 'community.apps.CommunityConfig'

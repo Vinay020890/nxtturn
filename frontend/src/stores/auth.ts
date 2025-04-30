@@ -3,6 +3,7 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import axiosInstance from '@/services/axiosInstance';
+import router from '@/router'; // Or wherever your router instance is exported from
 
 // Later: import router from '@/router'; // For potential redirects
 
@@ -111,14 +112,38 @@ export const useAuthStore = defineStore('auth', () => {
             }
           }
 
-  // Action to perform logout
-  function logout() {
-    console.log('Logging out via store action');
+  // --- END OF LOGIN FUNCTION ---
+
+    // Your REVISED logout function
+async function logout() { // Make it async
+  console.log('Logging out via store action / function...'); // Updated log
+
+  // --- ADD API CALL within try...finally ---
+  try {
+    // Make request to backend logout endpoint
+    // Use relative path '/logout/' assuming baseURL includes '/api/'
+    console.log('Attempting backend logout...');
+    await axiosInstance.post('/auth/logout/'); // <-- ADD /auth/ part
+    console.log('Backend logout successful.');
+  } catch (error: any) {
+    // Log the error but proceed with client-side logout anyway
+    console.error('Backend logout call failed (proceeding with client logout):', error);
+  } finally {
+    // --- ENSURE THIS ALWAYS RUNS ---
+    console.log('Performing client-side logout cleanup.');
+    // Clear token using your existing function
     setToken(null);
-    // TODO: Call backend logout endpoint if necessary (e.g., /api/auth/logout/)
-    // Redirect to login page (best handled in component or router guard)
-    // router.push('/login');
+    // Ensure Axios default headers are cleared if they were set manually elsewhere
+    delete axiosInstance.defaults.headers.common['Authorization'];
+    // -----------------------------
+
+    // Redirect to login page (keep commented out if handled elsewhere)
+    router.push('/login');
+    console.log('Client-side logout cleanup finished.');
+    // NOTE: Redirection might need to happen *after* this async function completes
+    // in the component that calls it, or via router guards.
   }
+}
 
   // Action to fetch user profile (if not included in login response)
   async function fetchUserProfile() {
