@@ -19,6 +19,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     # Explicitly declare ArrayFields if needed, though ModelSerializer might handle basic cases
     skills = serializers.ListField(child=serializers.CharField(max_length=100), required=False, allow_null=True)
     interests = serializers.ListField(child=serializers.CharField(max_length=100), required=False, allow_null=True)
+    is_followed_by_request_user = serializers.SerializerMethodField()
 
     class Meta:
         model = UserProfile
@@ -38,11 +39,38 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'skills',
             'interests',
             'profile_picture_url',
-            'updated_at'
+            'updated_at',
+            'is_followed_by_request_user'
         ]
         # Make profile fields writable (except user and updated_at)
         # The 'user' field on the profile itself shouldn't be changed via this API
-        read_only_fields = ['user', 'updated_at']
+        read_only_fields = ['user', 'updated_at', 'is_followed_by_request_user']
+
+    def get_is_followed_by_request_user(self, obj):
+        """
+        Checks if the user making the request is following the user profile being serialized.
+        'obj' here is the UserProfile instance.
+        """
+        # Get the request user from the context (passed by the view)
+        request = self.context.get('request')
+        if not request or not request.user or not request.user.is_authenticated:
+            return False # Anonymous users don't follow anyone
+
+        request_user = request.user
+        profile_user = obj.user # The user whose profile this is
+
+        if request_user == profile_user:
+            return False # Cannot follow yourself
+
+        # Check if a Follow relationship exists
+        # Need to import the Follow model
+        from .models import Follow # Make sure this import is at the TOP of the file
+        is_following = Follow.objects.filter(
+            follower=request_user,
+            following=profile_user
+        ).exists()
+        return is_following
+    # --- END ADD METHOD ---
 
 # Serializer specifically for UPDATING the profile (doesn't need nested user)
 class UserProfileUpdateSerializer(serializers.ModelSerializer):

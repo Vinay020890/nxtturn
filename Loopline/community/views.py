@@ -57,6 +57,14 @@ class UserProfileDetailView(generics.RetrieveUpdateAPIView):
             return [IsAuthenticated(), IsOwnerOrReadOnly()]
         # Anyone can view profiles
         return [AllowAny()]
+    
+    def get_serializer_context(self):
+        """
+        Ensures the request object is available in the serializer context.
+        """
+        context = super().get_serializer_context() # Get default context
+        context['request'] = self.request          # Add request object
+        return context
 
 # --- ADD THIS NEW VIEW for User's Posts ---
 class UserPostListView(generics.ListAPIView):

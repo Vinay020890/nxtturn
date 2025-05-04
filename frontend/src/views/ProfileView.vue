@@ -5,157 +5,240 @@ import type { Post } from '@/stores/feed';
 import { useProfileStore } from '@/stores/profile';
 import PostItem from '@/components/PostItem.vue'; // Import PostItem
 import { format } from 'date-fns'; // Keep format import
+import { storeToRefs } from 'pinia';
+import { useAuthStore } from '@/stores/auth';
 
-const route = useRoute();
-const profileStore = useProfileStore();
 
+// --- STORE INSTANCES ---
+const route = useRoute(); // Keep route instance
+const profileStoreInstance = useProfileStore(); // Instance for profile actions
+const authStoreInstance = useAuthStore();     // Instance for auth state/actions
+
+// --- CREATE REACTIVE REFS FROM STORE STATE ---
+// Destructure state needed from the profile store
+const {
+    currentProfile,    // The profile object being viewed
+    userPosts,         // The posts list for the profile user
+    isLoadingProfile,  // Loading flag for profile details
+    isLoadingPosts,    // Loading flag for posts
+    errorProfile,      // Error for profile details
+    errorPosts,        // Error for posts
+    postsPagination,   // Pagination state for posts
+    isFollowing,       // Follow status (boolean)
+    isLoadingFollow    // Loading flag for follow actions
+} = storeToRefs(profileStoreInstance); // Use storeToRefs with the instance
+
+// Destructure state needed from the auth store
+const { currentUser, isAuthenticated } = storeToRefs(authStoreInstance); // Use storeToRefs with the instance
+
+// --- COMPONENT LOGIC ---
+// Get the username from the route parameters reactively
 const username = computed(() => route.params.username as string || '');
 
-// --- MODIFY loadProfileData to accept page ---
-const loadProfileData = async (page = 1) => { // Accept page, default 1
+// --- ADD isOwnProfile COMPUTED PROPERTY HERE ---
+const isOwnProfile = computed(() => {
+        
+            // --- ADD/MODIFY THESE LINES ---
+        // Depend on the trigger ref to force re-evaluation
+        const trigger = dataLoadedTrigger.value;
+        console.log(`isOwnProfile re-evaluating (trigger=${trigger})`); // Log re-evaluation
+        // --- END ADD/MODIFY ---
+
+        const loggedInUser = currentUser.value;
+        const profileData = currentProfile.value;
+
+        // Check only after profile data is loaded AND loggedInUser exists
+        if (loggedInUser && profileData) {
+             const authUsername = loggedInUser.username;
+             const profileUsername = profileData.username;
+             // --- ADD DETAILED LOGS ---
+             console.log(`COMPUTED CHECK: Auth='${authUsername}' (${typeof authUsername}), Profile='${profileUsername}' (${typeof profileUsername})`);
+             const result = authUsername === profileUsername;
+             console.log(`COMPUTED CHECK: Comparison result (===) is: ${result}`);
+             // --- END LOGS ---
+             return result; // Return the comparison result
+        }
+        // --- ADD LOG ---
+        console.log('COMPUTED CHECK: Returning false (data missing?)');
+        // --- END LOG ---
+        return false; // Default to false if data isn't ready
+    });
+
+const dataLoadedTrigger = ref(0); // Add this trigger ref
+
+// === REPLACE existing function definitions with these ===
+
+const loadProfileData = async (page = 1) => {
   if (username.value) {
     console.log(`ProfileView: Triggering fetch for ${username.value}, page ${page}`);
 
-    // Fetch profile only if on page 1 or if profile isn't loaded yet
-    const fetchProfileIfNeeded = (page === 1 || !profileStore.currentProfile)
-        ? profileStore.fetchProfile(username.value)
-        : Promise.resolve(); // Don't refetch profile on post pagination
+    const fetchProfileIfNeeded = (page === 1 || !currentProfile.value)
+        ? profileStoreInstance.fetchProfile(username.value)
+        : Promise.resolve();
+    const fetchPostsPromise = profileStoreInstance.fetchUserPosts(username.value, page);
 
-    // Fetch user posts for the requested page
-    const fetchPostsPromise = profileStore.fetchUserPosts(username.value, page);
-
-    // Await both (profile fetch might be instant if resolved)
-    await Promise.all([fetchProfileIfNeeded, fetchPostsPromise]);
-
-    console.log(`ProfileView: Fetch completed for ${username.value}, page ${page}`);
+    try { // Add try block
+         await Promise.all([fetchProfileIfNeeded, fetchPostsPromise]);
+    } catch(e) {
+         console.error("Error during data fetch:", e); // Log potential errors from promises
+    } finally { // Use finally to ensure this runs even if one promise fails
+        // --- Force reactivity check AFTER fetches ---
+        await nextTick(); // Wait for DOM updates potentially triggered by store changes
+        console.log(`ProfileView: Fetch promises completed for ${username.value}, page ${page}. Re-checking state.`);
+        // Explicitly log the values again AFTER await and nextTick
+        console.log(`   -> After nextTick - currentProfile username: ${currentProfile.value?.username}`);
+        console.log(`   -> After nextTick - currentUser username: ${currentUser.value?.username}`);
+        // --- End force reactivity ---
+        // --- ADD THIS LINE ---
+        dataLoadedTrigger.value++; // Increment trigger
+        console.log('Incremented dataLoadedTrigger to:', dataLoadedTrigger.value); // Optional log
+        // --- END ADD ---
+    }
   } else {
     console.warn("ProfileView: Username is empty, cannot fetch data.");
-    profileStore.clearProfileData();
+    profileStoreInstance.clearProfileData();
   }
 };
-// --- END MODIFY loadProfileData ---
 
-
-onMounted(() => {
+onMounted(() => { // Keep existing onMounted, it calls loadProfileData which is now corrected
   console.log('ProfileView mounted for username:', username.value);
-  loadProfileData(1); // Load initial page 1 data
+  loadProfileData(1);
 });
 
-watch(username, (newUsername, oldUsername) => {
+watch(username, (newUsername, oldUsername) => { // Keep existing watch
   if (newUsername && newUsername !== oldUsername) {
     console.log(`ProfileView: Username changed to ${newUsername}, reloading data...`);
-    loadProfileData(1); // Load page 1 for new user
+    loadProfileData(1);
   }
 });
 
-onUnmounted(() => {
+onUnmounted(() => { // Update this one
   console.log('ProfileView unmounted, clearing profile data.');
-  profileStore.clearProfileData();
+  profileStoreInstance.clearProfileData(); // Use instance for action
 });
 
-// --- ADD Pagination Methods ---
-const fetchPreviousUserPosts = () => {
-    // Check using currentPage directly from the reactive ref
-    if (profileStore.postsPagination.currentPage > 1) {
-        loadProfileData(profileStore.postsPagination.currentPage - 1);
+const fetchPreviousUserPosts = () => { // Update this one
+    // Use local ref 'postsPagination' directly
+    if (postsPagination.value.currentPage > 1) {
+        loadProfileData(postsPagination.value.currentPage - 1);
     }
 }
-const fetchNextUserPosts = () => {
-    // Check using hasNextPage logic derived from 'next' url
-    const hasNext = !!profileStore.postsPagination.next;
+const fetchNextUserPosts = () => { // Update this one
+    // Use local ref 'postsPagination' directly
+    const hasNext = !!postsPagination.value.next;
     if (hasNext) {
-        loadProfileData(profileStore.postsPagination.currentPage + 1);
+        loadProfileData(postsPagination.value.currentPage + 1);
     }
 }
-// --- END Pagination Methods ---
+
+
+
 
 </script>
 
 <template>
-    <div class="profile-view">
-      <h1>Profile Page for: {{ username }}</h1>
-  
-      <!-- Loading States -->
-      <div v-if="profileStore.isLoadingProfile || profileStore.isLoadingPosts">
-        <p>Loading profile...</p>
-        <!-- Add a spinner or more detailed loading indicator if desired -->
-      </div>
-  
-      <!-- Error States -->
-      <div v-else-if="profileStore.errorProfile || profileStore.errorPosts" class="error-message">
-        <p v-if="profileStore.errorProfile">Error loading profile details: {{ profileStore.errorProfile }}</p>
-        <p v-if="profileStore.errorPosts">Error loading posts: {{ profileStore.errorPosts }}</p>
-      </div>
-  
-      <!-- Data Display -->
-      <div v-else>
-        <!-- Profile Details Section -->
-        <section class="profile-details" v-if="profileStore.currentProfile">
-          <h2>User Details</h2>
-          <!-- Display actual profile fields -->
-          <p><strong>Username:</strong> {{ profileStore.currentProfile.username }}</p>
-          <p><strong>Name:</strong> {{ profileStore.currentProfile.first_name }} {{ profileStore.currentProfile.last_name }}</p>
-          
-          <p v-if="profileStore.currentProfile?.date_joined"> <!-- Check if date_joined exists -->
-           <strong>Joined:</strong> {{ format(new Date(profileStore.currentProfile.date_joined), 'PPP') }}
-          </p>
+  <div class="profile-view">
+    <!-- Use local computed 'username' -->
+    <h1>Profile Page for: {{ username }}</h1>
 
-          <p v-if="profileStore.currentProfile.bio"><strong>Bio:</strong> {{ profileStore.currentProfile.bio }}</p>
-          <p v-if="profileStore.currentProfile.location_city || profileStore.currentProfile.location_state">
-            <strong>Location:</strong> {{ profileStore.currentProfile.location_city }}{{ profileStore.currentProfile.location_city && profileStore.currentProfile.location_state ? ', ' : '' }}{{ profileStore.currentProfile.location_state }}
-          </p>
-          <p v-if="profileStore.currentProfile.college_name"><strong>College:</strong> {{ profileStore.currentProfile.college_name }}</p>
-          <p v-if="profileStore.currentProfile.major"><strong>Major:</strong> {{ profileStore.currentProfile.major }}</p>
-          <p v-if="profileStore.currentProfile.graduation_year"><strong>Graduation Year:</strong> {{ profileStore.currentProfile.graduation_year }}</p>
-          <p v-if="profileStore.currentProfile.linkedin_url"><strong>LinkedIn:</strong> <a :href="profileStore.currentProfile.linkedin_url" target="_blank" rel="noopener noreferrer">{{ profileStore.currentProfile.linkedin_url }}</a></p>
-          <p v-if="profileStore.currentProfile.portfolio_url"><strong>Portfolio:</strong> <a :href="profileStore.currentProfile.portfolio_url" target="_blank" rel="noopener noreferrer">{{ profileStore.currentProfile.portfolio_url }}</a></p>
-  
-          <div v-if="profileStore.currentProfile.skills?.length > 0">
-              <strong>Skills:</strong>
-              <ul><li v-for="skill in profileStore.currentProfile.skills" :key="skill">{{ skill }}</li></ul>
-          </div>
-           <div v-if="profileStore.currentProfile.interests?.length > 0">
-              <strong>Interests:</strong>
-              <ul><li v-for="interest in profileStore.currentProfile.interests" :key="interest">{{ interest }}</li></ul>
-          </div>
-  
-          <!-- Add Profile Picture if URL exists -->
-          <img v-if="profileStore.currentProfile.profile_picture_url" :src="profileStore.currentProfile.profile_picture_url" alt="Profile Picture" width="100">
-  
-        </section>
-         <section v-else>
-              <!-- Message if profile data couldn't load but no specific error -->
-              <p>Could not load profile details.</p>
-         </section>
-  
-        <hr />
-  
-        <!-- User Posts Section -->
-        <section class="user-posts">
-          <h2>Posts by {{ username }}</h2>
-           <!-- Show loading specifically for posts if profile is already loaded -->
-           <p v-if="profileStore.isLoadingPosts && !profileStore.isLoadingProfile">Loading posts...</p>
-          <div v-else-if="profileStore.userPosts.length > 0">
-                      <!-- Loop through posts using the PostItem component -->
-          <!-- We can remove the ul/li structure if PostItem renders its own article/div -->
-            <PostItem v-for="post in profileStore.userPosts" :key="post.id" :post="post" />
-            <!-- TODO: Add pagination for user posts -->
-             <!-- === ADD PAGINATION CONTROLS RIGHT HERE === -->
-            <div class="pagination-controls" v-if="!profileStore.isLoadingPosts && profileStore.postsPagination.count > profileStore.postsPagination.pageSize">
-                <button :disabled="!profileStore.postsPagination.previous" @click="fetchPreviousUserPosts">Previous</button>
-                <span>Page {{ profileStore.postsPagination.currentPage }} of {{ profileStore.postsPagination.totalPages }}</span>
-                <button :disabled="!profileStore.postsPagination.next" @click="fetchNextUserPosts">Next</button>
-            </div>
-            <!-- === END PAGINATION CONTROLS === -->
-          </div>
-          <p v-else>
-              <!-- Message shown if loading is finished and no posts exist -->
-              This user hasn't posted anything yet.
-          </p>
-        </section>
-      </div>
+    <!-- Loading States - Use local refs -->
+    <div v-if="isLoadingProfile || isLoadingPosts">
+      <p>Loading profile...</p>
     </div>
-  </template>
+
+    <!-- Error States - Use local refs -->
+    <div v-else-if="errorProfile || errorPosts" class="error-message">
+      <p v-if="errorProfile">Error loading profile details: {{ errorProfile }}</p>
+      <p v-if="errorPosts">Error loading posts: {{ errorPosts }}</p>
+    </div>
+
+    <!-- Data Display -->
+    <div v-else>
+      <!-- Profile Details Section - Use local ref 'currentProfile' -->
+      <section class="profile-details" v-if="currentProfile">
+        <h2>User Details</h2>
+         <!-- Access properties via local ref 'currentProfile' -->
+        <p><strong>Username:</strong> {{ currentProfile.username }}</p>
+        <p><strong>Name:</strong> {{ currentProfile.first_name }} {{ currentProfile.last_name }}</p>
+
+        <!-- === FOLLOW BUTTON === -->
+         <!-- Use local refs 'currentProfile', 'currentUser', 'isFollowing', 'isLoadingFollow' -->
+         <!-- NOTE: Still using direct comparison in v-if as computed was problematic -->
+         <!-- Use store instance 'profileStoreInstance' for actions -->
+        <div class="follow-button-container" v-if="currentProfile && currentUser && username !== currentUser.username">
+            <button
+                @click="isFollowing ? profileStoreInstance.unfollowUser(username) : profileStoreInstance.followUser(username)"
+                :disabled="isLoadingFollow"
+                class="follow-button"
+                :class="{ 'following': isFollowing }"
+            >
+                <span v-if="isLoadingFollow">...</span>
+                <span v-else>{{ isFollowing ? 'Unfollow' : 'Follow' }}</span>
+                
+            </button>
+        </div>
+        <!-- === END FOLLOW BUTTON === -->
+
+        <!-- Use local ref 'currentProfile' -->
+        <p v-if="currentProfile.date_joined">
+          <strong>Joined:</strong> {{ format(new Date(currentProfile.date_joined), 'PPP') }}
+        </p>
+        <p v-if="currentProfile.bio"><strong>Bio:</strong> {{ currentProfile.bio }}</p>
+        <p v-if="currentProfile.location_city || currentProfile.location_state">
+          <strong>Location:</strong> {{ currentProfile.location_city }}{{ currentProfile.location_city && currentProfile.location_state ? ', ' : '' }}{{ currentProfile.location_state }}
+        </p>
+        <p v-if="currentProfile.college_name"><strong>College:</strong> {{ currentProfile.college_name }}</p>
+        <p v-if="currentProfile.major"><strong>Major:</strong> {{ currentProfile.major }}</p>
+        <p v-if="currentProfile.graduation_year"><strong>Graduation Year:</strong> {{ currentProfile.graduation_year }}</p>
+        <p v-if="currentProfile.linkedin_url"><strong>LinkedIn:</strong> <a :href="currentProfile.linkedin_url" target="_blank" rel="noopener noreferrer">{{ currentProfile.linkedin_url }}</a></p>
+        <p v-if="currentProfile.portfolio_url"><strong>Portfolio:</strong> <a :href="currentProfile.portfolio_url" target="_blank" rel="noopener noreferrer">{{ currentProfile.portfolio_url }}</a></p>
+
+        <!-- Use local ref 'currentProfile' -->
+        <div v-if="currentProfile.skills?.length > 0">
+            <strong>Skills:</strong>
+            <ul><li v-for="skill in currentProfile.skills" :key="skill">{{ skill }}</li></ul>
+        </div>
+         <div v-if="currentProfile.interests?.length > 0">
+            <strong>Interests:</strong>
+            <ul><li v-for="interest in currentProfile.interests" :key="interest">{{ interest }}</li></ul>
+        </div>
+
+        <img v-if="currentProfile.profile_picture_url" :src="currentProfile.profile_picture_url" alt="Profile Picture" width="120">
+
+      </section>
+       <section v-else>
+            <p>Could not load profile details.</p>
+       </section>
+
+      <hr />
+
+      <!-- User Posts Section -->
+      <section class="user-posts">
+         <!-- Use local computed 'username' -->
+        <h2>Posts by {{ username }}</h2>
+         <!-- Use local refs -->
+         <p v-if="isLoadingPosts && !isLoadingProfile">Loading posts...</p>
+        <!-- Use local ref -->
+        <div v-else-if="userPosts.length > 0">
+           <!-- Use PostItem component -->
+           <PostItem v-for="post in userPosts" :key="post.id" :post="post" />
+
+           <!-- PAGINATION CONTROLS - Use local refs -->
+           <div class="pagination-controls" v-if="!isLoadingPosts && postsPagination.count > postsPagination.pageSize">
+               <button :disabled="!postsPagination.previous" @click="fetchPreviousUserPosts">Previous</button>
+               <span>Page {{ postsPagination.currentPage }} of {{ postsPagination.totalPages }}</span>
+               <button :disabled="!postsPagination.next" @click="fetchNextUserPosts">Next</button>
+           </div>
+           <!-- END PAGINATION CONTROLS -->
+
+        </div>
+        <p v-else>
+            This user hasn't posted anything yet.
+        </p>
+      </section>
+    </div>
+  </div>
+</template>
 
 <style scoped>
 .profile-view {
