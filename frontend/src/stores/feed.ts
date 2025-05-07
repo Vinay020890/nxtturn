@@ -18,7 +18,7 @@ interface PostAuthor {
 // ==========================================
 export interface Post {
   id: number; // This should be the same as object_id
-  // post_type: string; // Can remove if not used elsewhere, content_type_id is used for liking
+  post_type: string; // The model name string (e.g., 'statuspost', 'forumpost') from FeedItemSerializer
   author: PostAuthor;
   created_at: string; // Consider using Date object later
   updated_at: string;

@@ -375,7 +375,7 @@ class CommentListCreateAPIView(generics.ListCreateAPIView):
     """ List comments for an object (GET) or create one (POST). """
     serializer_class = CommentSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
-    pagination_class = PageNumberPagination # Add pagination
+    pagination_class = None  # <-- EXPLICITLY SET TO NONE
 
     def get_queryset(self):
         content_type_str = self.kwargs.get('content_type')
@@ -399,7 +399,17 @@ class CommentListCreateAPIView(generics.ListCreateAPIView):
         queryset = Comment.objects.filter(
             content_type=content_type,
             object_id=object_id
-        ).select_related('author__profile').order_by('created_at') # Order comments chronologically
+        ).select_related('author__userprofile').order_by('created_at') # Order comments chronologically
+
+         # --- ADD DEBUG PRINT HERE ---
+        print(f"DEBUG: QuerySet for comments ({content_type_str}/{object_id}): {queryset}")
+        # You can also try printing the actual list to force evaluation:
+        # try:
+        #     print(f"DEBUG: QuerySet as list: {list(queryset)}")
+        # except Exception as e:
+        #     print(f"DEBUG: Error converting queryset to list: {e}")
+        # --- END DEBUG PRINT ---
+        
         return queryset
 
     def perform_create(self, serializer):
