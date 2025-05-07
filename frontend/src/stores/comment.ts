@@ -4,18 +4,15 @@ import { ref } from 'vue';
 import { defineStore } from 'pinia';
 import axiosInstance from '@/services/axiosInstance';
 
-
-// ... other imports if needed ...
-
 // --- Define Comment structure ---
-export interface CommentAuthor { // <-- ADD export
+export interface CommentAuthor {
   id: number;
   username: string;
 }
 
-export interface Comment { // <-- Ensure this is exported
+export interface Comment {
   id: number;
-  author: CommentAuthor; // Uses the exported CommentAuthor
+  author: CommentAuthor;
   content: string;
   created_at: string;
   updated_at: string;
@@ -26,8 +23,12 @@ export interface Comment { // <-- Ensure this is exported
 export const useCommentStore = defineStore('comment', () => {
   // --- State ---
   const commentsByPost = ref<Record<string, Comment[]>>({});
-  const isLoading = ref(false);
-  const error = ref<string | null>(null);
+  const isLoading = ref(false); // Global loading for fetching comments
+  const error = ref<string | null>(null); // Global error for fetching comments
+  
+  // Optional: Add specific state for creation if needed
+  // const isCreatingComment = ref(false);
+  // const createCommentError = ref<string | null>(null);
 
   // --- Actions ---
   async function fetchComments(postType: string, objectId: number) {
@@ -59,13 +60,58 @@ export const useCommentStore = defineStore('comment', () => {
     }
   }
 
-  // --- Return exposed state and actions --- VVVVVVVV ADD THIS VVVVVVVV
+  // --- Action to create a new comment ---
+  async function createComment(postType: string, objectId: number, content: string) {
+    const postKey = `${postType}_${objectId}`;
+    console.log(`CommentStore: Creating comment for ${postKey} with content: "${content}"`);
+
+    // if (isCreatingComment.value) return; // Prevent multiple submissions if using specific loading state
+    // isCreatingComment.value = true;
+    // createCommentError.value = null;
+
+    try {
+      const apiUrl = `/comments/${postType}/${objectId}/`;
+      console.log(`CommentStore: Calling API: POST ${apiUrl}`);
+      const payload = { content: content };
+
+      const response = await axiosInstance.post<Comment>(apiUrl, payload); 
+
+      if (response.data && response.data.id) {
+        console.log(`CommentStore: Comment created successfully for ${postKey}`, response.data);
+
+        if (!Array.isArray(commentsByPost.value[postKey])) {
+          commentsByPost.value[postKey] = [];
+        }
+        commentsByPost.value[postKey].unshift(response.data); // Add to the beginning
+
+        return response.data; 
+      } else {
+        console.error(`CommentStore: Comment creation for ${postKey} succeeded but API returned invalid data`, response.data);
+        throw new Error("Comment created, but received unexpected data from server.");
+      }
+
+    } catch (err: any) {
+      console.error(`CommentStore: Error creating comment for ${postKey}:`, err);
+      // If backend returns specific field errors for 'content':
+      // const errorMessage = err.response?.data?.content?.[0] || err.response?.data?.detail || err.message || 'Failed to create comment.';
+      // createCommentError.value = errorMessage;
+      throw err; // Re-throw for component to handle
+    } finally {
+      // isCreatingComment.value = false;
+      console.log(`CommentStore: Create comment attempt finished for ${postKey}`);
+    }
+  }
+  // --- End of createComment action ---
+
+  // --- Return exposed state and actions ---
   return {
     commentsByPost,
     isLoading,
     error,
+    // isCreatingComment, // Expose if you add specific loading state
+    // createCommentError, // Expose if you add specific error state
     fetchComments,
+    createComment,     // <-- Make sure createComment is included here
   };
-  // --- END --- ^^^^^^^ ADD THIS ^^^^^^^
 
-}); // This should be the final closing bracket/paren
+});
