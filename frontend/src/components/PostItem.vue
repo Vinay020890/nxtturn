@@ -104,7 +104,8 @@ async function handleCommentSubmit() {
     await commentStore.createComment(
       props.post.post_type,      // Pass the post_type (e.g., 'statuspost')
       props.post.object_id,      // Pass the object_id (which is the post's ID)
-      newCommentContent.value    // Pass the comment text
+      newCommentContent.value,   // Pass the comment text
+      props.post.id
     );
     
     // If createComment action doesn't throw an error, it succeeded

@@ -3,6 +3,7 @@
 import { ref } from 'vue';
 import { defineStore } from 'pinia';
 import axiosInstance from '@/services/axiosInstance';
+import { useFeedStore } from '@/stores/feed'; // <-- Import feed store
 
 // --- Define Comment structure ---
 export interface CommentAuthor {
@@ -25,10 +26,6 @@ export const useCommentStore = defineStore('comment', () => {
   const commentsByPost = ref<Record<string, Comment[]>>({});
   const isLoading = ref(false); // Global loading for fetching comments
   const error = ref<string | null>(null); // Global error for fetching comments
-  
-  // Optional: Add specific state for creation if needed
-  // const isCreatingComment = ref(false);
-  // const createCommentError = ref<string | null>(null);
 
   // --- Actions ---
   async function fetchComments(postType: string, objectId: number) {
@@ -61,20 +58,17 @@ export const useCommentStore = defineStore('comment', () => {
   }
 
   // --- Action to create a new comment ---
-  async function createComment(postType: string, objectId: number, content: string) {
+  // ADD parentPostId argument
+  async function createComment(postType: string, objectId: number, content: string, parentPostId: number) {
     const postKey = `${postType}_${objectId}`;
-    console.log(`CommentStore: Creating comment for ${postKey} with content: "${content}"`);
-
-    // if (isCreatingComment.value) return; // Prevent multiple submissions if using specific loading state
-    // isCreatingComment.value = true;
-    // createCommentError.value = null;
+    console.log(`CommentStore: Creating comment for ${postKey} (Parent Post ID: ${parentPostId}) with content: "${content}"`);
 
     try {
       const apiUrl = `/comments/${postType}/${objectId}/`;
       console.log(`CommentStore: Calling API: POST ${apiUrl}`);
       const payload = { content: content };
 
-      const response = await axiosInstance.post<Comment>(apiUrl, payload); 
+      const response = await axiosInstance.post<Comment>(apiUrl, payload);
 
       if (response.data && response.data.id) {
         console.log(`CommentStore: Comment created successfully for ${postKey}`, response.data);
@@ -84,7 +78,26 @@ export const useCommentStore = defineStore('comment', () => {
         }
         commentsByPost.value[postKey].unshift(response.data); // Add to the beginning
 
-        return response.data; 
+        // --- ADDED LOGIC TO UPDATE FEED STORE COUNT ---
+        try {
+          const feedStore = useFeedStore(); // Get feed store instance
+          // Note: This assumes the post is in the main feedStore. If called from ProfileView,
+          // you might need to update profileStore similarly or use a more robust event system.
+          const postIndex = feedStore.posts.findIndex(p => p.id === parentPostId); // Find the parent post by its ID
+          if (postIndex !== -1) {
+            // Increment the comment count directly on the post object in the feed store
+            feedStore.posts[postIndex].comment_count = (feedStore.posts[postIndex].comment_count ?? 0) + 1;
+            console.log(`CommentStore: Incremented comment_count in feedStore for post ${parentPostId}`);
+          } else {
+            console.warn(`CommentStore: Parent post ${parentPostId} not found in feedStore to update count.`);
+            // TODO: Need to handle updating comment count for posts shown on ProfileView via profileStore
+          }
+        } catch (storeError) {
+           console.error(`CommentStore: Error updating feedStore count for post ${parentPostId}:`, storeError);
+        }
+        // --- END LOGIC TO UPDATE FEED STORE COUNT ---
+
+        return response.data;
       } else {
         console.error(`CommentStore: Comment creation for ${postKey} succeeded but API returned invalid data`, response.data);
         throw new Error("Comment created, but received unexpected data from server.");
@@ -92,12 +105,8 @@ export const useCommentStore = defineStore('comment', () => {
 
     } catch (err: any) {
       console.error(`CommentStore: Error creating comment for ${postKey}:`, err);
-      // If backend returns specific field errors for 'content':
-      // const errorMessage = err.response?.data?.content?.[0] || err.response?.data?.detail || err.message || 'Failed to create comment.';
-      // createCommentError.value = errorMessage;
-      throw err; // Re-throw for component to handle
+      throw err; // Re-throw for component
     } finally {
-      // isCreatingComment.value = false;
       console.log(`CommentStore: Create comment attempt finished for ${postKey}`);
     }
   }
@@ -108,10 +117,8 @@ export const useCommentStore = defineStore('comment', () => {
     commentsByPost,
     isLoading,
     error,
-    // isCreatingComment, // Expose if you add specific loading state
-    // createCommentError, // Expose if you add specific error state
     fetchComments,
-    createComment,     // <-- Make sure createComment is included here
+    createComment, // <-- Make sure createComment is included here
   };
 
 });
