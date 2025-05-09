@@ -415,6 +415,8 @@ class CommentListCreateAPIView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         content_type_str = self.kwargs.get('content_type')
         object_id = self.kwargs.get('object_id')
+
+         
         try:
             content_type = ContentType.objects.get(model=content_type_str.lower())
             # Check parent existence again before saving (optional but safer)
@@ -424,6 +426,8 @@ class CommentListCreateAPIView(generics.ListCreateAPIView):
              raise serializers.ValidationError("Invalid content_type specified in URL.")
         except parent_model.DoesNotExist:
               raise serializers.ValidationError("Parent object does not exist.")
+        
+        
 
         serializer.save(
             author=self.request.user,

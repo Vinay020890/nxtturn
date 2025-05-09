@@ -27,6 +27,8 @@ export const useCommentStore = defineStore('comment', () => {
   const commentsByPost = ref<Record<string, Comment[]>>({});
   const isLoading = ref(false); // Global loading for fetching comments
   const error = ref<string | null>(null); // Global error for fetching comments
+  const isCreatingComment = ref(false);
+  const createCommentError = ref<string | null>(null);
 
   // --- Actions ---
   async function fetchComments(postType: string, objectId: number) {
@@ -63,6 +65,9 @@ export const useCommentStore = defineStore('comment', () => {
   async function createComment(postType: string, objectId: number, content: string, parentPostId: number) {
     const postKey = `${postType}_${objectId}`;
     console.log(`CommentStore: Creating comment for ${postKey} (Parent Post ID: ${parentPostId}) with content: "${content}"`);
+
+    isCreatingComment.value = true; // <-- SET LOADING STATE
+    createCommentError.value = null; // <-- CLEAR PREVIOUS CREATION ERROR
 
     try {
       const apiUrl = `/comments/${postType}/${objectId}/`;
@@ -119,9 +124,26 @@ export const useCommentStore = defineStore('comment', () => {
       }
 
     } catch (err: any) {
+      console.log("<<<<< INSIDE CORRECTED CATCH BLOCK >>>>>"); // THE DEBUG LOG
       console.error(`CommentStore: Error creating comment for ${postKey}:`, err);
-      throw err; // Re-throw for component
+      // Try to get more specific error messages
+      if (err.response && err.response.data) {
+        if (err.response.data.content && Array.isArray(err.response.data.content)) {
+          createCommentError.value = err.response.data.content.join(' '); 
+        } else if (err.response.data.detail) {
+          createCommentError.value = err.response.data.detail; // This should catch "Simulated backend error..."
+        } else {
+          // Log the whole data object if detail/content not found
+          console.error('CommentStore: Backend error data structure:', err.response.data);
+          createCommentError.value = "An unexpected error occurred while posting the comment. Check console.";
+        }
+      } else {
+        createCommentError.value = err.message || 'Failed to create comment.';
+      }
+      console.log(`CommentStore: Set createCommentError to: "${createCommentError.value}"`); // THE DEBUG LOG
+      throw err; 
     } finally {
+      isCreatingComment.value = false; 
       console.log(`CommentStore: Create comment attempt finished for ${postKey}`);
     }
   }
@@ -134,6 +156,8 @@ export const useCommentStore = defineStore('comment', () => {
     error,
     fetchComments,
     createComment, // <-- Make sure createComment is included here
+    isCreatingComment,
+    createCommentError,
   };
 
 });

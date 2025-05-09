@@ -5,28 +5,25 @@ import { useFeedStore } from '@/stores/feed';
 import { format } from 'date-fns';
 import { useCommentStore } from '@/stores/comment';
 import CommentItem from '@/components/CommentItem.vue';
-import { useAuthStore } from '@/stores/auth'; // Import auth store
+import { useAuthStore } from '@/stores/auth';
+import { storeToRefs } from 'pinia';
 
 // --- Props Definition ---
 const props = defineProps<{
   post: Post
 }>();
-// console.log(`PostItem ${props.post.id}: Setup Start`);
 
 // --- Store Instances ---
 const feedStore = useFeedStore();
 const commentStore = useCommentStore();
-const authStore = useAuthStore(); // Get auth store instance
-// console.log(`PostItem ${props.post.id}: commentStore instance:`, commentStore);
-// if (!commentStore || typeof commentStore.commentsByPost === 'undefined') {
-//   console.error(`PostItem ${props.post.id}: commentStore or commentsByPost is NOT defined immediately after useCommentStore()! Store:`, commentStore);
-// }
+const authStore = useAuthStore();
+
+// --- GET REACTIVE REFS FROM COMMENT STORE FOR CREATION ---
+const { isCreatingComment, createCommentError } = storeToRefs(commentStore);
 
 // --- Local State ---
 const showComments = ref(false);
-const newCommentContent = ref(''); // Ref for the new comment input
-const isSubmittingComment = ref(false); // Loading state for comment submission
-const commentSubmitError = ref<string | null>(null); // Error state for comment submission
+const newCommentContent = ref('');
 
 // --- Computed Properties ---
 const likeButtonText = computed(() => {
@@ -35,48 +32,40 @@ const likeButtonText = computed(() => {
 
 const commentPostKey = computed(() => {
   if (!props.post || typeof props.post.post_type === 'undefined' || typeof props.post.object_id === 'undefined') {
-    // console.error(`PostItem ${props.post?.id}: Invalid post prop for computing commentPostKey`, props.post);
     return `invalid_${props.post?.id || 'unknown'}`;
   }
   const key = `${props.post.post_type}_${props.post.object_id}`;
-  // console.log(`PostItem ${props.post.id}: Computing commentPostKey: ${key}`);
   return key;
 });
 
 const commentsForThisPost = computed(() => {
-  // console.log(`PostItem ${props.post?.id}: Computing commentsForThisPost...`);
   const key = commentPostKey.value;
   if (!commentStore || typeof commentStore.commentsByPost === 'undefined') {
-    //  console.error(`PostItem ${props.post?.id}: commentStore.commentsByPost is undefined inside computed! Key was: ${key}`);
      return [];
   }
   if (typeof commentStore.commentsByPost !== 'object' || commentStore.commentsByPost === null) {
-      // console.error(`PostItem ${props.post?.id}: commentStore.commentsByPost is not an object! Value:`, commentStore.commentsByPost);
       return [];
   }
   return commentStore.commentsByPost[key] || [];
 });
 
-const isLoadingComments = computed(() => {
-  return commentStore ? commentStore.isLoading : false;
+const isLoadingComments = computed(() => { // This is for FETCHING comments
+  return commentStore.isLoading;
 });
 
-const commentError = computed(() => {
-  return commentStore ? commentStore.error : null;
+const commentError = computed(() => { // This is for FETCHING comments
+  return commentStore.error;
 });
 
 // --- Methods ---
 function loadComments() {
   if (!props.post || typeof props.post.post_type === 'undefined' || typeof props.post.object_id === 'undefined') {
-      // console.error(`PostItem ${props.post?.id}: Cannot load comments, invalid post prop.`);
       return;
   }
-  // console.log(`PostItem ${props.post.id}: Requesting comments...`);
   commentStore.fetchComments(props.post.post_type, props.post.object_id);
 }
 
 function toggleCommentDisplay() {
-  // console.log(`PostItem ${props.post?.id}: Toggling comment display`);
   showComments.value = !showComments.value;
   const currentComments = commentsForThisPost.value;
   if (showComments.value && Array.isArray(currentComments) && currentComments.length === 0 && !commentError.value) {
@@ -84,60 +73,30 @@ function toggleCommentDisplay() {
   }
 }
 
-// --- UPDATED: Method to handle comment submission ---
 async function handleCommentSubmit() {
   if (!newCommentContent.value.trim()) {
-    commentSubmitError.value = "Comment cannot be empty.";
+    commentStore.createCommentError = "Comment cannot be empty.";
     return;
   }
-  // Safety check for post data (already good)
   if (!props.post || !props.post.post_type || typeof props.post.object_id === 'undefined') {
-      commentSubmitError.value = "Cannot submit comment: Invalid post data.";
-      return;
+    commentStore.createCommentError = "Cannot submit comment: Invalid post data.";
+    return;
   }
 
-  isSubmittingComment.value = true;
-  commentSubmitError.value = null;
+  commentStore.createCommentError = null;
 
   try {
-    // Call the createComment action from the commentStore
     await commentStore.createComment(
-      props.post.post_type,      // Pass the post_type (e.g., 'statuspost')
-      props.post.object_id,      // Pass the object_id (which is the post's ID)
-      newCommentContent.value,   // Pass the comment text
+      props.post.post_type,
+      props.post.object_id,
+      newCommentContent.value,
       props.post.id
     );
-    
-    // If createComment action doesn't throw an error, it succeeded
-    newCommentContent.value = ''; // Clear the input field
-    console.log('PostItem: Comment submitted successfully and added to store.');
-    
-    // The comment_count on the PostItem will not update automatically yet.
-    // We might address this as a separate improvement.
-    // For now, the new comment will appear in the list.
-
-  } catch (error: any) {
-    console.error("PostItem: Error submitting comment:", error);
-    // The store action re-throws the error, so error.message should be useful
-    // If backend sends structured errors (e.g., for content validation):
-    if (error.response && error.response.data) {
-        if (error.response.data.content) {
-            commentSubmitError.value = error.response.data.content.join(' ');
-        } else if (error.response.data.detail) {
-            commentSubmitError.value = error.response.data.detail;
-        } else {
-            commentSubmitError.value = "An unexpected error occurred while posting the comment.";
-        }
-    } else {
-        commentSubmitError.value = error.message || "Failed to submit comment.";
-    }
-  } finally {
-    isSubmittingComment.value = false;
+    newCommentContent.value = '';
+  } catch (error) {
+    console.error("PostItem: createComment action failed (error state should be set in store).");
   }
 }
-// --- END: UPDATED Method to handle comment submission ---
-
-// console.log(`PostItem ${props.post.id}: Setup End`);
 </script>
 
 <template>
@@ -167,37 +126,46 @@ async function handleCommentSubmit() {
     </footer>
 
     <section v-if="showComments" class="comments-section">
+      <!-- Loading state for comments -->
       <div v-if="isLoadingComments" class="comments-loading">
         Loading comments...
       </div>
+      <!-- Error state for comments -->
       <div v-else-if="commentError" class="comments-error">
         Error loading comments: {{ commentError }}
         <button @click="loadComments">Retry</button>
       </div>
-      <div v-else-if="Array.isArray(commentsForThisPost) && commentsForThisPost.length > 0">
-        <CommentItem
-          v-for="comment in commentsForThisPost"
-          :key="comment.id"
-          :comment="comment"
-        />
+      <!-- Display comments or "no comments" message -->
+      <div v-else-if="Array.isArray(commentsForThisPost)">
+        <template v-if="commentsForThisPost.length > 0">
+          <CommentItem
+            v-for="comment in commentsForThisPost"
+            :key="comment.id"
+            :comment="comment"
+          />
+        </template>
+        <div v-else class="no-comments">
+          No comments yet.
+        </div>
       </div>
-      <div v-else class="no-comments">
-        No comments yet.
+      <!-- Fallback if commentsForThisPost is not an array -->
+      <div v-else class="comments-error">
+        Could not display comments (unexpected data structure).
       </div>
 
       <form v-if="authStore.isAuthenticated" @submit.prevent="handleCommentSubmit" class="comment-form">
-        <div v-if="commentSubmitError" class="error-message comment-submit-error">
-          {{ commentSubmitError }}
+        <div v-if="createCommentError" class="error-message comment-submit-error">
+          {{ createCommentError }}
         </div>
         <textarea
           v-model="newCommentContent"
           placeholder="Add a comment..."
           rows="2"
-          :disabled="isSubmittingComment"
+          :disabled="isCreatingComment"
           required
         ></textarea>
-        <button type="submit" :disabled="isSubmittingComment || !newCommentContent.trim()">
-          {{ isSubmittingComment ? 'Submitting...' : 'Submit Comment' }}
+        <button type="submit" :disabled="isCreatingComment || !newCommentContent.trim()">
+          {{ isCreatingComment ? 'Submitting...' : 'Submit Comment' }}
         </button>
       </form>
     </section>
@@ -205,7 +173,7 @@ async function handleCommentSubmit() {
 </template>
 
 <style scoped>
-/* ... (all existing styles from PostItem.vue) ... */
+/* ... (all existing styles from PostItem.vue should be here) ... */
 .post-item {
   border: 1px solid #ddd;
   padding: 1rem;
