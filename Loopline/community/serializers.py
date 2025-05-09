@@ -110,6 +110,8 @@ class StatusPostSerializer(serializers.ModelSerializer):
     like_count = serializers.SerializerMethodField() # Use the model property
     content_type_id = serializers.SerializerMethodField()
     object_id = serializers.SerializerMethodField()
+    post_type = serializers.SerializerMethodField()   
+    comment_count = serializers.SerializerMethodField()   # <-- ADD THIS LINE    
 
     class Meta:
         model = StatusPost
@@ -123,11 +125,13 @@ class StatusPostSerializer(serializers.ModelSerializer):
             'is_liked_by_user', # Added
             'content_type_id',  # Added for constructing like URL
             'object_id',        # Added for constructing like URL
+            'post_type',        # <-- ADDED/ENSURED PRESENT
+            'comment_count',    # <-- ADDED/ENSURED PRESENT
         ]
         # Ensure all read-only fields are listed
         read_only_fields = [
             'id', 'author', 'created_at', 'updated_at', 'like_count',
-            'is_liked_by_user', 'content_type_id', 'object_id'
+            'is_liked_by_user', 'content_type_id', 'object_id', 'post_type', 'comment_count'    
         ]
 
      # --- Add this method ---
@@ -179,6 +183,21 @@ class StatusPostSerializer(serializers.ModelSerializer):
         if 'content' not in validated_data:
              raise serializers.ValidationError({"content": "Content field is required."})
         return super().create(validated_data)
+    
+    def get_post_type(self, obj):
+    # obj is the StatusPost instance here
+        return obj.__class__.__name__.lower() # Should return 'statuspost'
+    
+    def get_comment_count(self, obj):
+    # obj is the StatusPost instance
+        if obj and hasattr(obj, 'pk') and obj.pk is not None:
+        # Import ContentType and Comment models here if not already imported at top
+        # from django.contrib.contenttypes.models import ContentType
+        # from .models import Comment # Assuming Comment model is in the same app
+        
+            content_type = ContentType.objects.get_for_model(obj)
+            return Comment.objects.filter(content_type=content_type, object_id=obj.pk).count()
+        return 0
 
 
 # Add these serializers

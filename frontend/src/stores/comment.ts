@@ -4,6 +4,7 @@ import { ref } from 'vue';
 import { defineStore } from 'pinia';
 import axiosInstance from '@/services/axiosInstance';
 import { useFeedStore } from '@/stores/feed'; // <-- Import feed store
+import { useProfileStore } from '@/stores/profile';
 
 // --- Define Comment structure ---
 export interface CommentAuthor {
@@ -73,31 +74,45 @@ export const useCommentStore = defineStore('comment', () => {
       if (response.data && response.data.id) {
         console.log(`CommentStore: Comment created successfully for ${postKey}`, response.data);
 
+        // Add the new comment to the beginning of the list for this post
         if (!Array.isArray(commentsByPost.value[postKey])) {
           commentsByPost.value[postKey] = [];
         }
         commentsByPost.value[postKey].unshift(response.data); // Add to the beginning
 
-        // --- ADDED LOGIC TO UPDATE FEED STORE COUNT ---
+        // --- Update Feed Store Count ---
         try {
-          const feedStore = useFeedStore(); // Get feed store instance
-          // Note: This assumes the post is in the main feedStore. If called from ProfileView,
-          // you might need to update profileStore similarly or use a more robust event system.
-          const postIndex = feedStore.posts.findIndex(p => p.id === parentPostId); // Find the parent post by its ID
-          if (postIndex !== -1) {
-            // Increment the comment count directly on the post object in the feed store
-            feedStore.posts[postIndex].comment_count = (feedStore.posts[postIndex].comment_count ?? 0) + 1;
+          const feedStore = useFeedStore();
+          const feedPostIndex = feedStore.posts.findIndex(p => p.id === parentPostId);
+          if (feedPostIndex !== -1) {
+            feedStore.posts[feedPostIndex].comment_count = (feedStore.posts[feedPostIndex].comment_count ?? 0) + 1;
             console.log(`CommentStore: Incremented comment_count in feedStore for post ${parentPostId}`);
           } else {
-            console.warn(`CommentStore: Parent post ${parentPostId} not found in feedStore to update count.`);
-            // TODO: Need to handle updating comment count for posts shown on ProfileView via profileStore
+            // console.warn(`CommentStore: Parent post ${parentPostId} not found in feedStore.`); // Optional log
           }
         } catch (storeError) {
            console.error(`CommentStore: Error updating feedStore count for post ${parentPostId}:`, storeError);
         }
-        // --- END LOGIC TO UPDATE FEED STORE COUNT ---
+        // --- End Update Feed Store Count ---
 
-        return response.data;
+        // --- Update Profile Store Count ---
+        try {
+          const profileStore = useProfileStore(); // Get profile store instance
+          if (profileStore.userPosts && profileStore.userPosts.length > 0) {
+              const profilePostIndex = profileStore.userPosts.findIndex(p => p.id === parentPostId);
+              if (profilePostIndex !== -1) {
+                profileStore.userPosts[profilePostIndex].comment_count = (profileStore.userPosts[profilePostIndex].comment_count ?? 0) + 1;
+                console.log(`CommentStore: Incremented comment_count in profileStore for post ${parentPostId}`);
+              } else {
+                 // console.warn(`CommentStore: Parent post ${parentPostId} not found in profileStore.`); // Optional log
+              }
+          }
+        } catch (storeError) {
+           console.error(`CommentStore: Error updating profileStore count for post ${parentPostId}:`, storeError);
+        }
+        // --- End Update Profile Store Count ---
+
+        return response.data; // Return the created comment
       } else {
         console.error(`CommentStore: Comment creation for ${postKey} succeeded but API returned invalid data`, response.data);
         throw new Error("Comment created, but received unexpected data from server.");
