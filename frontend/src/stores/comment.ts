@@ -149,6 +149,71 @@ export const useCommentStore = defineStore('comment', () => {
   }
   // --- End of createComment action ---
 
+  // --- Action to delete a comment ---
+async function deleteComment(commentId: number, postType: string, objectId: number, parentPostId: number) {
+  const postKey = `${postType}_${objectId}`;
+  console.log(`CommentStore: Attempting to delete comment ID ${commentId} from post ${postKey} (Parent Post ID: ${parentPostId})`);
+
+  // Optional: Add a specific loading state for deletion if needed
+  // const isDeletingComment = ref(false); // Example
+  // isDeletingComment.value = true;
+
+  try {
+    // Construct the API URL for deleting a specific comment
+    // This should match your backend's CommentRetrieveUpdateDestroyAPIView URL for a specific comment pk
+    const apiUrl = `/comments/${commentId}/`; 
+    console.log(`CommentStore: Calling API: DELETE ${apiUrl}`);
+
+    await axiosInstance.delete(apiUrl); // Make the DELETE request
+
+    console.log(`CommentStore: Comment ID ${commentId} deleted successfully from backend.`);
+
+    // --- Remove the comment from the local store state ---
+    if (commentsByPost.value[postKey]) {
+      commentsByPost.value[postKey] = commentsByPost.value[postKey].filter(c => c.id !== commentId);
+      console.log(`CommentStore: Removed comment ID ${commentId} from local state for ${postKey}.`);
+    }
+
+    // --- Decrement comment count in feedStore ---
+    try {
+      const feedStore = useFeedStore();
+      const feedPostIndex = feedStore.posts.findIndex(p => p.id === parentPostId);
+      if (feedPostIndex !== -1) {
+        feedStore.posts[feedPostIndex].comment_count = Math.max(0, (feedStore.posts[feedPostIndex].comment_count ?? 0) - 1);
+        console.log(`CommentStore: Decremented comment_count in feedStore for post ${parentPostId}`);
+      }
+    } catch (storeError) {
+       console.error(`CommentStore: Error updating feedStore count for post ${parentPostId}:`, storeError);
+    }
+
+    // --- Decrement comment count in profileStore ---
+    try {
+      const profileStore = useProfileStore();
+      if (profileStore.userPosts && profileStore.userPosts.length > 0) {
+          const profilePostIndex = profileStore.userPosts.findIndex(p => p.id === parentPostId);
+          if (profilePostIndex !== -1) {
+            profileStore.userPosts[profilePostIndex].comment_count = Math.max(0, (profileStore.userPosts[profilePostIndex].comment_count ?? 0) - 1);
+            console.log(`CommentStore: Decremented comment_count in profileStore for post ${parentPostId}`);
+          }
+      }
+    } catch (storeError) {
+       console.error(`CommentStore: Error updating profileStore count for post ${parentPostId}:`, storeError);
+    }
+    
+    return true; // Indicate success
+
+  } catch (err: any) {
+    console.error(`CommentStore: Error deleting comment ID ${commentId}:`, err);
+    // Set a generic error or a specific deletion error state if you add one
+    // error.value = err.response?.data?.detail || err.message || 'Failed to delete comment.';
+    throw err; // Re-throw for the component to handle if needed
+  } finally {
+    // isDeletingComment.value = false; // If using specific loading state
+    console.log(`CommentStore: Delete comment attempt finished for comment ID ${commentId}.`);
+  }
+}
+// --- End of deleteComment action ---
+
   // --- Return exposed state and actions ---
   return {
     commentsByPost,
@@ -158,6 +223,7 @@ export const useCommentStore = defineStore('comment', () => {
     createComment, // <-- Make sure createComment is included here
     isCreatingComment,
     createCommentError,
+    deleteComment,
   };
 
 });

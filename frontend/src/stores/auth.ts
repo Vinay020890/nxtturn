@@ -8,7 +8,7 @@ import router from '@/router'; // Or wherever your router instance is exported f
 // Later: import router from '@/router'; // For potential redirects
 
 // Define the shape of the User object we might store (adjust as needed)
-interface User {
+export interface User {
   id: number;
   username: string;
   first_name: string;
@@ -57,10 +57,21 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  function setUser(user: User | null) {
-    currentUser.value = user;
-    // TODO: Potentially store user info in localStorage too, if needed,
-    // but be mindful of sensitive data. Often re-fetched on refresh.
+  function setUser(apiUserObject: any | null) { // Changed parameter name and type for clarity
+    if (apiUserObject && typeof apiUserObject.pk !== 'undefined') { // Check if apiUserObject and pk exist
+      currentUser.value = {
+        id: apiUserObject.pk,         // Map 'pk' from API to 'id'
+        username: apiUserObject.username,
+        first_name: apiUserObject.first_name || '', // Add fallback for potentially missing names
+        last_name: apiUserObject.last_name || '',   // Add fallback
+        // email: apiUserObject.email, // Uncomment if you add email to your User interface
+      };
+    } else if (apiUserObject) { // If apiUserObject exists but pk doesn't, it might already be our User type
+      currentUser.value = apiUserObject as User; // Assume it's already our User type
+    }
+    else {
+      currentUser.value = null; // Set to null if apiUserObject is null
+    }
   }
 
   // Action to perform login API call

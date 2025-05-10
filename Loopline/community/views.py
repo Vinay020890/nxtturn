@@ -438,7 +438,7 @@ class CommentListCreateAPIView(generics.ListCreateAPIView):
 
 class CommentRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
     """ Retrieve, update, or delete a single comment (GET, PUT, PATCH, DELETE). """
-    queryset = Comment.objects.select_related('author__profile').all() # Optimize author fetch
+    queryset = Comment.objects.select_related('author__userprofile').all() # Optimize author fetch
     serializer_class = CommentSerializer
     permission_classes = [IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
     lookup_field = 'pk'

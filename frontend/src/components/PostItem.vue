@@ -142,7 +142,10 @@ async function handleCommentSubmit() {
             v-for="comment in commentsForThisPost"
             :key="comment.id"
             :comment="comment"
-          />
+            :parentPostType="props.post.post_type"
+            :parentObjectId="props.post.object_id"
+            :parentPostActualId="props.post.id" /> 
+        
         </template>
         <div v-else class="no-comments">
           No comments yet.
