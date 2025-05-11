@@ -214,6 +214,60 @@ async function deleteComment(commentId: number, postType: string, objectId: numb
 }
 // --- End of deleteComment action ---
 
+// --- Action to edit an existing comment ---
+async function editComment(commentId: number, newContent: string, postType: string, objectId: number) {
+  const postKey = `${postType}_${objectId}`;
+  console.log(`CommentStore: Attempting to edit comment ID ${commentId} for post ${postKey} with new content: "${newContent}"`);
+
+  // Optional: Add specific loading/error states for editing if desired
+  // isEditingComment.value = true; 
+  // editCommentError.value = null;
+
+  try {
+    // API URL for updating a specific comment
+    const apiUrl = `/comments/${commentId}/`; 
+    console.log(`CommentStore: Calling API: PUT ${apiUrl}`); // Or PATCH
+
+    // Payload only needs the content, as other fields shouldn't be changed by user edit
+    const payload = { content: newContent };
+
+    // Make the PUT request (or PATCH if you prefer partial updates)
+    // The backend should return the updated comment object.
+    const response = await axiosInstance.put<Comment>(apiUrl, payload); 
+
+    if (response.data && response.data.id) {
+      console.log(`CommentStore: Comment ID ${commentId} edited successfully on backend.`, response.data);
+
+      // --- Update the comment in the local store state ---
+      if (commentsByPost.value[postKey]) {
+        const commentIndex = commentsByPost.value[postKey].findIndex(c => c.id === commentId);
+        if (commentIndex !== -1) {
+          // Replace the old comment object with the updated one from the response
+          commentsByPost.value[postKey][commentIndex] = response.data;
+          console.log(`CommentStore: Updated comment ID ${commentId} in local state for ${postKey}.`);
+        } else {
+          console.warn(`CommentStore: Edited comment ID ${commentId} not found in local state for ${postKey} to update.`);
+        }
+      }
+      return response.data; // Return the updated comment
+    } else {
+      console.error(`CommentStore: Comment edit for ${commentId} API call succeeded but returned invalid data`, response.data);
+      // editCommentError.value = "Comment edited, but received unexpected data from server.";
+      throw new Error("Comment edited, but received unexpected data from server.");
+    }
+
+  } catch (err: any) {
+    console.error(`CommentStore: Error editing comment ID ${commentId}:`, err);
+    // if (err.response && err.response.data) { ... handle specific errors ... }
+    // editCommentError.value = err.response?.data?.detail || err.response?.data?.content?.join(' ') || err.message || 'Failed to edit comment.';
+    throw err; // Re-throw for the component
+  } finally {
+    // isEditingComment.value = false;
+    console.log(`CommentStore: Edit comment attempt finished for comment ID ${commentId}.`);
+  }
+}
+// --- End of editComment action ---
+
   // --- Return exposed state and actions ---
   return {
     commentsByPost,
@@ -224,6 +278,7 @@ async function deleteComment(commentId: number, postType: string, objectId: numb
     isCreatingComment,
     createCommentError,
     deleteComment,
+    editComment,
   };
 
 });

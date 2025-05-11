@@ -17,6 +17,9 @@ const authStore = useAuthStore();
 const commentStore = useCommentStore(); // Get comment store instance
 const loggedInUser = ref<User | null>(authStore.currentUser);
 
+const isEditing = ref(false);
+const editableContent = ref('');
+
 watch(() => authStore.currentUser, (newUser: User | null) => {
   // console.log(`CommentItem ID ${props.comment.id}: authStore.currentUser changed in WATCH. New User:`, newUser);
   loggedInUser.value = newUser;
@@ -31,9 +34,13 @@ const isCommentAuthor = computed(() => {
   return false;
 });
 
+// --- MODIFIED editComment function ---
 function editComment() {
-  console.log('TODO: Edit comment ID:', props.comment.id);
+  console.log('Editing comment ID:', props.comment.id);
+  isEditing.value = true;
+  editableContent.value = props.comment.content; // Pre-fill textarea
 }
+// --- END MODIFIED editComment function ---
 
 async function deleteComment() {
   console.log('CommentItem: Attempting to delete comment ID:', props.comment.id);
@@ -57,6 +64,56 @@ async function deleteComment() {
     console.log('CommentItem: User cancelled deletion for comment ID:', props.comment.id);
   }
 }
+
+// --- MODIFIED saveEdit function ---
+async function saveEdit() {
+  console.log(`CommentItem: Attempting to save edit for comment ID: ${props.comment.id}. New content: "${editableContent.value}"`);
+
+  if (editableContent.value.trim() === props.comment.content) {
+    console.log('CommentItem: No changes detected, cancelling edit.');
+    isEditing.value = false; // Just exit edit mode if no actual change
+    return;
+  }
+
+  if (!editableContent.value.trim()) {
+    alert('Comment content cannot be empty.'); // Simple client-side validation
+    return;
+  }
+
+  // Optional: Add a local loading state for the save button if desired
+  // const isSavingEdit = ref(false);
+  // isSavingEdit.value = true;
+
+  try {
+    // Call the store action
+    // We need parentPostType and parentObjectId to help the store locate the comment list
+    await commentStore.editComment(
+      props.comment.id,         // ID of the comment to edit
+      editableContent.value,    // The new content
+      props.parentPostType,     // Parent post's type
+      props.parentObjectId      // Parent post's object ID
+    );
+
+    console.log('CommentItem: Comment edit saved successfully via store.');
+    isEditing.value = false; // Exit editing mode on success
+
+  } catch (error: any) {
+    console.error('CommentItem: Error saving comment edit:', error);
+    // Display error to user (could be more sophisticated)
+    alert(`Failed to save comment: ${error.message || 'Unknown error'}`);
+    // Optionally, keep isEditing.value = true so user can retry or cancel
+  } finally {
+    // isSavingEdit.value = false; // Reset local loading state if used
+  }
+}
+// --- END MODIFIED saveEdit function ---
+
+function cancelEdit() {
+  console.log('Cancelled editing comment ID:', props.comment.id);
+  isEditing.value = false;
+  // No need to reset editableContent, it will be re-initialized if edit is clicked again.
+}
+// --- END NEW FUNCTIONS ---
 </script>
 
 <template>
@@ -64,28 +121,31 @@ async function deleteComment() {
     <div class="comment-header">
       <div> <!-- Wrapper for author and timestamp -->
         <span class="comment-author">{{ props.comment.author.username }}</span>
-        <span class="comment-timestamp" v-if="props.comment.created_at">
+        <!-- Hide timestamp when editing -->
+        <span class="comment-timestamp" v-if="props.comment.created_at && !isEditing"> 
           {{ format(new Date(props.comment.created_at), 'Pp') }}
         </span>
       </div>
-      <!-- ADD: Edit/Delete Buttons conditionally shown -->
-      <div v-if="isCommentAuthor" class="comment-actions">
+      <!-- Show Edit/Delete only if author AND not currently editing this comment -->
+      <div v-if="isCommentAuthor && !isEditing" class="comment-actions">
         <button @click="editComment" class="action-button edit-button">Edit</button>
         <button @click="deleteComment" class="action-button delete-button">Delete</button>
       </div>
-      <!-- END: Edit/Delete Buttons -->
     </div>
-    <div class="comment-content">
+
+    <!-- === MODIFIED: Conditional display for content or edit form === -->
+    <div v-if="!isEditing" class="comment-content"> <!-- Show this when NOT editing -->
       <p>{{ props.comment.content }}</p>
     </div>
-    <!-- Placeholder for an inline editing form, to be added later if editing is active -->
-    <!-- 
-    <div v-if="isEditing" class="comment-edit-form">
-      <textarea v-model="editableContent"></textarea>
-      <button @click="saveEdit">Save</button>
-      <button @click="cancelEdit">Cancel</button>
-    </div> 
-    -->
+    <div v-else class="comment-edit-form"> <!-- Show this WHEN editing (v-else implies isEditing is true) -->
+      <textarea v-model="editableContent" rows="3"></textarea>
+      <div class="edit-form-actions">
+        <button @click="saveEdit" class="action-button save-button">Save</button>
+        <button @click="cancelEdit" class="action-button cancel-button">Cancel</button>
+      </div>
+    </div>
+    <!-- === END MODIFIED === -->
+
   </div>
 </template>
 
@@ -139,5 +199,40 @@ async function deleteComment() {
 .delete-button:hover {
   background-color: #f8d7da; /* Light red background on hover */
   text-decoration: none;
+}
+
+/* ... (existing styles) ... */
+
+.comment-edit-form {
+  margin-top: 0.5rem;
+}
+.comment-edit-form textarea {
+  width: 100%;
+  min-height: 60px;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.95em;
+  margin-bottom: 0.5rem;
+  box-sizing: border-box;
+}
+.edit-form-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end; /* Align buttons to the right */
+}
+.save-button { /* Using action-button as base */
+  color: #28a745; /* Green */
+  font-weight: bold;
+}
+.save-button:hover {
+  background-color: #eaf6ec;
+}
+.cancel-button { /* Using action-button as base */
+  color: #6c757d; /* Grey */
+}
+.cancel-button:hover {
+  background-color: #f1f1f1;
 }
 </style>
