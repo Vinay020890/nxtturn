@@ -39,6 +39,28 @@ except admin.sites.NotRegistered:
     pass # Ignore if it wasn't registered
 admin.site.register(User, CustomUserAdmin) # Register User with our custom admin
 
+# --- ADD THIS BLOCK TO REGISTER UserProfile SEPARATELY ---
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    list_display = ('user', 'get_bio_preview', 'picture_tag') # Added picture_tag
+    search_fields = ('user__username', 'bio', 'college_name') # Example search fields
+    list_select_related = ('user',) # Optimize user fetch for list_display
+
+    def get_bio_preview(self, obj):
+        if obj.bio:
+            return obj.bio[:50] + '...' if len(obj.bio) > 50 else obj.bio
+        return "---"
+    get_bio_preview.short_description = 'Bio Preview'
+
+    # Method to display the picture as an image in the admin list
+    def picture_tag(self, obj):
+        from django.utils.html import format_html # Import here or at top of file
+        if obj.picture and hasattr(obj.picture, 'url'): # Check if picture exists and has a URL
+            return format_html('<img src="{}" style="max-height: 50px; max-width: 50px;" />', obj.picture.url)
+        return "No Image"
+    picture_tag.short_description = 'Picture'
+# --- END OF BLOCK TO ADD ---
+
 # --- Register your other models (keep your existing simple registrations) ---
 # You DON'T need admin.site.register(UserProfile) anymore as it's inline
 admin.site.register(Follow)

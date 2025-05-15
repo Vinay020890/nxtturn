@@ -22,6 +22,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     skills = serializers.ListField(child=serializers.CharField(max_length=100), required=False, allow_null=True)
     interests = serializers.ListField(child=serializers.CharField(max_length=100), required=False, allow_null=True)
     is_followed_by_request_user = serializers.SerializerMethodField()
+    picture = serializers.ImageField(read_only=True) # <-- ADDED THIS LINE
 
     class Meta:
         model = UserProfile
@@ -40,7 +41,8 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'portfolio_url',
             'skills',
             'interests',
-            'profile_picture_url',
+            # 'profile_picture_url',
+            'picture',
             'updated_at',
             'is_followed_by_request_user'
         ]
@@ -79,6 +81,7 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
     # Explicitly declare ArrayFields for writing/updating
     skills = serializers.ListField(child=serializers.CharField(max_length=100), required=False, allow_null=True)
     interests = serializers.ListField(child=serializers.CharField(max_length=100), required=False, allow_null=True)
+    picture = serializers.ImageField(required=False, allow_null=True, use_url=False)
 
     class Meta:
         model = UserProfile
@@ -91,10 +94,12 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
             'major',
             'graduation_year',
             'linkedin_url',
-            'portfolio_url',
+            # 'portfolio_url',
+            'picture',
             'skills',
             'interests',
-            'profile_picture_url',
+            # 'profile_picture_url',
+            'picture', # <-- ADDED THIS LINE
         ]
 
 
@@ -127,6 +132,8 @@ class StatusPostSerializer(serializers.ModelSerializer):
             'object_id',        # Added for constructing like URL
             'post_type',        # <-- ADDED/ENSURED PRESENT
             'comment_count',    # <-- ADDED/ENSURED PRESENT
+            
+            
         ]
         # Ensure all read-only fields are listed
         read_only_fields = [

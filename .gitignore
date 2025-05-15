@@ -64,6 +64,7 @@ db.sqlite3-journal
 debug.log
 *.csv
 *.sql
+/Loopline/mediafiles/
 
 # Virtual environment
 # IMPORTANT: Adjust if your venv folder name is different!

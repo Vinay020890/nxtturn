@@ -16,6 +16,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include # Make sure include is imported
+from django.conf import settings             # <-- ADD THIS IMPORT
+from django.conf.urls.static import static   # <-- ADD THIS IMPORT
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -26,3 +28,8 @@ urlpatterns = [
      # Add Community App URLs under '/api/' namespace
     path('api/', include('community.urls', namespace='community')), # Add this line
 ]
+
+# --- ADD THIS BLOCK TO SERVE MEDIA FILES DURING DEVELOPMENT ---
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# --- END BLOCK ---

@@ -66,6 +66,38 @@ class UserProfileDetailView(generics.RetrieveUpdateAPIView):
         context['request'] = self.request          # Add request object
         return context
 
+    def update(self, request, *args, **kwargs):
+    # This handles full updates (PUT requests)
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        # Use UserProfileUpdateSerializer for validating the incoming data
+        serializer = UserProfileUpdateSerializer(instance, data=request.data, partial=partial, context=self.get_serializer_context())
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        if getattr(instance, '_prefetched_objects_cache', None):
+            instance._prefetched_objects_cache = {}
+        
+        # IMPORTANT: Use UserProfileSerializer for the response to ensure full data
+        response_serializer = UserProfileSerializer(instance, context=self.get_serializer_context())
+        return Response(response_serializer.data)
+
+    def partial_update(self, request, *args, **kwargs):
+        # This handles partial updates (PATCH requests - like just uploading a picture)
+        partial = kwargs.pop('partial', True)
+        instance = self.get_object()
+        # Use UserProfileUpdateSerializer for validating the incoming data
+        serializer = UserProfileUpdateSerializer(instance, data=request.data, partial=partial, context=self.get_serializer_context())
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        if getattr(instance, '_prefetched_objects_cache', None):
+            instance._prefetched_objects_cache = {}
+
+        # IMPORTANT: Use UserProfileSerializer for the response to ensure full data
+        response_serializer = UserProfileSerializer(instance, context=self.get_serializer_context())
+        return Response(response_serializer.data)
+
 # --- ADD THIS NEW VIEW for User's Posts ---
 class UserPostListView(generics.ListAPIView):
     """

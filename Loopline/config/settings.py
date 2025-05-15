@@ -142,6 +142,14 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# --- ADD MEDIA FILES CONFIGURATION ---
+MEDIA_URL = '/media/' # The base URL from which media files will be served
+MEDIA_ROOT = BASE_DIR / 'mediafiles' # The absolute filesystem path to the directory where media files will be stored
+# Ensure BASE_DIR is defined at the top of your settings.py: 
+# from pathlib import Path
+# BASE_DIR = Path(__file__).resolve().parent.parent
+# --- END MEDIA FILES CONFIGURATION ---
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 

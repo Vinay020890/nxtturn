@@ -13,6 +13,7 @@ export interface User {
   username: string;
   first_name: string;
   last_name: string;
+  date_joined: string;
   // Add other relevant fields from your UserSerializer if login returns them
   // email?: string;
 }
@@ -64,6 +65,7 @@ export const useAuthStore = defineStore('auth', () => {
         username: apiUserObject.username,
         first_name: apiUserObject.first_name || '', // Add fallback for potentially missing names
         last_name: apiUserObject.last_name || '',   // Add fallback
+        date_joined: apiUserObject.date_joined || '', // <-- ADD THIS LINE
         // email: apiUserObject.email, // Uncomment if you add email to your User interface
       };
     } else if (apiUserObject) { // If apiUserObject exists but pk doesn't, it might already be our User type

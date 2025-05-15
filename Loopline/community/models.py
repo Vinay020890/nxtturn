@@ -28,7 +28,16 @@ class UserProfile(models.Model):
     # Use ArrayField for PostgreSQL to store lists of text
     skills = ArrayField(models.CharField(max_length=100), blank=True, null=True, default=list)
     interests = ArrayField(models.CharField(max_length=100), blank=True, null=True, default=list)
-    profile_picture_url = models.URLField(max_length=512, blank=True, null=True) # Simple URL field for now
+    # profile_picture_url = models.URLField(max_length=512, blank=True, null=True) # Simple URL field for now
+
+    # --- ADD NEW ImageField ---
+    picture = models.ImageField(
+        upload_to='profile_pics/',  # Images will be stored in MEDIA_ROOT/profile_pics/
+        null=True,                  # Allows the field to be empty in the database
+        blank=True                  # Allows the field to be empty in forms/admin
+    )
+    # --- END NEW ImageField ---
+    
     updated_at = models.DateTimeField(auto_now=True) # Automatically updates on save
 
     def __str__(self):
