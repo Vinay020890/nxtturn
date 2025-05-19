@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import type { Post } from '@/stores/feed';
 import { useFeedStore } from '@/stores/feed';
 import { format } from 'date-fns';
@@ -24,6 +24,16 @@ const { isCreatingComment, createCommentError } = storeToRefs(commentStore);
 // --- Local State ---
 const showComments = ref(false);
 const newCommentContent = ref('');
+
+
+// --- Watch for input changes to clear comment creation errors ---
+watch(newCommentContent, () => {
+  // If the user starts typing and there was a submission error...
+  if (createCommentError.value) { // Note: .value is needed here because createCommentError is a ref from storeToRefs
+    // ...clear the error in the store.
+    commentStore.createCommentError = null; // Directly set the property on the store instance
+  }
+});
 
 // --- Computed Properties ---
 const likeButtonText = computed(() => {

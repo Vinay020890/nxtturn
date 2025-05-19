@@ -1,65 +1,75 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import { useFeedStore } from '@/stores/feed';
+import { storeToRefs } from 'pinia';
 
-// Ref to hold the content of the new post
-const postContent = ref('');
-const isLoading = ref(false); // To disable button during submission
-const errorMessage = ref<string | null>(null); // To show errors
+// 1. Initialize the store instance
 const feedStore = useFeedStore();
 
-// Placeholder for the submit handler
-// Updated submit handler
+// 2. Get reactive refs from the store using storeToRefs
+//    This makes 'isCreatingPost' and 'createPostError' available as reactive refs
+const { isCreatingPost, createPostError } = storeToRefs(feedStore);
+
+// 3. Define local component state
+const postContent = ref('');
+
+// 4. ADD THIS WATCH FUNCTION:
+// Watch for changes in postContent to clear the error message from the store
+watch(postContent, (newValue) => {
+  // If there's a post creation error displayed and the user is typing something meaningful
+  if (createPostError.value && newValue.trim() !== '') {
+    feedStore.createPostError = null; // Clear the error in the store
+  } else if (createPostError.value && newValue.trim() === '' && createPostError.value === "Post content cannot be empty.") {
+    // If user clears the input after "cannot be empty" error, also clear the error
+    feedStore.createPostError = null;
+  }
+});
+
+
+
+// 5. Define the handleSubmit function
 const handleSubmit = async () => {
-  // Basic validation
+  // Client-side validation for empty content (can also be primarily handled by the store)
   if (!postContent.value.trim()) {
-    errorMessage.value = "Post content cannot be empty.";
+    // Set the error in the store if you want immediate client-side feedback for this
+    // The store's createPost action will also perform this check.
+    feedStore.createPostError = "Post content cannot be empty.";
     return;
   }
-  errorMessage.value = null; // Clear previous errors
-  isLoading.value = true;    // Set loading state
+  // The store action (createPost) will clear createPostError at its start.
 
-  try {
-    // Call the store action to create the post
-    await feedStore.createPost(postContent.value);
+  const newPost = await feedStore.createPost(postContent.value);
 
-    // If successful:
+  if (newPost) {
+    // Successfully created post
     console.log("CreatePostForm: Post submitted successfully!");
     postContent.value = ''; // Clear the textarea
-
-    // Optional: Notify parent component or show success message?
-    // For now, clearing the form is enough. The store handles adding the post to the feed list.
-
-  } catch (error: any) {
-    // If store action throws an error:
-    console.error("CreatePostForm: Failed to submit post:", error);
-    // Display the error message from the store action
-    errorMessage.value = error.message || "An unknown error occurred.";
-
-  } finally {
-    // Always run this:
-    isLoading.value = false; // Reset loading state
+    // createPostError is already null if successful (cleared in store action or by watcher)
+  } else {
+    // Failed to create post.
+    // The error message is already set in feedStore.createPostError by the action.
+    console.error("CreatePostForm: Failed to submit post. Error should be in store's createPostError.");
   }
+  // The loading state (isCreatingPost) is managed by the store action.
 };
-
 </script>
 
 <template>
   <div class="create-post-form">
     <h3>Create a New Post</h3>
     <form @submit.prevent="handleSubmit">
-      <div v-if="errorMessage" class="error-message">
-        {{ errorMessage }}
-      </div>
+      <div v-if="createPostError" class="error-message">
+  {{ createPostError }}
+</div>
       <textarea
         v-model="postContent"
         placeholder="What's on your mind?"
         rows="4"
         required
-        :disabled="isLoading"
+        :disabled="isCreatingPost"
       ></textarea>
-      <button type="submit" :disabled="isLoading || !postContent.trim()">
-        {{ isLoading ? 'Posting...' : 'Post' }}
+      <button type="submit" :disabled="isCreatingPost  || !postContent.trim()">
+        {{ isCreatingPost ? 'Posting...' : 'Post' }}
       </button>
     </form>
   </div>

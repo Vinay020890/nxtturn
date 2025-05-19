@@ -141,6 +141,8 @@ class StatusPostSerializer(serializers.ModelSerializer):
             'is_liked_by_user', 'content_type_id', 'object_id', 'post_type', 'comment_count'    
         ]
 
+     
+
      # --- Add this method ---
     def get_like_count(self, obj):
         """
@@ -394,6 +396,8 @@ class CommentSerializer(serializers.ModelSerializer):
         # are overridden by the explicit field definitions above for write_only behavior.
         # We explicitly list 'content_type_id' and 'object_id' (from the model)
         # for read operations.
+     
+    
 
     # No need for a specific validate method here for the GFK link itself,
     # the view will handle resolving content_type string to ContentType object.

@@ -66,6 +66,10 @@ export const useFeedStore = defineStore('feed', () => {
   const totalPages = ref(1);
   const hasNextPage = ref(false);
 
+  // NEW: State for create post errors
+  const createPostError = ref<string | null>(null);
+  const isCreatingPost = ref(false); // NEW: For loading state during post creation
+
   // --- Getters (Computed) ---
   // (Example: No active getters currently defined)
 
@@ -125,38 +129,66 @@ export const useFeedStore = defineStore('feed', () => {
     }
   }
 
-  // Action to create a new status post
-  async function createPost(content: string) {
+    // REPLACE THE ENTIRE EXISTING createPost FUNCTION WITH THIS:
+  async function createPost(content: string): Promise<Post | null> {
     console.log("FeedStore: Attempting to create post...");
+
+    // Client-side check for empty content
     if (!content || content.trim().length === 0) {
+      createPostError.value = "Post content cannot be empty.";
       console.error("FeedStore: Post content cannot be empty.");
-      throw new Error("Post content cannot be empty.");
+      return null; // Indicate failure
     }
+
+    isCreatingPost.value = true;    // Set loading state
+    createPostError.value = null;   // Clear previous errors for this specific action
 
     try {
       const authStore = useAuthStore();
       if (!authStore.isAuthenticated) {
+        createPostError.value = "User not authenticated. Please login to post.";
         console.warn("FeedStore: User not authenticated, cannot create post.");
-        throw new Error("User not authenticated.");
+        return null; // Indicate failure
       }
 
-      // Use /api/posts/ which maps to StatusPostListCreateView
+      // API endpoint for creating status posts
       const response = await axiosInstance.post<Post>('/posts/', {
         content: content
       });
 
       console.log("FeedStore: Post created successfully", response.data);
 
-      // Optimistic Update: Prepend the new post with isLiking flag
-       posts.value.unshift({ ...response.data, isLiking: false });
+      // Optimistic Update: Prepend the new post
+      // Ensure the new post has the 'isLiking' flag for consistency if your PostItem expects it
+      posts.value.unshift({ ...response.data, isLiking: false });
 
-      return response.data;
+      return response.data; // Return created post on success
 
     } catch (err: any) {
       console.error("FeedStore: Error creating post:", err);
-      const errorMessage = err.response?.data?.detail || err.message || 'Failed to create post.';
-      throw new Error(errorMessage);
+
+      // Attempt to parse a more specific error message from the backend response
+      if (err.response && err.response.data) {
+          // Check for field-specific errors first (e.g., if 'content' field had an issue)
+          if (err.response.data.content && Array.isArray(err.response.data.content) && err.response.data.content.length > 0) {
+              createPostError.value = err.response.data.content.join(' ');
+          } else if (typeof err.response.data.content === 'string') { // Django REST sometimes returns string for single field error
+              createPostError.value = err.response.data.content;
+          } else if (err.response.data.detail) { // Generic DRF error
+              createPostError.value = err.response.data.detail;
+          } else if (typeof err.response.data === 'string') { // Non-DRF string error
+              createPostError.value = err.response.data;
+          } else { // Fallback for other structured errors
+              createPostError.value = "Failed to create post. Invalid input or server error.";
+          }
+      } else if (err.message) { // Network error or other client-side error
+          createPostError.value = err.message;
+      } else { // Ultimate fallback
+          createPostError.value = 'An unexpected error occurred while creating the post.';
+      }
+      return null; // Indicate failure
     } finally {
+      isCreatingPost.value = false; // Reset loading state
       console.log("FeedStore: Create post attempt finished.");
     }
   }
@@ -242,6 +274,10 @@ export const useFeedStore = defineStore('feed', () => {
     currentPage,
     totalPages,
     hasNextPage,
+
+      // ADD THESE TWO LINES (can be anywhere within the return object):
+    createPostError,    // The new error state for post creation
+    isCreatingPost,     // The new loading state for post creation
     // getters can be exposed here if defined
     fetchFeed,
     createPost,
