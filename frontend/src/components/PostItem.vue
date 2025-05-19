@@ -13,6 +13,8 @@ const props = defineProps<{
   post: Post
 }>();
 
+
+
 // --- Store Instances ---
 const feedStore = useFeedStore();
 const commentStore = useCommentStore();
@@ -51,10 +53,10 @@ const commentPostKey = computed(() => {
 const commentsForThisPost = computed(() => {
   const key = commentPostKey.value;
   if (!commentStore || typeof commentStore.commentsByPost === 'undefined') {
-     return [];
+    return [];
   }
   if (typeof commentStore.commentsByPost !== 'object' || commentStore.commentsByPost === null) {
-      return [];
+    return [];
   }
   return commentStore.commentsByPost[key] || [];
 });
@@ -70,7 +72,7 @@ const commentError = computed(() => { // This is for FETCHING comments
 // --- Methods ---
 function loadComments() {
   if (!props.post || typeof props.post.post_type === 'undefined' || typeof props.post.object_id === 'undefined') {
-      return;
+    return;
   }
   commentStore.fetchComments(props.post.post_type, props.post.object_id);
 }
@@ -113,25 +115,28 @@ async function handleCommentSubmit() {
   <article class="post-item">
     <header class="post-header">
       <router-link :to="{ name: 'profile', params: { username: post.author.username } }" class="author-link">
-         <span class="author-username">{{ post.author.username }}</span>
+        <span class="author-username">{{ post.author.username }}</span>
       </router-link>
       <span class="timestamp" v-if="post.created_at">{{ format(new Date(post.created_at), 'Pp') }}</span>
     </header>
     <div class="post-content">
-      <p>{{ post.content }}</p>
+      <!-- Display image if it exists -->
+      <div v-if="post.image" class="post-image-container">
+        <img :src="post.image" :alt="`Image for post by ${post.author.username}`" class="post-image" />
+      </div>
+      <!-- Display content if it exists -->
+      <p v-if="post.content">{{ post.content }}</p>
+      <!-- Or if you always want a <p> tag, even if content is empty, to maintain structure: -->
+      <!-- <p>{{ post.content }}</p> -->
     </div>
     <footer class="post-footer">
-      <button
-        @click="feedStore.toggleLike(post.id)"
-        :class="{ 'liked': post.is_liked_by_user }"
-        class="like-button"
-        :disabled="post.isLiking"
-      >
+      <button @click="feedStore.toggleLike(post.id)" :class="{ 'liked': post.is_liked_by_user }" class="like-button"
+        :disabled="post.isLiking">
         {{ likeButtonText }}
       </button>
       <span>Likes: {{ post.like_count ?? 0 }}</span> |
       <button @click="toggleCommentDisplay" class="comment-toggle-button">
-         Comments: {{ post.comment_count ?? 0 }} {{ showComments ? '(-)' : '(+)' }}
+        Comments: {{ post.comment_count ?? 0 }} {{ showComments ? '(-)' : '(+)' }}
       </button>
     </footer>
 
@@ -148,14 +153,10 @@ async function handleCommentSubmit() {
       <!-- Display comments or "no comments" message -->
       <div v-else-if="Array.isArray(commentsForThisPost)">
         <template v-if="commentsForThisPost.length > 0">
-          <CommentItem
-            v-for="comment in commentsForThisPost"
-            :key="comment.id"
-            :comment="comment"
-            :parentPostType="props.post.post_type"
-            :parentObjectId="props.post.object_id"
-            :parentPostActualId="props.post.id" /> 
-        
+          <CommentItem v-for="comment in commentsForThisPost" :key="comment.id" :comment="comment"
+            :parentPostType="props.post.post_type" :parentObjectId="props.post.object_id"
+            :parentPostActualId="props.post.id" />
+
         </template>
         <div v-else class="no-comments">
           No comments yet.
@@ -170,13 +171,8 @@ async function handleCommentSubmit() {
         <div v-if="createCommentError" class="error-message comment-submit-error">
           {{ createCommentError }}
         </div>
-        <textarea
-          v-model="newCommentContent"
-          placeholder="Add a comment..."
-          rows="2"
-          :disabled="isCreatingComment"
-          required
-        ></textarea>
+        <textarea v-model="newCommentContent" placeholder="Add a comment..." rows="2" :disabled="isCreatingComment"
+          required></textarea>
         <button type="submit" :disabled="isCreatingComment || !newCommentContent.trim()">
           {{ isCreatingComment ? 'Submitting...' : 'Submit Comment' }}
         </button>
@@ -195,6 +191,7 @@ async function handleCommentSubmit() {
   border-radius: 4px;
   color: #333;
 }
+
 .post-header {
   display: flex;
   justify-content: space-between;
@@ -202,31 +199,38 @@ async function handleCommentSubmit() {
   margin-bottom: 0.5rem;
   font-size: 0.9em;
 }
+
 .author-link {
-   text-decoration: none;
-   color: #555;
+  text-decoration: none;
+  color: #555;
 }
+
 .author-username {
   font-weight: bold;
   color: #444;
 }
- .author-link:hover .author-username {
-     text-decoration: underline;
-     color: #0056b3;
- }
+
+.author-link:hover .author-username {
+  text-decoration: underline;
+  color: #0056b3;
+}
+
 .timestamp {
   color: #666;
   font-size: 0.85em;
 }
+
 .post-content {
   margin-bottom: 0.75rem;
   line-height: 1.5;
   color: #333;
 }
+
 .post-content p {
-    margin-top: 0;
-    margin-bottom: 0;
+  margin-top: 0;
+  margin-bottom: 0;
 }
+
 .post-footer {
   font-size: 0.9em;
   color: #555;
@@ -234,6 +238,7 @@ async function handleCommentSubmit() {
   align-items: center;
   gap: 0.75rem;
 }
+
 .like-button {
   padding: 3px 8px;
   cursor: pointer;
@@ -244,19 +249,23 @@ async function handleCommentSubmit() {
   font-size: 0.85em;
   transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
 }
+
 .like-button:hover {
-    background-color: #dee2e6;
-    border-color: #adb5bd;
+  background-color: #dee2e6;
+  border-color: #adb5bd;
 }
+
 .like-button.liked {
   background-color: #007bff;
   border-color: #007bff;
   color: white;
 }
- .like-button:disabled {
-     opacity: 0.6;
-     cursor: not-allowed;
- }
+
+.like-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .comment-toggle-button {
   background: none;
   border: none;
@@ -267,14 +276,17 @@ async function handleCommentSubmit() {
   margin: 0;
   text-decoration: underline;
 }
+
 .comment-toggle-button:hover {
   color: #0056b3;
 }
+
 .comments-section {
   margin-top: 1rem;
   border-top: 1px solid #f0f0f0;
   padding-top: 1rem;
 }
+
 .comments-loading,
 .comments-error,
 .no-comments {
@@ -283,22 +295,26 @@ async function handleCommentSubmit() {
   font-size: 0.9em;
   padding: 0.5rem 0;
 }
+
 .comments-error {
   color: #dc3545;
 }
+
 .comments-error button {
-   margin-left: 0.5rem;
-   font-size: 0.8em;
-   padding: 2px 5px;
-   cursor: pointer;
+  margin-left: 0.5rem;
+  font-size: 0.8em;
+  padding: 2px 5px;
+  cursor: pointer;
 }
 
 /* --- Styles for Comment Form --- */
 .comment-form {
   margin-top: 1.5rem;
   padding-top: 1rem;
-  border-top: 1px dashed #e0e0e0; /* Dashed separator */
+  border-top: 1px dashed #e0e0e0;
+  /* Dashed separator */
 }
+
 .comment-form textarea {
   width: 100%;
   padding: 0.5rem;
@@ -308,8 +324,10 @@ async function handleCommentSubmit() {
   margin-bottom: 0.5rem;
   resize: vertical;
   box-sizing: border-box;
-  min-height: 60px; /* Minimum height */
+  min-height: 60px;
+  /* Minimum height */
 }
+
 .comment-form button {
   padding: 0.4rem 0.8rem;
   background-color: #007bff;
@@ -320,14 +338,18 @@ async function handleCommentSubmit() {
   cursor: pointer;
   transition: background-color 0.2s ease;
 }
+
 .comment-form button:disabled {
   background-color: #ccc;
   cursor: not-allowed;
 }
+
 .comment-form button:not(:disabled):hover {
   background-color: #0056b3;
 }
-.comment-submit-error { /* Specific styling for comment submission errors */
+
+.comment-submit-error {
+  /* Specific styling for comment submission errors */
   color: #dc3545;
   background-color: #f8d7da;
   border: 1px solid #f5c6cb;
@@ -336,5 +358,25 @@ async function handleCommentSubmit() {
   margin-bottom: 0.5rem;
   font-size: 0.85rem;
 }
+
+.post-image-container {
+  margin-bottom: 10px; /* Space between image and content if both exist */
+  text-align: center; /* Or left, or whatever you prefer */
+}
+
+.post-image {
+  max-width: 100%;     /* Make image responsive, not exceed container width */
+  max-height: 500px;   /* Optional: Limit max height to prevent overly tall images */
+  border-radius: 8px;  /* Optional: match post item rounding */
+  object-fit: cover;   /* Optional: how image should resize (cover, contain, etc.) */
+                       /* Be mindful of aspect ratios with 'cover' */
+}
+
+/* Adjust post-content styling if needed */
+.post-content p {
+  margin-top: 0; /* Remove top margin if image is directly above */
+  /* Other existing styles for content text */
+}
+
 /* --- End Comment Form Styles --- */
 </style>

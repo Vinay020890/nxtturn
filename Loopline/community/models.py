@@ -6,6 +6,7 @@ from django.contrib.postgres.fields import ArrayField # Import ArrayField for li
 # Imports needed for Generic Relations in Comment model
 from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ValidationError
 
 # Define User using settings (best practice)
 User = settings.AUTH_USER_MODEL
@@ -79,6 +80,7 @@ class StatusPost(models.Model):
     """
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='status_posts') # User who wrote the post
     content = models.TextField() # The main text content of the post
+    image = models.ImageField(upload_to='post_images/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True) # Timestamp when created
     updated_at = models.DateTimeField(auto_now=True) # Timestamp when last updated
 
@@ -89,6 +91,11 @@ class StatusPost(models.Model):
 
     class Meta:
         ordering = ['-created_at'] # Default order is newest first
+
+    def clean(self):
+        super().clean() # It's good practice to call the parent's clean method
+        if not self.content and not self.image:
+            raise ValidationError('A post must have either text content or an image (or both).')
 
 
     def __str__(self):

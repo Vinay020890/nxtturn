@@ -116,7 +116,25 @@ class StatusPostSerializer(serializers.ModelSerializer):
     content_type_id = serializers.SerializerMethodField()
     object_id = serializers.SerializerMethodField()
     post_type = serializers.SerializerMethodField()   
-    comment_count = serializers.SerializerMethodField()   # <-- ADD THIS LINE    
+    comment_count = serializers.SerializerMethodField()   # <-- ADD THIS LINE 
+
+     # ---- 1. EXPLICITLY DEFINE 'content' and 'image' FIELDS ----
+    content = serializers.CharField(
+        required=False,        # Makes it optional
+        allow_blank=True,      # Allows empty string ""
+        allow_null=True,       # Allows null (None)
+        style={'base_template': 'textarea.html'} # Optional: for DRF browsable API
+    )
+    image = serializers.ImageField(
+        max_length=None,       # Default
+        use_url=True,          # Ensures URL is returned in responses
+        required=False,        # Makes it optional
+        allow_null=True,       # Allows null (None)
+        allow_empty_file=True  # Allow empty file submission to clear image (DRF default is False, but allow_null=True often handles this)
+                               # For clearing, usually client sends 'image': null.
+                               # We'll primarily rely on required=False and allow_null=True.
+    )
+    # ---- END OF EXPLICIT FIELD DEFINITIONS ----   
 
     class Meta:
         model = StatusPost
@@ -124,6 +142,7 @@ class StatusPostSerializer(serializers.ModelSerializer):
             'id',
             'author',           # Nested UserSerializer
             'content',
+            'image',
             'created_at',
             'updated_at',
             'like_count',       # Added
@@ -140,7 +159,44 @@ class StatusPostSerializer(serializers.ModelSerializer):
             'id', 'author', 'created_at', 'updated_at', 'like_count',
             'is_liked_by_user', 'content_type_id', 'object_id', 'post_type', 'comment_count'    
         ]
+    # ---- 2. ADD THE 'validate' METHOD ----
+    # A good place is after Meta and before get_... methods
+    def validate(self, data):
+        """
+        Validate that either content or an image is provided.
+        'data' here contains validated data for fields that were sent by the client.
+        """
+        # Get the prospective values.
+        # If a field is not in `data` (client didn't send it), and it's optional (required=False),
+        # its value for validation will depend on whether we are creating or updating.
 
+        # For 'create', if a field is not sent, it's considered missing.
+        # For 'update', if a field is not sent, it means "don't change this field".
+
+        is_creating = self.instance is None
+
+        # Determine the final state of content and image
+        # Content: if 'content' in data, use that. Otherwise, if updating, use existing.
+        final_content_value = data.get('content', self.instance.content if not is_creating else None)
+        final_content_str = str(final_content_value).strip() if final_content_value else ""
+
+        # Image:
+        # If 'image' is in data, client is trying to set/change/clear it.
+        # data['image'] could be an UploadedFile or None (if client sent null to clear).
+        # If 'image' is NOT in data (only for updates), it means client isn't touching the image.
+        final_image_exists = False
+        if 'image' in data: # Client sent something for the image field
+            if data['image']: # It's an UploadedFile
+                final_image_exists = True
+            # else: data['image'] is None (client wants to clear it) -> final_image_exists remains False
+        elif not is_creating and self.instance.image: # Updating and client didn't send 'image', so keep existing
+            final_image_exists = True
+
+        if not final_content_str and not final_image_exists:
+            raise serializers.ValidationError("A post must have either text content or an image (or both).")
+
+        return data
+    # ---- END OF 'validate' METHOD ---
      
 
      # --- Add this method ---
@@ -184,14 +240,18 @@ class StatusPostSerializer(serializers.ModelSerializer):
     # Ensure the create method sets the author from the request context if needed
     # (This might be handled in the View, but good practice to have here too
     # if this serializer is used for creation directly)
+     # ---- 3. MODIFY THE 'create' METHOD ----
     def create(self, validated_data):
         request = self.context.get('request')
         if request and hasattr(request, 'user'):
             validated_data['author'] = request.user
-        # Ensure required fields are present if called directly
-        if 'content' not in validated_data:
-             raise serializers.ValidationError({"content": "Content field is required."})
+        
+        # REMOVE this check, as content is now optional, and 'validate' method handles the combined check.
+        # if 'content' not in validated_data: # OLD CHECK
+        #      raise serializers.ValidationError({"content": "Content field is required."}) # OLD CHECK
+        
         return super().create(validated_data)
+    # ---- END OF 'create' METHOD MODIFICATION ----
     
     def get_post_type(self, obj):
     # obj is the StatusPost instance here
@@ -418,6 +478,8 @@ class FeedItemSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True) # Usually the object's pk
     author = UserSerializer(read_only=True) # Use the consistent UserSerializer
     content = serializers.CharField(read_only=True) # Assuming 'content' exists
+    # image = serializers.ImageField(source='image', read_only=True, allow_null=True, use_url=True)
+    image = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField(read_only=True)
     updated_at = serializers.DateTimeField(read_only=True)
     like_count = serializers.SerializerMethodField()
@@ -427,6 +489,20 @@ class FeedItemSerializer(serializers.Serializer):
     post_type = serializers.SerializerMethodField()
     title = serializers.SerializerMethodField() # Use method field for consistency
     comment_count = serializers.SerializerMethodField() # <-- ADDED FIELD
+
+      # ---- ADD THIS METHOD ----
+    def get_image(self, obj):
+        # Check if the object has an 'image' attribute
+        if hasattr(obj, 'image') and obj.image:
+            request = self.context.get('request')
+            if request:
+                # Build the full URL correctly
+                return request.build_absolute_uri(obj.image.url)
+            # Fallback if no request in context (less ideal, might not be full URL)
+            # but obj.image.url should usually be absolute or relative to MEDIA_URL
+            return obj.image.url
+        return None # Return None if no image attribute or no image file
+    # ---- END OF METHOD ----
 
     def get_post_type(self, obj):
         """ Return a string identifying the type of the post object. """

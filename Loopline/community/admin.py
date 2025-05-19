@@ -2,6 +2,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin # Import BaseUserAdmin
 from django.contrib.auth import get_user_model                   # Import get_user_model
+from django.utils.html import format_html
 # --- Import your models ---
 from .models import (
     UserProfile, Follow, StatusPost, ForumCategory, Group,
@@ -73,11 +74,12 @@ admin.site.register(Like)
 # Optional: Add customized admin classes for other models if needed later
 @admin.register(StatusPost)
 class StatusPostAdmin(admin.ModelAdmin):
-    list_display = ('id', 'author', 'content_preview', 'created_at', 'like_count')
+    list_display = ('id', 'author', 'content_preview', 'image_tag_list', 'created_at', 'like_count')
     list_filter = ('created_at', 'author')
     search_fields = ('content', 'author__username')
     # Make calculated fields read-only in the detail view
     # readonly_fields = ('like_count',) # like_count might not be directly editable anyway
+    readonly_fields = ('image_tag_detail',)
 
     def content_preview(self, obj):
         # Shorten content for display
@@ -92,6 +94,18 @@ class StatusPostAdmin(admin.ModelAdmin):
         return 0
     like_count.short_description = 'Likes' # Sets the column header name
     # --- END ADDED METHOD ---
+
+    def image_tag_list(self, obj):
+        if obj.image and hasattr(obj.image, 'url'): 
+         return format_html('<img src="{}" style="max-height: 40px; max-width: 50px;" />', obj.image.url)
+        return "No Image"
+    image_tag_list.short_description = 'Image'
+
+    def image_tag_detail(self, obj):
+        if obj.image and hasattr(obj.image, 'url'): 
+            return format_html('<div style="margin-top:10px;"><img src="{}" style="max-height: 200px; max-width: 300px;" /></div>', obj.image.url)
+        return "No Image Uploaded"
+    image_tag_detail.short_description = 'Current Image Preview'
 
     # Optional: Define like_count here if not a model property
     # def like_count(self, obj):

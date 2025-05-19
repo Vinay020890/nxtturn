@@ -24,6 +24,7 @@ export interface Post {
   updated_at: string;
   title: string | null; // Keep if ForumPosts have titles
   content: string;
+  image: string | null;
   like_count: number; // Mandatory field from serializer
   comment_count?: number; // Optional if not always present
   is_liked_by_user: boolean; // Mandatory field from serializer
@@ -129,61 +130,66 @@ export const useFeedStore = defineStore('feed', () => {
     }
   }
 
-    // REPLACE THE ENTIRE EXISTING createPost FUNCTION WITH THIS:
-  async function createPost(content: string): Promise<Post | null> {
-    console.log("FeedStore: Attempting to create post...");
+  // REPLACE THE ENTIRE EXISTING createPost FUNCTION WITH THIS:
+    // ---- START OF REPLACEMENT ----
+  async function createPost(postData: FormData): Promise<Post | null> { // Parameter changed
+    console.log("FeedStore: Attempting to create post with FormData...");
 
-    // Client-side check for empty content
-    if (!content || content.trim().length === 0) {
-      createPostError.value = "Post content cannot be empty.";
-      console.error("FeedStore: Post content cannot be empty.");
-      return null; // Indicate failure
-    }
+    isCreatingPost.value = true;
+    createPostError.value = null; // Clear previous errors
 
-    isCreatingPost.value = true;    // Set loading state
-    createPostError.value = null;   // Clear previous errors for this specific action
+    // Client-side validation for empty content/image is now primarily in CreatePostForm.vue
+    // The backend serializer will perform the definitive validation.
 
     try {
       const authStore = useAuthStore();
       if (!authStore.isAuthenticated) {
         createPostError.value = "User not authenticated. Please login to post.";
         console.warn("FeedStore: User not authenticated, cannot create post.");
-        return null; // Indicate failure
+        // isCreatingPost.value = false; // Moved to finally block
+        return null; // Still return null, but ensure isCreatingPost is handled in finally
       }
 
-      // API endpoint for creating status posts
-      const response = await axiosInstance.post<Post>('/posts/', {
-        content: content
-      });
+      // When sending FormData, Axios automatically sets Content-Type to multipart/form-data
+      const response = await axiosInstance.post<Post>('/posts/', postData); // Send FormData directly
 
       console.log("FeedStore: Post created successfully", response.data);
+      // Add the new post to the beginning of the posts array
+      // Ensure the new post from API response has all necessary client-side flags like isLiking
+      const newPostResponseData = { ...response.data, isLiking: false, image: response.data.image || null }; // Ensure image is part of the new post object
+      posts.value.unshift(newPostResponseData);
 
-      // Optimistic Update: Prepend the new post
-      // Ensure the new post has the 'isLiking' flag for consistency if your PostItem expects it
-      posts.value.unshift({ ...response.data, isLiking: false });
-
-      return response.data; // Return created post on success
+      return newPostResponseData; // Return created post object
 
     } catch (err: any) {
       console.error("FeedStore: Error creating post:", err);
-
-      // Attempt to parse a more specific error message from the backend response
+      // Your existing improved error message parsing logic:
       if (err.response && err.response.data) {
-          // Check for field-specific errors first (e.g., if 'content' field had an issue)
-          if (err.response.data.content && Array.isArray(err.response.data.content) && err.response.data.content.length > 0) {
-              createPostError.value = err.response.data.content.join(' ');
-          } else if (typeof err.response.data.content === 'string') { // Django REST sometimes returns string for single field error
-              createPostError.value = err.response.data.content;
-          } else if (err.response.data.detail) { // Generic DRF error
-              createPostError.value = err.response.data.detail;
-          } else if (typeof err.response.data === 'string') { // Non-DRF string error
-              createPostError.value = err.response.data;
-          } else { // Fallback for other structured errors
+          let specificErrorMessage = '';
+          if (typeof err.response.data === 'object' && err.response.data !== null) {
+              if (err.response.data.content && Array.isArray(err.response.data.content)) {
+                  specificErrorMessage += err.response.data.content.join(' ') + ' ';
+              }
+              if (err.response.data.image && Array.isArray(err.response.data.image)) {
+                  specificErrorMessage += err.response.data.image.join(' ') + ' ';
+              }
+              if (err.response.data.non_field_errors && Array.isArray(err.response.data.non_field_errors)) {
+                  specificErrorMessage += err.response.data.non_field_errors.join(' ');
+              } else if (err.response.data.detail && typeof err.response.data.detail === 'string') {
+                  specificErrorMessage = err.response.data.detail;
+              }
+          }
+          
+          if (specificErrorMessage.trim()) {
+              createPostError.value = specificErrorMessage.trim();
+          } else if (typeof err.response.data === 'string') {
+                createPostError.value = err.response.data;
+          } else { 
               createPostError.value = "Failed to create post. Invalid input or server error.";
           }
-      } else if (err.message) { // Network error or other client-side error
+      } else if (err.message) {
           createPostError.value = err.message;
-      } else { // Ultimate fallback
+      } else {
           createPostError.value = 'An unexpected error occurred while creating the post.';
       }
       return null; // Indicate failure
@@ -192,7 +198,7 @@ export const useFeedStore = defineStore('feed', () => {
       console.log("FeedStore: Create post attempt finished.");
     }
   }
-
+  // ---- END OF REPLACEMENT ----
   // ========================================
   // === UPDATED toggleLike Action ===
   // ========================================
