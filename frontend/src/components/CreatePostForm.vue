@@ -13,6 +13,7 @@ const { isCreatingPost, createPostError } = storeToRefs(feedStore);
 // 3. Define local component state
 const postContent = ref('');
 const selectedImageFile = ref<File | null>(null);
+const imagePreviewUrl = ref<string | null>(null);
 
 // 4. ADD THIS WATCH FUNCTION:
 // Watch for changes in postContent to clear the error message from the store
@@ -27,22 +28,42 @@ watch(postContent, (newValue) => {
 });
 
 // ---- ADD THIS NEW METHOD ----
+// Still inside <script setup lang="ts"> in CreatePostForm.vue
+// Make sure imagePreviewUrl is defined above this:
+// const imagePreviewUrl = ref<string | null>(null);
+
 const handleImageFileChange = (event: Event) => {
   const target = event.target as HTMLInputElement;
-  if (target.files && target.files[0]) {
-    selectedImageFile.value = target.files[0];
-    // Optional: You could add a preview of the selected image here if desired
-    // For now, we'll just store the file.
-    // If there was an error from a previous submission, clear it when a new file is chosen,
-    // especially if it was an image-related error (though our current errors are generic)
+  const file = target.files?.[0]; // Use optional chaining for safety
+
+  if (file) { // If a file is selected
+    selectedImageFile.value = file;
+
+    // Create a FileReader to read the image for preview
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      // When the file is successfully read, e.target.result contains the data URL
+      imagePreviewUrl.value = e.target?.result as string;
+    };
+
+    reader.onerror = (e) => {
+      // Optional: Handle file reading errors
+      console.error("FileReader error:", e);
+      imagePreviewUrl.value = null; // Clear preview on error
+    };
+
+    reader.readAsDataURL(file); // Start reading the file as a data URL
+
+    // If there was an error from a previous submission, clear it when a new file is chosen
     if (createPostError.value) {
       feedStore.createPostError = null;
     }
-  } else {
+  } else { // If no file is selected (e.g., user cancels file dialog or clears selection)
     selectedImageFile.value = null;
+    imagePreviewUrl.value = null; // Clear preview as well
   }
 };
-// ---- END OF NEW METHOD ----
 
 
 
@@ -89,6 +110,7 @@ const handleSubmit = async () => {
     console.log("CreatePostForm: Post submitted successfully!");
     postContent.value = ''; // Clear the textarea
     selectedImageFile.value = null; // Clear the selected file
+    imagePreviewUrl.value = null;
     // Clear the file input visually (this is a bit tricky, often involves resetting the form or input's value)
     const fileInput = document.getElementById('postImageInput') as HTMLInputElement;
     if (fileInput) {
@@ -121,6 +143,13 @@ const handleSubmit = async () => {
         <p v-if="selectedImageFile" class="selected-file-info">
           Selected: {{ selectedImageFile.name }}
         </p>
+
+        <!-- 👇👇👇 ADD THIS IMAGE PREVIEW SECTION INSIDE .form-group-image-upload 👇👇👇 -->
+        <div v-if="imagePreviewUrl" class="image-preview-container">
+          <img :src="imagePreviewUrl" alt="Selected image preview" class="image-preview" />
+        </div>
+        <!-- END OF IMAGE PREVIEW SECTION -->
+
       </div>
       <!-- END OF FILE INPUT SECTION -->
 
@@ -217,4 +246,18 @@ button:not(:disabled):hover {
   margin-top: 0.25rem;
   font-style: italic;
 }
+
+.image-preview-container {
+  margin-top: 10px;
+  text-align: left; /* Or center */
+}
+
+.image-preview {
+  max-width: 200px;
+  max-height: 200px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
 </style>
