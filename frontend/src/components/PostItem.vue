@@ -120,14 +120,20 @@ async function handleCommentSubmit() {
       <span class="timestamp" v-if="post.created_at">{{ format(new Date(post.created_at), 'Pp') }}</span>
     </header>
     <div class="post-content">
-      <!-- Display image if it exists -->
-      <div v-if="post.image" class="post-image-container">
+      <!-- Display video if it exists -->
+      <div v-if="post.video" class="post-video-container">
+        <video controls class="post-video">
+          <source :src="post.video" type="video/mp4"> <!-- Adjust type if needed, or detect from URL -->
+          Your browser does not support the video tag.
+        </video>
+      </div>
+      <!-- Else, display image if it exists (and no video) -->
+      <div v-else-if="post.image" class="post-image-container">
         <img :src="post.image" :alt="`Image for post by ${post.author.username}`" class="post-image" />
       </div>
-      <!-- Display content if it exists -->
-      <p v-if="post.content">{{ post.content }}</p>
-      <!-- Or if you always want a <p> tag, even if content is empty, to maintain structure: -->
-      <!-- <p>{{ post.content }}</p> -->
+
+      <!-- Display content if it exists (always show content regardless of media) -->
+      <p v-if="post.content" class="post-text-content">{{ post.content }}</p>
     </div>
     <footer class="post-footer">
       <button @click="feedStore.toggleLike(post.id)" :class="{ 'liked': post.is_liked_by_user }" class="like-button"
@@ -360,23 +366,52 @@ async function handleCommentSubmit() {
 }
 
 .post-image-container {
-  margin-bottom: 10px; /* Space between image and content if both exist */
-  text-align: center; /* Or left, or whatever you prefer */
+  margin-bottom: 10px;
+  /* Space between image and content if both exist */
+  text-align: center;
+  /* Or left, or whatever you prefer */
 }
 
 .post-image {
-  max-width: 100%;     /* Make image responsive, not exceed container width */
-  max-height: 500px;   /* Optional: Limit max height to prevent overly tall images */
-  border-radius: 8px;  /* Optional: match post item rounding */
-  object-fit: cover;   /* Optional: how image should resize (cover, contain, etc.) */
-                       /* Be mindful of aspect ratios with 'cover' */
+  max-width: 100%;
+  /* Make image responsive, not exceed container width */
+  max-height: 500px;
+  /* Optional: Limit max height to prevent overly tall images */
+  border-radius: 8px;
+  /* Optional: match post item rounding */
+  object-fit: cover;
+  /* Optional: how image should resize (cover, contain, etc.) */
+  /* Be mindful of aspect ratios with 'cover' */
 }
 
 /* Adjust post-content styling if needed */
 .post-content p {
-  margin-top: 0; /* Remove top margin if image is directly above */
+  margin-top: 0;
+  /* Remove top margin if image is directly above */
   /* Other existing styles for content text */
 }
 
+/* In PostItem.vue <style scoped> */
+
+.post-video-container {
+  margin-bottom: 10px;
+  background-color: #000; /* Optional: black background for video player */
+}
+
+.post-video {
+  max-width: 100%;
+  max-height: 500px; /* Or adjust as you see fit */
+  display: block; /* Helps with layout sometimes */
+  margin: 0 auto; /* Center if container is text-align:center or if it's block */
+  border-radius: 8px; /* Optional */
+}
+
+.post-text-content { /* Add a class to specifically style post text if needed */
+    /* Your existing styles for post.content p tag can go here or remain as they are */
+    /* If content and media are both present, you might want specific margins */
+    margin-top: 10px; /* Example: add space if media is above */
+}
+
+/* Ensure your existing .post-image-container and .post-image styles are still there */
 /* --- End Comment Form Styles --- */
 </style>

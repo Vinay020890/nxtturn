@@ -134,7 +134,9 @@ class StatusPostSerializer(serializers.ModelSerializer):
                                # For clearing, usually client sends 'image': null.
                                # We'll primarily rely on required=False and allow_null=True.
     )
-    # ---- END OF EXPLICIT FIELD DEFINITIONS ----   
+    # ---- END OF EXPLICIT FIELD DEFINITIONS ---- 
+
+    video = serializers.FileField(max_length=None, use_url=True, required=False, allow_null=True)  
 
     class Meta:
         model = StatusPost
@@ -143,6 +145,7 @@ class StatusPostSerializer(serializers.ModelSerializer):
             'author',           # Nested UserSerializer
             'content',
             'image',
+            'video',
             'created_at',
             'updated_at',
             'like_count',       # Added
@@ -161,42 +164,28 @@ class StatusPostSerializer(serializers.ModelSerializer):
         ]
     # ---- 2. ADD THE 'validate' METHOD ----
     # A good place is after Meta and before get_... methods
-    def validate(self, data):
-        """
-        Validate that either content or an image is provided.
-        'data' here contains validated data for fields that were sent by the client.
-        """
-        # Get the prospective values.
-        # If a field is not in `data` (client didn't send it), and it's optional (required=False),
-        # its value for validation will depend on whether we are creating or updating.
-
-        # For 'create', if a field is not sent, it's considered missing.
-        # For 'update', if a field is not sent, it means "don't change this field".
-
+    def validate(self, data): # <<<<------ THIS IS THE UPDATED METHOD
         is_creating = self.instance is None
-
-        # Determine the final state of content and image
-        # Content: if 'content' in data, use that. Otherwise, if updating, use existing.
         final_content_value = data.get('content', self.instance.content if not is_creating else None)
         final_content_str = str(final_content_value).strip() if final_content_value else ""
 
-        # Image:
-        # If 'image' is in data, client is trying to set/change/clear it.
-        # data['image'] could be an UploadedFile or None (if client sent null to clear).
-        # If 'image' is NOT in data (only for updates), it means client isn't touching the image.
         final_image_exists = False
-        if 'image' in data: # Client sent something for the image field
-            if data['image']: # It's an UploadedFile
+        if 'image' in data:
+            if data['image']:
                 final_image_exists = True
-            # else: data['image'] is None (client wants to clear it) -> final_image_exists remains False
-        elif not is_creating and self.instance.image: # Updating and client didn't send 'image', so keep existing
+        elif not is_creating and self.instance.image:
             final_image_exists = True
 
-        if not final_content_str and not final_image_exists:
-            raise serializers.ValidationError("A post must have either text content or an image (or both).")
+        final_video_exists = False
+        if 'video' in data:
+            if data['video']:
+                final_video_exists = True
+        elif not is_creating and self.instance.video:
+            final_video_exists = True
 
+        if not final_content_str and not final_image_exists and not final_video_exists:
+            raise serializers.ValidationError("A post must have either text content, an image, or a video.")
         return data
-    # ---- END OF 'validate' METHOD ---
      
 
      # --- Add this method ---
@@ -480,6 +469,7 @@ class FeedItemSerializer(serializers.Serializer):
     content = serializers.CharField(read_only=True) # Assuming 'content' exists
     # image = serializers.ImageField(source='image', read_only=True, allow_null=True, use_url=True)
     image = serializers.SerializerMethodField()
+    video = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField(read_only=True)
     updated_at = serializers.DateTimeField(read_only=True)
     like_count = serializers.SerializerMethodField()
@@ -502,6 +492,19 @@ class FeedItemSerializer(serializers.Serializer):
             # but obj.image.url should usually be absolute or relative to MEDIA_URL
             return obj.image.url
         return None # Return None if no image attribute or no image file
+    # ---- END OF METHOD ----
+    
+    # ---- ADD THIS METHOD ----
+    def get_video(self, obj):
+        # Check if the object has a 'video' attribute and it's set
+        if hasattr(obj, 'video') and obj.video:
+            request = self.context.get('request')
+            if request:
+                # Build the full absolute URL
+                return request.build_absolute_uri(obj.video.url)
+            # Fallback if no request in context (less ideal)
+            return obj.video.url
+        return None # Return None if no video attribute or no video file
     # ---- END OF METHOD ----
 
     def get_post_type(self, obj):

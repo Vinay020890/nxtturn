@@ -81,6 +81,7 @@ class StatusPost(models.Model):
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='status_posts') # User who wrote the post
     content = models.TextField() # The main text content of the post
     image = models.ImageField(upload_to='post_images/', null=True, blank=True)
+    video = models.FileField(upload_to='post_videos/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True) # Timestamp when created
     updated_at = models.DateTimeField(auto_now=True) # Timestamp when last updated
 
@@ -94,8 +95,8 @@ class StatusPost(models.Model):
 
     def clean(self):
         super().clean() # It's good practice to call the parent's clean method
-        if not self.content and not self.image:
-            raise ValidationError('A post must have either text content or an image (or both).')
+        if not self.content and not self.image and not self.video:
+            raise ValidationError('A post must have either text content, an image, or a video.')
 
 
     def __str__(self):

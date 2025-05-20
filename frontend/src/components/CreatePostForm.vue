@@ -14,6 +14,7 @@ const { isCreatingPost, createPostError } = storeToRefs(feedStore);
 const postContent = ref('');
 const selectedImageFile = ref<File | null>(null);
 const imagePreviewUrl = ref<string | null>(null);
+const selectedVideoFile = ref<File | null>(null);
 
 // 4. ADD THIS WATCH FUNCTION:
 // Watch for changes in postContent to clear the error message from the store
@@ -65,63 +66,86 @@ const handleImageFileChange = (event: Event) => {
   }
 };
 
+// ... (existing handleImageFileChange method) ...
+
+// ---- ADD THIS NEW METHOD FOR VIDEO ----
+const handleVideoFileChange = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0]; // Get the selected file
+
+  if (file) {
+    selectedVideoFile.value = file;
+    // If there was an error from a previous submission, clear it when a new file is chosen.
+    if (createPostError.value) {
+      feedStore.createPostError = null;
+    }
+  } else {
+    selectedVideoFile.value = null; // Clear if no file is selected
+  }
+};
+// ---- END OF NEW METHOD FOR VIDEO ----
+
 
 
 // 5. Define the handleSubmit function
 // ---- REPLACE EXISTING handleSubmit WITH THIS ----
+// ---- REPLACE CURRENT handleSubmit WITH THIS ----
 const handleSubmit = async () => {
-  // Validation: ensure either content or an image is provided
-  // This client-side check mirrors the backend validation
   const currentContent = postContent.value.trim();
   const currentImageFile = selectedImageFile.value;
+  const currentVideoFile = selectedVideoFile.value; // <<<< NEW: Get selected video
 
-  if (!currentContent && !currentImageFile) {
-    feedStore.createPostError = "Please provide either text content or an image for your post.";
+  // MODIFIED Validation: ensure either content, an image, OR a video is provided
+  if (!currentContent && !currentImageFile && !currentVideoFile) {
+    feedStore.createPostError = "Please provide text, an image, or a video for your post.";
     return;
   }
-  // Clear any previous error if validation passes before submitting
+  // Clear any previous error if validation now passes
   if (feedStore.createPostError) {
     feedStore.createPostError = null;
   }
 
   const formData = new FormData();
+
   if (currentContent) {
     formData.append('content', currentContent);
-  } else {
-    // If content is empty, backend model allows null/blank,
-    // but DRF might expect the field if it's in serializer Meta.fields.
-    // Sending an empty string explicitly if no content might be safer
-    // if the backend serializer expects 'content' key even if empty.
-    // Or, if backend serializer `content` field has `required=False`,
-    // we don't need to append it if it's empty.
-    // Let's assume for now not appending empty content is fine if an image is present.
-    // The serializer's `validate` method checks for at least one.
   }
+  // Note: We don't need an 'else' for content if it's empty.
+  // The backend serializer has content as optional.
+  // The overall validation (content OR image OR video) is done above and by the backend.
 
   if (currentImageFile) {
     formData.append('image', currentImageFile);
   }
 
-  // Call the store action. We'll update the store action in the next step
-  // to accept FormData or individual fields. For now, let's pass both.
-  const newPost = await feedStore.createPost(formData); // Pass FormData to store action
+  if (currentVideoFile) { // <<<< NEW: Append video if selected
+    formData.append('video', currentVideoFile);
+  }
+
+  const newPost = await feedStore.createPost(formData); // formData now potentially includes video
 
   if (newPost) {
-    console.log("CreatePostForm: Post submitted successfully!");
-    postContent.value = ''; // Clear the textarea
-    selectedImageFile.value = null; // Clear the selected file
+    console.log("CreatePostForm: Post submitted successfully!", newPost); // Log the newPost for debugging
+    postContent.value = '';
+    selectedImageFile.value = null;
     imagePreviewUrl.value = null;
-    // Clear the file input visually (this is a bit tricky, often involves resetting the form or input's value)
-    const fileInput = document.getElementById('postImageInput') as HTMLInputElement;
-    if (fileInput) {
-      fileInput.value = ''; // Attempt to reset file input
+    selectedVideoFile.value = null; // <<<< NEW: Clear selected video file state
+
+    // Attempt to reset file inputs visually
+    const imageFileInput = document.getElementById('postImageInput') as HTMLInputElement;
+    if (imageFileInput) {
+      imageFileInput.value = '';
+    }
+    // We will add an ID "postVideoInput" to the video input in the template
+    const videoFileInput = document.getElementById('postVideoInput') as HTMLInputElement;
+    if (videoFileInput) {
+      videoFileInput.value = ''; // <<<< NEW: Attempt to reset video file input
     }
   } else {
     console.error("CreatePostForm: Failed to submit post. Error should be in store's createPostError.");
-    // Error message is already set in feedStore.createPostError by the store action
   }
 };
-// ---- END OF REPLACED handleSubmit ----
+// ---- END OF REPLACEMENT ----
 </script>
 
 <template>
@@ -153,7 +177,24 @@ const handleSubmit = async () => {
       </div>
       <!-- END OF FILE INPUT SECTION -->
 
-      <button type="submit" :disabled="isCreatingPost || (postContent.trim() === '' && selectedImageFile === null)">
+      <!-- ---- ADD THIS VIDEO INPUT SECTION ---- -->
+      <div class="form-group-video-upload">
+        <label for="postVideoInput">Add a video (optional):</label>
+        <input
+          type="file"
+          id="postVideoInput"
+          @change="handleVideoFileChange"
+          accept="video/mp4, video/webm, video/ogg" 
+          :disabled="isCreatingPost"
+        />
+        <!-- Optional: display selected video file name -->
+        <p v-if="selectedVideoFile" class="selected-file-info">
+          Selected: {{ selectedVideoFile.name }}
+        </p>
+      </div>
+      <!-- ---- END OF VIDEO INPUT SECTION ---- -->
+
+      <button type="submit" :disabled="isCreatingPost || (postContent.trim() === '' && selectedImageFile === null && selectedVideoFile === null)">
         {{ isCreatingPost ? 'Posting...' : 'Post' }}
       </button>
     </form>
@@ -260,4 +301,19 @@ button:not(:disabled):hover {
   object-fit: cover;
 }
 
+/* In <style scoped> */
+.form-group-video-upload { /* Or combine with .form-group-image-upload if styles are identical */
+  margin-bottom: 1rem;
+}
+.form-group-video-upload label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-weight: 500;
+  font-size: 0.9em;
+}
+.form-group-video-upload input[type="file"] {
+  display: block;
+  font-size: 0.9em;
+}
+/* .selected-file-info styles already exist and will apply */
 </style>

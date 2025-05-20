@@ -74,12 +74,12 @@ admin.site.register(Like)
 # Optional: Add customized admin classes for other models if needed later
 @admin.register(StatusPost)
 class StatusPostAdmin(admin.ModelAdmin):
-    list_display = ('id', 'author', 'content_preview', 'image_tag_list', 'created_at', 'like_count')
+    list_display = ('id', 'author', 'content_preview', 'image_tag_list', 'video_info_list', 'created_at', 'like_count')
     list_filter = ('created_at', 'author')
     search_fields = ('content', 'author__username')
     # Make calculated fields read-only in the detail view
     # readonly_fields = ('like_count',) # like_count might not be directly editable anyway
-    readonly_fields = ('image_tag_detail',)
+    readonly_fields = ('image_tag_detail', 'video_player_detail')
 
     def content_preview(self, obj):
         # Shorten content for display
@@ -106,6 +106,27 @@ class StatusPostAdmin(admin.ModelAdmin):
             return format_html('<div style="margin-top:10px;"><img src="{}" style="max-height: 200px; max-width: 300px;" /></div>', obj.image.url)
         return "No Image Uploaded"
     image_tag_detail.short_description = 'Current Image Preview'
+    
+    # ---- ADD THESE TWO NEW METHODS FOR VIDEO INFO/PREVIEW ----
+    def video_info_list(self, obj):
+        if obj.video and hasattr(obj.video, 'url'):
+            return format_html('<a href="{}">{}</a>', obj.video.url, obj.video.name.split('/')[-1]) # Display filename as link
+        return "No Video"
+    video_info_list.short_description = 'Video File'
+
+    def video_player_detail(self, obj): # For the detail/change form display
+        if obj.video and hasattr(obj.video, 'url'):
+            return format_html(
+                '<div style="margin-top:10px;">'
+                '<p><a href="{0}">{1}</a></p>'
+                '<video controls width="320" height="240">' # Basic HTML5 video player
+                '<source src="{0}" type="video/mp4"> Gomenasai! Your browser does not support embedded video.' # Specify type if known, or let browser guess
+                '</video>'
+                '</div>', obj.video.url, obj.video.name.split('/')[-1]
+            )
+        return "No Video Uploaded"
+    video_player_detail.short_description = 'Current Video Preview'
+    # ---- END OF NEW METHODS ----
 
     # Optional: Define like_count here if not a model property
     # def like_count(self, obj):

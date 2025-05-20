@@ -25,6 +25,7 @@ export interface Post {
   title: string | null; // Keep if ForumPosts have titles
   content: string;
   image: string | null;
+  video: string | null;
   like_count: number; // Mandatory field from serializer
   comment_count?: number; // Optional if not always present
   is_liked_by_user: boolean; // Mandatory field from serializer
