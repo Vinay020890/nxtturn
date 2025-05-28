@@ -11,19 +11,29 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import os 
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# ---- 3. LOAD THE .env FILE ----
+# Construct the path to the .env file located in the BASE_DIR (Loopline directory)
+env_path = BASE_DIR / '.env'
+load_dotenv(dotenv_path=env_path)
+# ---- END OF LOADING .env ----
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
+# ---- 4. MODIFY HOW SECRET_KEY and DEBUG ARE SET ----
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-%p8^pkaqimpr38*c!6lvr%uh+l$i=_eiuq*83ul+d(coqy_=4n'
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-fallback-default-key-if-not-in-env') # Provide a fallback
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'False').upper() == 'TRUE' # Reads from .env, defaults to False
+# ---- END OF MODIFICATION FOR SECRET_KEY AND DEBUG ----
 
 ALLOWED_HOSTS = []
 
@@ -94,16 +104,18 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+# ---- 5. MODIFY DATABASES SETTING TO USE .env VARIABLES ----
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'community_portal',          # Database name you created
-        'USER': 'postgres',                  # Default PostgreSQL superuser
-        'PASSWORD': 'Protection@02', # <-- REPLACE with your actual password
-        'HOST': 'localhost',                 # Usually 'localhost' or '127.0.0.1'
-        'PORT': '5432',                      # Default PostgreSQL port
+        'NAME': os.getenv('DB_NAME', 'community_portal'), # Default to community_portal if not in .env
+        'USER': os.getenv('DB_USER'),                     # Must be in .env
+        'PASSWORD': os.getenv('DB_PASSWORD'),               # Must be in .env
+        'HOST': os.getenv('DB_HOST', 'localhost'),        # Default to localhost
+        'PORT': os.getenv('DB_PORT', '5432'),             # Default to 5432
     }
 }
+# ---- END OF DATABASE MODIFICATION ----
 
 
 # Password validation
