@@ -203,73 +203,80 @@ export const useFeedStore = defineStore('feed', () => {
   // ========================================
   // === UPDATED toggleLike Action ===
   // ========================================
-  async function toggleLike(postId: number) { // Accept postId for easier finding
-    console.log(`FeedStore: Toggling like for post ID ${postId}`);
+    // In frontend/src/stores/feed.ts
+  // Replace the existing toggleLike function with this one:
 
-    const postIndex = posts.value.findIndex(p => p.id === postId);
-    if (postIndex === -1) {
-      console.error("FeedStore: Post to toggle not found in current feed state.");
-      return;
+  // Replace your ENTIRE existing toggleLike function with this:
+
+async function toggleLike(
+    postId: number,         // For optimistic UI update if post is in feedStore.posts
+    postType: string,       // For optimistic UI update if post is in feedStore.posts
+    contentTypeId: number,  // DIRECTLY USED for API call
+    objectId: number        // DIRECTLY USED for API call (usually same as postId for StatusPost)
+) {
+  // console.log(`FeedStore: Attempting to toggle like for CTID: ${contentTypeId}, ObjID: ${objectId}. (Originating from PostID: ${postId}, Type: ${postType})`);
+
+  // Attempt to find the post in the local feed state for optimistic UI updates
+  const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
+  let originalLikedStatus: boolean | undefined = undefined;
+  let originalLikeCount: number | undefined = undefined;
+  let localPostRef: Post | null = null; // Reference to the post in local state, if found
+
+  if (postIndex !== -1) {
+    localPostRef = posts.value[postIndex];
+    if (localPostRef.isLiking) {
+        // console.log(`FeedStore: Like toggle already in progress for post ${postId} in local feed state.`);
+        // Decide if you want to return or let API call proceed (API might handle concurrency)
+        // For now, let's return to prevent multiple optimistic updates if button is spammed
+        return; 
     }
-
-    // Get the actual post object
-    const post = posts.value[postIndex];
-
-    // Prevent rapid clicks if already processing
-    if (post.isLiking) {
-        console.log(`FeedStore: Like toggle already in progress for post ${postId}`);
-        return;
-    }
-    post.isLiking = true; // Set flag to true
-
-    const originalLikedStatus = post.is_liked_by_user;
-    const originalLikeCount = post.like_count;
-
-    // --- Optimistic Update ---
-    post.is_liked_by_user = !originalLikedStatus;
-    post.like_count += post.is_liked_by_user ? 1 : -1;
-    // -------------------------
-
-    try {
-      // --- CONSTRUCT THE CORRECT URL ---
-      // Use content_type_id and object_id from the post data
-      const apiUrl = `/content/${post.content_type_id}/${post.object_id}/like/`;
-      console.log(`FeedStore: Calling API: POST ${apiUrl}`);
-      // ----------------------------------
-
-      // --- Make the POST request ---
-      const response = await axiosInstance.post<{ liked: boolean, like_count: number }>(apiUrl);
-      // -----------------------------
-
-      // --- Update with actual data from backend response ---
-      // It's safer to use the response data to ensure consistency
-      posts.value[postIndex].is_liked_by_user = response.data.liked;
-      posts.value[postIndex].like_count = response.data.like_count;
-      console.log(`FeedStore: Like toggled successfully for post ${postId}`, response.data);
-      // -----------------------------------------------------
-
-    } catch (err: any) {
-      console.error(`FeedStore: Error toggling like for post ${postId}:`, err);
-      // --- Revert Optimistic Update on Error ---
-      // Check index again in case the post was removed while request was in flight
-      if (posts.value[postIndex]?.id === postId) {
-         posts.value[postIndex].is_liked_by_user = originalLikedStatus;
-         posts.value[postIndex].like_count = originalLikeCount;
-         console.log(`FeedStore: Reverted optimistic like state for post ${postId}`);
-      }
-      // Set general error state or re-throw if needed by component
-      error.value = err.response?.data?.detail || err.message || 'Failed to toggle like.';
-      // -----------------------------------------
-    } finally {
-      // --- Reset the isLiking flag ---
-      // Check index again
-      if (posts.value[postIndex]?.id === postId) {
-         posts.value[postIndex].isLiking = false;
-      }
-       console.log(`FeedStore: Like toggle finished for post ${postId}`);
-      // -------------------------------
-    }
+    localPostRef.isLiking = true;
+    originalLikedStatus = localPostRef.is_liked_by_user;
+    originalLikeCount = localPostRef.like_count;
+    // Optimistic Update for local feed state
+    localPostRef.is_liked_by_user = !localPostRef.is_liked_by_user;
+    localPostRef.like_count += localPostRef.is_liked_by_user ? 1 : -1;
+    // console.log(`FeedStore: Optimistically updated post ${postId} in local feed state.`);
+  } else {
+    // console.log(`FeedStore: Post ID ${postId}, Type ${postType} not found in local feed state. API call will proceed directly.`);
   }
+
+  try {
+    // ALWAYS use the passed-in contentTypeId and objectId for the API call
+    const apiUrl = `/content/${contentTypeId}/${objectId}/like/`;
+    console.log(`FeedStore: Calling API: POST ${apiUrl}`);
+    
+    const response = await axiosInstance.post<{ liked: boolean, like_count: number }>(apiUrl);
+    // console.log(`FeedStore: API like toggle successful for object ${objectId}. Response:`, response.data);
+    
+    // If the post was found locally, update it with confirmed data from API
+    if (localPostRef) { // Check if we had a local reference
+        localPostRef.is_liked_by_user = response.data.liked;
+        localPostRef.like_count = response.data.like_count;
+        // console.log(`FeedStore: Confirmed API update for post ${postId} in local feed state.`);
+    }
+    // NOTE: If the post wasn't in feedStore.posts, this action has now updated the backend.
+    // The profileStore's local update (triggered by PostItem.vue) will handle the UI on the profile page.
+    // If the user navigates back to the main feed and that post is loaded, it will have the correct state from the server.
+
+  } catch (err: any) {
+    console.error(`FeedStore: Error toggling like for object ${objectId} via API:`, err);
+    // Revert Optimistic Update on Error if it was done
+    if (localPostRef && typeof originalLikedStatus === 'boolean' && typeof originalLikeCount === 'number') {
+       localPostRef.is_liked_by_user = originalLikedStatus;
+       localPostRef.like_count = originalLikeCount;
+       console.log(`FeedStore: Reverted optimistic like state for post ${postId} in feedStore.`);
+    }
+    error.value = err.response?.data?.detail || err.message || 'Failed to toggle like.';
+    throw err; // Re-throw so PostItem.vue's catch block can also handle it (e.g., show an alert)
+  } finally {
+    if (localPostRef) {
+       localPostRef.isLiking = false;
+    }
+    // console.log(`FeedStore: Like toggle API call finished for object ${objectId}.`);
+  }
+}
+// ========================================
   // ========================================
 
 

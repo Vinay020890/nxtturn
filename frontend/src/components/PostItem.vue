@@ -7,6 +7,7 @@ import { useCommentStore } from '@/stores/comment';
 import CommentItem from '@/components/CommentItem.vue';
 import { useAuthStore } from '@/stores/auth';
 import { storeToRefs } from 'pinia';
+import { useProfileStore } from '@/stores/profile';
 
 // --- Props Definition ---
 const props = defineProps<{
@@ -19,6 +20,7 @@ const props = defineProps<{
 const feedStore = useFeedStore();
 const commentStore = useCommentStore();
 const authStore = useAuthStore();
+const profileStore = useProfileStore();
 
 // --- GET REACTIVE REFS FROM COMMENT STORE FOR CREATION ---
 const { isCreatingComment, createCommentError } = storeToRefs(commentStore);
@@ -109,6 +111,65 @@ async function handleCommentSubmit() {
     console.error("PostItem: createComment action failed (error state should be set in store).");
   }
 }
+
+// In PostItem.vue
+// This replaces the toggleLike method you just showed me.
+
+const toggleLike = async () => {
+  // console.log('[PostItem] toggleLike called for post ID:', props.post.id, 'Type:', props.post.post_type, 'ContentTypeID:', props.post.content_type_id, 'ObjectID:', props.post.object_id);
+
+  if (!authStore.isAuthenticated) {
+    alert('Please login to like posts.');
+    return;
+  }
+
+  // Ensure essential IDs for API call are present on the post prop
+   if (typeof props.post.content_type_id !== 'number' || typeof props.post.object_id !== 'number') {
+      console.error('[PostItem] CRITICAL: Cannot toggle like because Post prop is missing content_type_id or object_id. Post ID:', props.post.id, 'Post data:', JSON.parse(JSON.stringify(props.post))); // Made log more explicit
+      alert('Cannot like this post due to missing information. Please try again later or contact support if the issue persists.'); // Slightly more user-friendly alert
+      return;
+  }
+
+  try {
+    // Step 1: Perform the like/unlike action via feedStore (this makes the API call)
+    // console.log('[PostItem] Calling feedStore.toggleLike for post ID:', props.post.id, 'Type:', props.post.post_type);
+    await feedStore.toggleLike(props.post.id, props.post.post_type, props.post.content_type_id, props.post.object_id); 
+    // console.log('[PostItem] feedStore.toggleLike finished successfully.');
+
+    // Step 2: If this post is being displayed on a profile page, 
+    // and its author matches the current profile's user,
+    // then also update its state in profileStore.userPosts for UI consistency on that page.
+    // console.log('[PostItem] Checking for profile sync. Current profile user:', profileStore.currentProfile?.user?.username,'Post author:', props.post.author.username);
+
+    if (profileStore.currentProfile && 
+        profileStore.currentProfile.user.username === props.post.author.username) {
+        // Check if the post exists in the userPosts array of the profileStore
+        const postExistsInUserPosts = profileStore.userPosts.some(
+            (p: Post) => p.id === props.post.id && p.post_type === props.post.post_type
+        );
+
+        if (postExistsInUserPosts) {
+            // console.log('[PostItem] Post found in profileStore.userPosts. Calling profileStore.toggleLikeInUserPosts for post ID:', props.post.id, 'Type:', props.post.post_type);
+            // This new action (toggleLikeInUserPosts) will be added to profile.ts
+            // It will ONLY update the local state in profileStore.userPosts.
+            profileStore.toggleLikeInUserPosts(props.post.id, props.post.post_type);
+        } else {
+            // console.log('[PostItem] Post (ID:', props.post.id, ') not found in profileStore.userPosts, or profileStore.userPosts is empty. No sync needed or post list might be stale.');
+        }
+    } else {
+      // console.log('[PostItem] Not on a relevant profile page, or currentProfile/author mismatch. No profileStore sync for like needed.');
+    }
+
+  } catch (error: any) { // This catch block primarily catches errors from feedStore.toggleLike
+    console.error('[PostItem] Error during toggleLike process (likely from feedStore API call):', error);
+    // The alert was here, but feedStore.toggleLike should set its own error state
+    // which can be observed by the UI if needed.
+    // If you want an alert specifically from PostItem:
+    // alert(`An error occurred while trying to like the post: ${error.message || 'Please try again.'}`);
+    alert(`An error occurred while trying to like the post.`); 
+  }
+};
+// ---- END OF REPLACEMENT ----
 </script>
 
 <template>
@@ -136,7 +197,7 @@ async function handleCommentSubmit() {
       <p v-if="post.content" class="post-text-content">{{ post.content }}</p>
     </div>
     <footer class="post-footer">
-      <button @click="feedStore.toggleLike(post.id)" :class="{ 'liked': post.is_liked_by_user }" class="like-button"
+      <button @click="toggleLike" :class="{ 'liked': post.is_liked_by_user }" class="like-button"
         :disabled="post.isLiking">
         {{ likeButtonText }}
       </button>

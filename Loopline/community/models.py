@@ -8,6 +8,11 @@ from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelatio
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 
+# --- Signals ---
+# Import necessary modules for signals
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
 # Define User using settings (best practice)
 User = settings.AUTH_USER_MODEL
 
@@ -248,10 +253,105 @@ class Like(models.Model):
              return f'{self.user.username} liked object ID {self.object_id} of type {self.content_type.model}'
 # --- End of replacement ---
 
-# --- Signals ---
-# Import necessary modules for signals
-from django.db.models.signals import post_save
-from django.dispatch import receiver
+# ---- ADD THE NEW NOTIFICATION MODEL CLASS STRUCTURE HERE ----
+class Notification(models.Model):
+    recipient = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='notifications_received', on_delete=models.CASCADE)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='notifications_sent', on_delete=models.CASCADE)
+    # We will add fields here in the next steps
+    # ---- ADD THESE FIELDS ----
+    verb = models.CharField(max_length=255) # e.g., "liked", "commented on", "replied to"
+    
+    # Optional, but useful for categorizing/filtering/display logic
+    LIKE = 'like'
+    COMMENT = 'comment'
+    REPLY = 'reply'
+    # Add more types as needed later:
+    # FOLLOW = 'follow' 
+    # MENTION = 'mention'
+    NOTIFICATION_TYPE_CHOICES = [
+        (LIKE, 'Like on your Post'),
+        (COMMENT, 'Comment on your Post'),
+        (REPLY, 'Reply to your Comment'),
+        # (FOLLOW, 'New Follower'),
+        # (MENTION, 'Mention in Post/Comment'),
+    ]
+    notification_type = models.CharField(
+        max_length=50,
+        choices=NOTIFICATION_TYPE_CHOICES,
+        blank=True, # Making it blankable if some notifications don't fit predefined types
+        null=True   # Allowing null if not set
+    )
+    # ---- END OF FIELDS TO ADD ----
+    
+     # ---- ADD THESE FIELDS FOR 'action_object' ----
+    # The 'action_object' is the direct object of the actor's action
+    # e.g., the Like instance, the Comment instance itself.
+    action_object_content_type = models.ForeignKey(
+        ContentType,
+        related_name='notification_action_object', # Helps in reverse queries from ContentType
+        on_delete=models.CASCADE,
+        null=True, blank=True # Optional: some notifications might not have a direct action object
+    )
+    action_object_object_id = models.PositiveIntegerField(
+        null=True, blank=True # Must match null/blank of content_type
+    )
+    action_object = GenericForeignKey(
+        'action_object_content_type',
+        'action_object_object_id'
+    )
+    # ---- END OF 'action_object' FIELDS ----
+
+    # ---- ADD THESE FIELDS FOR 'target' ----
+    # The 'target' is what the action was performed upon
+    # e.g., the StatusPost being liked/commented on, or the parent Comment being replied to.
+    target_content_type = models.ForeignKey(
+        ContentType,
+        related_name='notification_target', # Helps in reverse queries from ContentType
+        on_delete=models.CASCADE,
+        null=True, blank=True # Optional: some notifications might be general (e.g., system announcement)
+    )
+    target_object_object_id = models.PositiveIntegerField(
+        null=True, blank=True # Must match null/blank of content_type
+    )
+    target = GenericForeignKey(
+        'target_content_type',
+        'target_object_object_id'
+    )
+    # ---- END OF 'target' FIELDS ---
+    
+     # ---- ADD THESE FIELDS ----
+    timestamp = models.DateTimeField(auto_now_add=True)
+    is_read = models.BooleanField(default=False)
+    # is_seen_dropdown = models.BooleanField(default=False) # Optional for later UI enhancements
+    # ---- END OF FIELDS TO ADD ----
+
+    class Meta:
+        ordering = ['-timestamp'] # Order by newest first by default
+        indexes = [
+            models.Index(fields=['recipient', 'is_read', '-timestamp']),
+        ] 
+
+    def __str__(self):
+        parts = []
+        if self.actor:
+            parts.append(str(self.actor.username))
+        
+        parts.append(self.verb if self.verb else self.notification_type if self.notification_type else "acted")
+
+        if self.action_object:
+            parts.append(f"(action: {self.action_object_content_type.model if self.action_object_content_type else 'item'} id:{self.action_object_object_id})")
+        
+        if self.target:
+            parts.append(f"on your {self.target_content_type.model if self.target_content_type else 'item'}")
+            # You could try to get str(self.target) but be careful of query cost here
+            # parts.append(f"on {str(self.target)[:30] + '...' if len(str(self.target)) > 30 else str(self.target)}")
+
+
+        status = "Read" if self.is_read else "Unread"
+        return f"To: {self.recipient.username if self.recipient else 'N/A'} - {' '.join(parts)} - {status}"
+# ---- END OF NOTIFICATION MODEL CLASS STRUCTURE ----
+
+
 
 # Ensure User is correctly defined above using settings.AUTH_USER_MODEL
 

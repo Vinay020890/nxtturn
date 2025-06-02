@@ -201,6 +201,28 @@ export const useProfileStore = defineStore('profile', () => {
       console.log(`ProfileStore: Update picture attempt finished for ${username}.`);
     }
   }
+
+  // ---- ADD THIS NEW ACTION ----
+function toggleLikeInUserPosts(postId: number, postType: string) {
+  // console.log(`ProfileStore: Attempting to toggle like in userPosts for Post ID: ${postId}, Type: ${postType}`);
+  if (userPosts.value && userPosts.value.length > 0) {
+    const postIndex = userPosts.value.findIndex(p => p.id === postId && p.post_type === postType);
+    
+    if (postIndex !== -1) {
+      const post = userPosts.value[postIndex];
+      // Toggle like status and update count locally
+      post.is_liked_by_user = !post.is_liked_by_user;
+      post.like_count += post.is_liked_by_user ? 1 : -1;
+      
+     // console.log(`ProfileStore: Toggled like for post ${postId} in userPosts. New liked state: ${post.is_liked_by_user}, New count: ${post.like_count}`);
+    } else {
+      console.warn(`ProfileStore: Post ${postId} (type ${postType}) not found in userPosts. Cannot toggle like state locally.`);
+    }
+  } else {
+    console.warn(`ProfileStore: userPosts array is empty or not yet initialized. Cannot toggle like for Post ID: ${postId}`);
+  }
+}
+// ---- END OF NEW ACTION ----
   // --- END ACTION ---
 
   return {
@@ -219,5 +241,6 @@ export const useProfileStore = defineStore('profile', () => {
     followUser,
     unfollowUser,
     updateProfilePicture, // <-- Ensure this is returned
+    toggleLikeInUserPosts,
   };
 });

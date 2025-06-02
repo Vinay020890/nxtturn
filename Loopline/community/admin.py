@@ -3,10 +3,12 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin # Import BaseUserAdmin
 from django.contrib.auth import get_user_model                   # Import get_user_model
 from django.utils.html import format_html
+from django.urls import reverse, NoReverseMatch
+from django.contrib.contenttypes.models import ContentType
 # --- Import your models ---
 from .models import (
     UserProfile, Follow, StatusPost, ForumCategory, Group,
-    ForumPost, Comment, Like
+    ForumPost, Comment, Like, Notification 
 )
 
 User = get_user_model() # Get the active User model
@@ -132,3 +134,100 @@ class StatusPostAdmin(admin.ModelAdmin):
     # def like_count(self, obj):
     #     return obj.likes.count()
     # like_count.short_description = 'Likes'
+    
+# ... (end of your StatusPostAdmin class)
+
+# ---- ADD THE DETAILED NotificationAdmin CLASS AND REGISTRATION HERE ----
+@admin.register(Notification)
+class NotificationAdmin(admin.ModelAdmin):
+    list_display = (
+        'id', 
+        'recipient_username_link', # Changed to link
+        'actor_username_link',     # Changed to link
+        'verb', 
+        'notification_type', 
+        'target_link',             # Changed to link
+        'action_object_link',      # Changed to link
+        'is_read', 
+        'timestamp'
+    )
+    list_filter = ('is_read', 'notification_type', 'timestamp', 'recipient__username', 'actor__username')
+    search_fields = ('recipient__username', 'actor__username', 'verb')
+    list_select_related = ('recipient', 'actor', 'target_content_type', 'action_object_content_type')
+    date_hierarchy = 'timestamp'
+
+    readonly_fields = (
+        'recipient_username_link', 'actor_username_link', 'verb', 'notification_type', 
+        'action_object_content_type', 'action_object_object_id', 'action_object_link',
+        'target_content_type', 'target_object_object_id', 'target_link',
+        'timestamp'
+    ) # 'is_read' is left editable
+
+    fieldsets = (
+        (None, {
+            'fields': ('recipient_username_link', 'actor_username_link', 'verb', 'notification_type', 'is_read')
+        }),
+        ('Action Object (What was created/done by actor)', {
+            'classes': ('collapse',),
+            'fields': (('action_object_content_type', 'action_object_object_id'), 'action_object_link'),
+        }),
+        ('Target Object (What the action was on - often related to recipient)', {
+            'classes': ('collapse',),
+            'fields': (('target_content_type', 'target_object_object_id'), 'target_link'),
+        }),
+        ('Date/Time', {
+            'fields': ('timestamp',),
+        }),
+    )
+
+    def _get_admin_obj_url(self, obj_instance):
+        if not obj_instance:
+            return None
+        obj_content_type = ContentType.objects.get_for_model(obj_instance.__class__)
+        url_name = f'admin:{obj_content_type.app_label}_{obj_content_type.model}_change'
+        try:
+            return reverse(url_name, args=(obj_instance.pk,))
+        except NoReverseMatch:
+            return None
+
+    def recipient_username_link(self, obj):
+        if obj.recipient:
+            url = self._get_admin_obj_url(obj.recipient)
+            if url:
+                return format_html('<a href="{}">{}</a>', url, obj.recipient.username)
+            return obj.recipient.username
+        return "N/A"
+    recipient_username_link.short_description = "Recipient"
+    recipient_username_link.admin_order_field = 'recipient__username'
+
+    def actor_username_link(self, obj):
+        if obj.actor:
+            url = self._get_admin_obj_url(obj.actor)
+            if url:
+                return format_html('<a href="{}">{}</a>', url, obj.actor.username)
+            return obj.actor.username
+        return "N/A"
+    actor_username_link.short_description = "Actor"
+    actor_username_link.admin_order_field = 'actor__username'
+
+    def action_object_link(self, obj):
+        if obj.action_object:
+            url = self._get_admin_obj_url(obj.action_object)
+            # Display a snippet of the action object
+            obj_str = str(obj.action_object)[:30] + ('...' if len(str(obj.action_object)) > 30 else '')
+            if url:
+                return format_html('<a href="{}">{} ({})</a>', url, obj_str, obj.action_object_content_type.model)
+            return f"{obj_str} ({obj.action_object_content_type.model})"
+        return "N/A"
+    action_object_link.short_description = 'Action Object'
+
+    def target_link(self, obj):
+        if obj.target:
+            url = self._get_admin_obj_url(obj.target)
+            obj_str = str(obj.target)[:30] + ('...' if len(str(obj.target)) > 30 else '')
+            if url:
+                return format_html('<a href="{}">{} ({})</a>', url, obj_str, obj.target_content_type.model)
+            return f"{obj_str} ({obj.target_content_type.model})"
+        return "N/A"
+    target_link.short_description = 'Target Object'
+# ---- END OF NotificationAdmin CLASS AND REGISTRATION ----
