@@ -20,6 +20,22 @@ const loggedInUser = ref<User | null>(authStore.currentUser);
 const isEditing = ref(false);
 const editableContent = ref('');
 
+// ---- ADD THESE REFS FOR REPLY ----
+const showReplyForm = ref(false);
+const replyContent = ref('');
+const isSubmittingReply = ref(false);
+const replyError = ref<string | null>(null);
+// ---- END OF REFS FOR REPLY ---
+
+// ---- ADD THIS COMPUTED PROPERTY FOR REPLIES ----
+const directReplies = computed(() => {
+  const postKey = `${props.parentPostType}_${props.parentObjectId}`;
+  const allCommentsForPost = commentStore.commentsByPost[postKey] || [];
+  // Filter comments whose parent ID matches the current comment's ID
+  return allCommentsForPost.filter(reply => reply.parent === props.comment.id);
+});
+// ---- END OF COMPUTED PROPERTY ---
+
 watch(() => authStore.currentUser, (newUser: User | null) => {
   // console.log(`CommentItem ID ${props.comment.id}: authStore.currentUser changed in WATCH. New User:`, newUser);
   loggedInUser.value = newUser;
@@ -114,6 +130,54 @@ function cancelEdit() {
   // No need to reset editableContent, it will be re-initialized if edit is clicked again.
 }
 // --- END NEW FUNCTIONS ---
+
+// ---- ADD THESE METHODS FOR REPLY ----
+function toggleReplyForm() {
+  showReplyForm.value = !showReplyForm.value;
+  if (showReplyForm.value) {
+    isEditing.value = false; // Close edit form if opening reply form
+  }
+  replyContent.value = ''; // Clear content when toggling
+  replyError.value = null;
+}
+
+async function submitReply() {
+  if (!replyContent.value.trim()) {
+    replyError.value = "Reply cannot be empty.";
+    return;
+  }
+  if (!props.comment.id) {
+      replyError.value = "Cannot reply: Parent comment ID is missing.";
+      return;
+  }
+
+  isSubmittingReply.value = true;
+  replyError.value = null;
+
+  try {
+    console.log(`CommentItem: Submitting reply to comment ID ${props.comment.id} on post ${props.parentPostType}/${props.parentObjectId}`);
+    // This will initially cause a TypeScript error because createComment doesn't yet accept the 5th argument.
+    // We will fix this in commentStore.ts in the next main step.
+    await commentStore.createComment(
+      props.parentPostType,      // The type of the top-level post (e.g., 'statuspost')
+      props.parentObjectId,      // The ID of the top-level post
+      replyContent.value,        // The content of the reply
+      props.parentPostActualId,  // The actual ID of the parent post (for comment count update)
+      props.comment.id           // NEW: The ID of the parent comment we are replying to
+    );
+    replyContent.value = '';
+    showReplyForm.value = false; // Hide form on success
+    // TODO later: Handle displaying replies / refreshing the comment list to show the new reply.
+    // For now, a full page refresh would show it if the main comment list is re-fetched.
+  } catch (error: any) {
+    console.error("CommentItem: Error submitting reply:", error);
+    replyError.value = error.message || "Failed to submit reply.";
+  } finally {
+    isSubmittingReply.value = false;
+  }
+}
+// ---- END OF METHODS FOR REPLY ----
+
 </script>
 
 <template>
@@ -121,30 +185,67 @@ function cancelEdit() {
     <div class="comment-header">
       <div> <!-- Wrapper for author and timestamp -->
         <span class="comment-author">{{ props.comment.author.username }}</span>
-        <!-- Hide timestamp when editing -->
-        <span class="comment-timestamp" v-if="props.comment.created_at && !isEditing"> 
+        <span class="comment-timestamp" v-if="props.comment.created_at && !isEditing && !showReplyForm"> <!-- Hide timestamp if editing OR replying -->
           {{ format(new Date(props.comment.created_at), 'Pp') }}
         </span>
       </div>
-      <!-- Show Edit/Delete only if author AND not currently editing this comment -->
-      <div v-if="isCommentAuthor && !isEditing" class="comment-actions">
-        <button @click="editComment" class="action-button edit-button">Edit</button>
-        <button @click="deleteComment" class="action-button delete-button">Delete</button>
+      
+      <!-- Actions: Edit, Delete, Reply -->
+      <div class="comment-actions">
+        <!-- Show Edit/Delete only if author AND not currently editing this comment AND not showing reply form for this comment -->
+        <button v-if="isCommentAuthor && !isEditing && !showReplyForm" @click="editComment" class="action-button edit-button">Edit</button>
+        <button v-if="isCommentAuthor && !isEditing && !showReplyForm" @click="deleteComment" class="action-button delete-button">Delete</button>
+        
+        <!-- Show Reply button if authenticated AND not currently editing this comment -->
+        <button v-if="authStore.isAuthenticated && !isEditing" @click="toggleReplyForm" class="action-button reply-button">
+          {{ showReplyForm ? 'Cancel Reply' : 'Reply' }}
+        </button>
       </div>
     </div>
 
-    <!-- === MODIFIED: Conditional display for content or edit form === -->
-    <div v-if="!isEditing" class="comment-content"> <!-- Show this when NOT editing -->
+    <!-- Display main comment content OR edit form for main comment -->
+    <div v-if="!isEditing" class="comment-content">
       <p>{{ props.comment.content }}</p>
     </div>
-    <div v-else class="comment-edit-form"> <!-- Show this WHEN editing (v-else implies isEditing is true) -->
+    <div v-else class="comment-edit-form"> <!-- v-else implies isEditing is true -->
       <textarea v-model="editableContent" rows="3"></textarea>
       <div class="edit-form-actions">
         <button @click="saveEdit" class="action-button save-button">Save</button>
         <button @click="cancelEdit" class="action-button cancel-button">Cancel</button>
       </div>
     </div>
-    <!-- === END MODIFIED === -->
+
+    <!-- Display reply form IF showReplyForm is true -->
+    <div v-if="showReplyForm" class="reply-form-container">
+      <textarea v-model="replyContent" placeholder="Write a reply..." rows="2" class="reply-textarea"></textarea>
+      <div class="reply-form-actions">
+        <button @click="submitReply" :disabled="isSubmittingReply || !replyContent.trim()" class="action-button save-button">
+          {{ isSubmittingReply ? 'Replying...' : 'Submit Reply' }}
+        </button>
+        <button @click="toggleReplyForm" class="action-button cancel-button">Cancel</button>
+      </div>
+      <p v-if="replyError" class="error-message reply-error">{{ replyError }}</p>
+    </div>
+
+    <!-- Placeholder for displaying actual replies to this comment -
+         This will be a future step, might involve fetching props.comment.replies 
+         or having another v-for loop here with <CommentItem v-for="reply in props.comment.replies" ... />
+         if your Comment interface and data fetching supports nested replies.
+    -->
+
+        <!-- ---- ADD THIS SECTION TO DISPLAY REPLIES ---- -->
+    <div v-if="directReplies && directReplies.length > 0" class="replies-container">
+      <!-- Recursively render CommentItem for each reply -->
+      <CommentItem
+        v-for="reply in directReplies"
+        :key="reply.id"
+        :comment="reply"
+        :parentPostType="props.parentPostType"
+        :parentObjectId="props.parentObjectId"
+        :parentPostActualId="props.parentPostActualId"
+      />
+    </div>
+    <!-- ---- END OF REPLIES SECTION ---- -->
 
   </div>
 </template>
@@ -235,4 +336,65 @@ function cancelEdit() {
 .cancel-button:hover {
   background-color: #f1f1f1;
 }
+
+/* ... (your existing styles) ... */
+
+.reply-button { /* Style for the reply button itself */
+  color: #17a2b8; /* Example: Teal color */
+}
+.reply-button:hover {
+  background-color: #e2f6f9;
+}
+
+.reply-form-container {
+  margin-top: 0.75rem;
+  margin-left: 1.5rem; /* Indent reply form slightly more */
+  padding-top: 0.75rem;
+  border-top: 1px dashed #f0f0f0; /* Separator for reply form */
+}
+
+.reply-textarea { /* Specific class for reply textarea if needed */
+  width: 100%;
+  min-height: 50px;
+  padding: 0.5rem;
+  border: 1px solid #d1d1d1; /* Slightly different border */
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.9em; /* Slightly smaller font for replies */
+  margin-bottom: 0.5rem;
+  box-sizing: border-box;
+}
+
+.reply-form-actions { /* Similar to edit-form-actions */
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.reply-error { /* Specific error styling if needed */
+    margin-top: 0.5rem;
+    font-size: 0.8em; /* Smaller error message */
+}
+
+/* In CommentItem.vue <style scoped> */
+/* ... your existing styles ... */
+
+.comment-item {
+  /* Your existing .comment-item styles, e.g.: */
+  border-bottom: 1px solid #eee;
+  padding: 0.75rem 0;
+  /* The margin-left here provides the base indent for ALL comments including replies.
+     If you want top-level comments to have no indent and replies to have an indent,
+     this margin should be applied more conditionally or to the replies-container.
+     For now, let's assume this base indent is okay for all. */
+  margin-left: 1rem; 
+}
+
+.replies-container {
+  margin-top: 8px;         /* Space above the block of replies */
+  padding-left: 20px;      /* <<<<----- ADD THIS: Indent the entire block of replies further */
+  /* border-left: 1px dashed #ccc; /* Optional: a visual line to indicate threading */
+}
+
+/* You might not need extra styling for .comment-item itself if the container provides enough */
 </style>

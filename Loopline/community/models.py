@@ -194,7 +194,7 @@ class Comment(models.Model):
     content_object = GenericForeignKey('content_type', 'object_id')
     # --- End of Generic Relation Fields ---
 
-    # parent = models.ForeignKey('self', on_delete=models.CASCADE, blank=True, null=True, related_name='replies') # Keep commented out for now (for nested replies later)
+    parent = models.ForeignKey('self', on_delete=models.CASCADE, blank=True, null=True, related_name='replies') # Keep commented out for now (for nested replies later)
 
     class Meta:
         ordering = ['created_at'] # Show oldest comments first

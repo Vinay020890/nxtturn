@@ -14,12 +14,17 @@ export interface CommentAuthor {
 
 export interface Comment {
   id: number;
-  author: CommentAuthor;
-  content: string;
-  created_at: string;
-  updated_at: string;
+  author: CommentAuthor;    // User who wrote the comment
+  content: string;          // The text content of the comment
+  created_at: string;       // Timestamp when created
+  updated_at: string;       // Timestamp when last updated
+
+  // Fields from the GenericForeignKey on the backend, linking to the commented object (e.g., StatusPost)
+  content_type_id: number;  // ID of the ContentType model instance (e.g., for 'statuspost')
+  object_id: number;        // ID of the related object (e.g., the StatusPost's ID)
+  
+  parent: number | null;    // <<<<------ ID of the parent comment if this is a reply, otherwise null
 }
-// --- End Comment structure ---
 
 // Define the store
 export const useCommentStore = defineStore('comment', () => {
@@ -60,91 +65,116 @@ export const useCommentStore = defineStore('comment', () => {
     }
   }
 
-  async function createComment(postType: string, objectId: number, content: string, parentPostId: number) {
-    const postKey = `${postType}_${objectId}`;
-    console.log(`CommentStore: Creating comment for ${postKey} (Parent Post ID: ${parentPostId}) with content: "${content}"`);
+  // In frontend/src/stores/comment.ts
+// Inside defineStore('comment', () => { ...
+
+  async function createComment(
+      postType: string, 
+      objectId: number,         // ID of the main post (StatusPost, ForumPost, etc.)
+      content: string, 
+      parentPostActualId: number, // The actual ID of the main post for updating feed/profile store counts
+      parentCommentId?: number    // <<<< NEW: Optional ID of the comment being replied to
+  ) {
+    const postKey = `${postType}_${objectId}`; // Key for the main post's comments
+    console.log(
+      `CommentStore: Creating comment for ${postKey} (MainPostActualID: ${parentPostActualId}). ` +
+      (parentCommentId ? `Reply to CommentID: ${parentCommentId}` : 'Top-level comment.') +
+      ` Content: "${content}"`
+    );
 
     isCreatingComment.value = true;
     createCommentError.value = null;
 
     try {
-      const apiUrl = `/comments/${postType}/${objectId}/`;
-      console.log(`CommentStore: Calling API: POST ${apiUrl}`);
-      const payload = { content: content };
+      const apiUrl = `/comments/${postType}/${objectId}/`; 
+      
+      const payload: { content: string; parent?: number } = { content: content };
+      if (parentCommentId) {
+        payload.parent = parentCommentId; // Add parent ID to payload if it's a reply
+      }
+      console.log('CommentStore: Payload for comment creation:', payload);
 
       const response = await axiosInstance.post<Comment>(apiUrl, payload);
 
       if (response.data && response.data.id) {
-        console.log(`CommentStore: Comment created successfully for ${postKey}`, response.data);
-
+        const newComment = response.data;
+        console.log(`CommentStore: Comment/Reply created successfully for ${postKey}`, newComment);
+        
         if (!Array.isArray(commentsByPost.value[postKey])) {
           commentsByPost.value[postKey] = [];
         }
-        commentsByPost.value[postKey].unshift(response.data);
+        commentsByPost.value[postKey].unshift(newComment);
 
+        // Update comment counts in other stores
         try {
           const feedStore = useFeedStore();
-          const feedPostIndex = feedStore.posts.findIndex(p => p.id === parentPostId);
-          if (feedPostIndex !== -1) {
-            feedStore.posts[feedPostIndex].comment_count = (feedStore.posts[feedPostIndex].comment_count ?? 0) + 1;
-            console.log(`CommentStore: Incremented comment_count in feedStore for post ${parentPostId}`);
-          }
+          // Ensure incrementCommentCount handles postType correctly if needed for finding the post
+          feedStore.incrementCommentCount(parentPostActualId, postType); 
+          console.log(`CommentStore: Incremented comment_count in feedStore for post ${parentPostActualId}`);
         } catch (storeError) {
-           console.error(`CommentStore: Error updating feedStore count for post ${parentPostId}:`, storeError);
+           console.error(`CommentStore: Error updating feedStore count for post ${parentPostActualId}:`, storeError);
         }
 
         try {
           const profileStore = useProfileStore();
-          if (profileStore.userPosts && profileStore.userPosts.length > 0) {
-              const profilePostIndex = profileStore.userPosts.findIndex(p => p.id === parentPostId);
-              if (profilePostIndex !== -1) {
-                profileStore.userPosts[profilePostIndex].comment_count = (profileStore.userPosts[profilePostIndex].comment_count ?? 0) + 1;
-                console.log(`CommentStore: Incremented comment_count in profileStore for post ${parentPostId}`);
-              }
-          }
+          // Ensure this action exists and handles postType correctly if needed
+          profileStore.incrementCommentCountInUserPosts(parentPostActualId, postType); 
+          console.log(`CommentStore: Incremented comment_count in profileStore for post ${parentPostActualId}`);
         } catch (storeError) {
-           console.error(`CommentStore: Error updating profileStore count for post ${parentPostId}:`, storeError);
+           console.error(`CommentStore: Error updating profileStore count for post ${parentPostActualId}:`, storeError);
         }
-        return response.data;
+
+        return newComment;
       } else {
         console.error(`CommentStore: Comment creation for ${postKey} succeeded but API returned invalid data`, response.data);
         throw new Error("Comment created, but received unexpected data from server.");
       }
 
     } catch (err: any) {
-      console.log("<<<<< INSIDE CORRECTED CATCH BLOCK >>>>>"); 
-      console.error(`CommentStore: Error creating comment for ${postKey}:`, err);
+      console.log("<<<<< INSIDE CORRECTED CATCH BLOCK (comment.ts) >>>>>"); 
+      console.error(`CommentStore: Error creating comment/reply for ${postKey}:`, err);
       
       if (err.response && err.response.data) {
-        // +++ START NEW MINIMAL DEBUG LOGS +++
         const dataContent = err.response.data.content;
-        const isDataContentArray = Array.isArray(dataContent);
-        console.log(`CommentStore DEBUG: err.response.data.content IS:`, dataContent);
-        console.log(`CommentStore DEBUG: Array.isArray(err.response.data.content) IS: ${isDataContentArray}`);
-        // +++ END NEW MINIMAL DEBUG LOGS +++
+        const dataParent = err.response.data.parent; 
+        const dataNonField = err.response.data.non_field_errors;
+        const dataDetail = err.response.data.detail;
 
-        if (dataContent && isDataContentArray) { // Using the variables for clarity
-          console.log("CommentStore: Path A - Extracting from err.response.data.content"); 
-          createCommentError.value = dataContent.join(' '); 
-        } else if (err.response.data.detail) {
-          console.log("CommentStore: Path B - Extracting from err.response.data.detail"); 
-          createCommentError.value = err.response.data.detail;
+        let errorMessages: string[] = [];
+
+        if (dataContent && Array.isArray(dataContent)) { 
+          errorMessages = errorMessages.concat(dataContent);
+        }
+        if (dataParent && Array.isArray(dataParent)) { 
+          errorMessages = errorMessages.concat(dataParent);
+        }
+        if (dataNonField && Array.isArray(dataNonField)) {
+            errorMessages = errorMessages.concat(dataNonField);
+        }
+        
+        if (errorMessages.length > 0) {
+          createCommentError.value = errorMessages.join(' ');
+        } else if (dataDetail && typeof dataDetail === 'string') {
+          createCommentError.value = dataDetail;
+        } else if (typeof err.response.data === 'string') { // For plain string errors
+            createCommentError.value = err.response.data;
         } else { 
-          console.error('CommentStore: Path C - Backend error data structure (FALLBACK):', err.response.data);
-          createCommentError.value = "An unexpected error occurred while posting the comment. Check console.";
+          console.error('CommentStore: Unhandled backend error data structure:', err.response.data);
+          createCommentError.value = "An unexpected error occurred. Please check details.";
         }
       } else {
-        console.log("CommentStore: Path D - err.response or err.response.data is missing");
-        createCommentError.value = err.message || 'Failed to create comment.';
+        createCommentError.value = err.message || 'Failed to create comment/reply.';
       }
       console.log(`CommentStore: Set createCommentError to: "${createCommentError.value}"`);
       throw err; 
     } finally {
       isCreatingComment.value = false; 
-      console.log(`CommentStore: Create comment attempt finished for ${postKey}`);
+      console.log(`CommentStore: Create comment/reply attempt finished for ${postKey}`);
     }
   }
 
+// Make sure this function is within the defineStore callback and before the return statement.
+// Also ensure useFeedStore and useProfileStore are imported at the top of comment.ts if not already.
   async function deleteComment(commentId: number, postType: string, objectId: number, parentPostId: number) {
     const postKey = `${postType}_${objectId}`;
     console.log(`CommentStore: Attempting to delete comment ID ${commentId} from post ${postKey} (Parent Post ID: ${parentPostId})`);

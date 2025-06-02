@@ -224,6 +224,26 @@ function toggleLikeInUserPosts(postId: number, postType: string) {
 }
 // ---- END OF NEW ACTION ----
   // --- END ACTION ---
+// ---- ADD THIS NEW ACTION ----
+function incrementCommentCountInUserPosts(postId: number, postType: string) {
+  console.log(`ProfileStore: Attempting to increment comment count in userPosts for Post ID: ${postId}, Type: ${postType}`);
+  if (userPosts.value && userPosts.value.length > 0) {
+    const postIndex = userPosts.value.findIndex(p => p.id === postId && p.post_type === postType);
+    if (postIndex !== -1) {
+      if (typeof userPosts.value[postIndex].comment_count === 'number') {
+        userPosts.value[postIndex].comment_count!++;
+      } else {
+        userPosts.value[postIndex].comment_count = 1;
+      }
+      console.log(`ProfileStore: Incremented comment_count for post ${postId} in userPosts. New count: ${userPosts.value[postIndex].comment_count}`);
+    } else {
+      console.warn(`ProfileStore: Post ID ${postId} (Type: ${postType}) not found in userPosts. Cannot increment comment count.`);
+    }
+  } else {
+    console.warn(`ProfileStore: userPosts array is empty or not initialized. Cannot increment for Post ID: ${postId}`);
+  }
+}
+// ---- END OF NEW ACTION ----
 
   return {
     currentProfile,
@@ -242,5 +262,6 @@ function toggleLikeInUserPosts(postId: number, postType: string) {
     unfollowUser,
     updateProfilePicture, // <-- Ensure this is returned
     toggleLikeInUserPosts,
+    incrementCommentCountInUserPosts,
   };
 });

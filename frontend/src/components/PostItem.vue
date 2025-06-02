@@ -52,15 +52,18 @@ const commentPostKey = computed(() => {
   return key;
 });
 
-const commentsForThisPost = computed(() => {
+// In PostItem.vue
+const commentsForThisPost = computed(() => { // Consider renaming to topLevelCommentsForPost for clarity
   const key = commentPostKey.value;
-  if (!commentStore || typeof commentStore.commentsByPost === 'undefined') {
+  if (!commentStore || 
+      typeof commentStore.commentsByPost === 'undefined' || 
+      typeof commentStore.commentsByPost !== 'object' || 
+      commentStore.commentsByPost === null) {
     return [];
   }
-  if (typeof commentStore.commentsByPost !== 'object' || commentStore.commentsByPost === null) {
-    return [];
-  }
-  return commentStore.commentsByPost[key] || [];
+  const allCommentsForPost = commentStore.commentsByPost[key] || [];
+  // Filter for comments that do NOT have a 'parent' (i.e., parent is null or undefined)
+  return allCommentsForPost.filter(comment => !comment.parent); 
 });
 
 const isLoadingComments = computed(() => { // This is for FETCHING comments

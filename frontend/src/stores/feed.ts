@@ -279,6 +279,23 @@ async function toggleLike(
 // ========================================
   // ========================================
 
+// ---- ADD THIS NEW ACTION ----
+function incrementCommentCount(postId: number, postType: string) {
+  console.log(`FeedStore: Attempting to increment comment count for Post ID: ${postId}, Type: ${postType}`);
+  const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
+  if (postIndex !== -1) {
+    if (typeof posts.value[postIndex].comment_count === 'number') {
+      posts.value[postIndex].comment_count!++; // Increment if it's already a number
+    } else {
+      posts.value[postIndex].comment_count = 1; // Initialize if it was undefined/null
+    }
+    console.log(`FeedStore: Incremented comment_count for post ${postId}. New count: ${posts.value[postIndex].comment_count}`);
+  } else {
+    console.warn(`FeedStore: Post ID ${postId} (Type: ${postType}) not found. Cannot increment comment count.`);
+  }
+}
+// ---- END OF NEW ACTION ----
+
 
   // --- Return exposed state, getters, and actions ---
   return {
@@ -295,6 +312,7 @@ async function toggleLike(
     // getters can be exposed here if defined
     fetchFeed,
     createPost,
-    toggleLike
+    toggleLike,
+    incrementCommentCount, 
   };
 });

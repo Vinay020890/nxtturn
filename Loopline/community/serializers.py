@@ -410,6 +410,14 @@ class CommentSerializer(serializers.ModelSerializer):
     """
     # Use your existing UserSerializer for read-only author representation
     author = UserSerializer(read_only=True)
+    
+    # ---- ADD THIS EXPLICIT parent FIELD DEFINITION ----
+    parent = serializers.PrimaryKeyRelatedField(
+        queryset=Comment.objects.all(), # DRF needs a queryset for relation fields
+        allow_null=True,                # Allows parent to be null (for top-level comments)
+        required=False                  # Not required when submitting data
+    )
+    # ---- END OF parent FIELD DEFINITION ----
 
     # Fields for identifying the parent object when CREATING a comment
     # These are write-only; they are not part of the Comment model itself.
@@ -428,6 +436,7 @@ class CommentSerializer(serializers.ModelSerializer):
             # Read-only fields related to the generic foreign key (useful for frontend)
             'content_type_id', # ID of the ContentType model instance
             'object_id',       # ID of the related object
+            'parent' 
 
             # Write-only fields for creation input
             # 'content_type',
