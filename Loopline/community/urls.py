@@ -46,7 +46,14 @@ urlpatterns = [
 
     # --- Feed ---
     path('feed/', views.FeedListView.as_view(), name='user-feed'),
-
+    
+    # --- Notifications ---
+    # List all notifications for the authenticated user
+    path('notifications/', views.NotificationListAPIView.as_view(), name='notification-list'),
+    path('notifications/unread-count/', views.UnreadNotificationCountAPIView.as_view(), name='notification-unread-count'),
+    path('notifications/mark-as-read/', views.MarkNotificationsAsReadAPIView.as_view(), name='notifications-mark-as-read'),
+    path('notifications/mark-all-as-read/', views.MarkAllNotificationsAsReadAPIView.as_view(), name='notifications-mark-all-as-read'),
+   
     # --- Private Messaging ---
     path('conversations/', views.ConversationListView.as_view(), name='conversation-list'),
     path('conversations/<int:conversation_id>/messages/', views.MessageListView.as_view(), name='message-list'),

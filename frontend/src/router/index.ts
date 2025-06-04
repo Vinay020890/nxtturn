@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import NotificationsPage from '../views/NotificationsPage.vue';
 
 // RegisterView is already imported, which is fine, but we'll use lazy loading below
 // import RegisterView from '../views/RegisterView.vue';
@@ -63,6 +64,16 @@ const router = createRouter({
       meta: { requiresAuth: false }
     },
     // --- END OF PROFILE ROUTE ---
+
+    // ---- ADD THE NEW NOTIFICATIONS ROUTE OBJECT HERE ----
+    {
+      path: '/notifications',
+      name: 'notifications',
+      component: NotificationsPage, // Use the direct import since it's not lazy-loaded in this example
+                                    // Or use: () => import('../views/NotificationsPage.vue') for lazy loading
+      meta: { requiresAuth: true } // Notifications should require authentication
+    },
+    // ---- END OF NOTIFICATIONS ROUTE ----
 
     /*
     EXAMPLES of routes we might add later:

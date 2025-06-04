@@ -10,6 +10,7 @@ from django.http import Http404 # Import Http404
 
 # --- DRF Imports ---
 from rest_framework import generics, status, views, serializers
+from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 from rest_framework.views import APIView # Import APIView directly
@@ -18,19 +19,24 @@ from rest_framework.pagination import PageNumberPagination # Use DRF's built-in 
 # --- Local Imports ---
 from .models import (
     UserProfile, Follow, StatusPost, ForumCategory, Group, ForumPost,
-    Comment, Like, Conversation, Message
+    Comment, Like, Conversation, Message, Notification 
 )
 from .serializers import (
     UserSerializer, UserProfileSerializer, UserProfileUpdateSerializer,
     StatusPostSerializer, ForumCategorySerializer, ForumPostSerializer,
     ForumPostCreateUpdateSerializer, GroupSerializer, LikeSerializer,
     CommentSerializer, FeedItemSerializer, ConversationSerializer,
-    MessageSerializer, MessageCreateSerializer
+    MessageSerializer, MessageCreateSerializer, NotificationSerializer 
 )
 from .permissions import IsOwnerOrReadOnly
 
 
 User = get_user_model()
+
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 10  # Or your preferred default
+    page_size_query_param = 'page_size'
+    max_page_size = 50
 
 # ==================================
 # User Profile & Follower Views
@@ -625,3 +631,106 @@ class SendMessageView(APIView): # Use APIView directly
         # Return the created message data
         output_serializer = MessageSerializer(message, context={'request': request}) # Pass context
         return Response(output_serializer.data, status=status.HTTP_201_CREATED)
+    
+# ==================================
+# Notification Views    
+
+# ---- ADD THE NEW NotificationListAPIView HERE ----
+class NotificationListAPIView(ListAPIView):
+    """
+    API view to list notifications for the authenticated user.
+    """
+    serializer_class = NotificationSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination # Or use global default if preferred
+
+    def get_queryset(self):
+        user = self.request.user
+        return Notification.objects.filter(recipient=user).order_by('-timestamp')
+
+    # Optional get_serializer_context method if needed
+    # def get_serializer_context(self):
+    #     return {'request': self.request}
+# ---- END OF NotificationListAPIView ----
+
+# You can add more notification-related views later below this,
+# for example, views to mark notifications as read.
+
+class UnreadNotificationCountAPIView(APIView):
+    """
+    API view to get the count of unread notifications for the authenticated user.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, format=None):
+        user = request.user
+        unread_count = Notification.objects.filter(recipient=user, is_read=False).count()
+        return Response({'unread_count': unread_count})
+    
+    
+class MarkNotificationsAsReadAPIView(APIView):
+    """
+    API view to mark a list of notifications as read for the authenticated user.
+    Expects a POST request with a JSON body like: {"notification_ids": [1, 2, 3]}
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, format=None):
+        user = request.user
+        notification_ids = request.data.get('notification_ids', [])
+
+        if not isinstance(notification_ids, list):
+            return Response(
+                {"detail": "Invalid data format. 'notification_ids' must be a list."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not notification_ids: # If empty list is sent
+            return Response(
+                {"detail": "No notification IDs provided."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Filter for notifications that belong to the user and are in the provided list
+        notifications_to_update = Notification.objects.filter(
+            recipient=user, 
+            id__in=notification_ids,
+            is_read=False # Only update those that are currently unread
+        )
+        
+        updated_count = notifications_to_update.update(is_read=True)
+
+        return Response(
+            {"detail": f"{updated_count} notification(s) marked as read."},
+            status=status.HTTP_200_OK
+        )
+        
+
+# In Loopline/community/views.py
+# ... (after MarkNotificationsAsReadAPIView or with other notification views)
+
+class MarkAllNotificationsAsReadAPIView(APIView):
+    """
+    API view to mark all unread notifications for the authenticated user as read.
+    Accepts a POST request.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, format=None):
+        user = request.user
+        
+        # Find all unread notifications for the user
+        unread_notifications = Notification.objects.filter(recipient=user, is_read=False)
+        
+        if not unread_notifications.exists():
+            return Response(
+                {"detail": "No unread notifications to mark as read."},
+                status=status.HTTP_200_OK # Or HTTP_204_NO_CONTENT if you prefer
+            )
+
+        updated_count = unread_notifications.update(is_read=True)
+
+        return Response(
+            {"detail": f"{updated_count} notification(s) marked as read."},
+            status=status.HTTP_200_OK
+        )

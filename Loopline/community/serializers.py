@@ -2,17 +2,63 @@ from rest_framework import serializers
 # from django.contrib.auth.models import User
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
-from .models import UserProfile, Follow, StatusPost, ForumCategory, Group, ForumPost, Comment, Like, Conversation, Message
+from .models import UserProfile, Follow, StatusPost, ForumCategory, Group, ForumPost, Comment, Like, Conversation, Message, Notification
 
 User = get_user_model() 
 
-# Basic serializer for the built-in User model (to nest in profile)
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         # Select only the fields needed publicly for the profile view
         fields = ['id', 'username', 'first_name', 'last_name']
         read_only_fields = ['id', 'username'] # Usually username isn't changed here
+
+# ---- ADD THIS CLASS DEFINITION ----
+class GenericRelatedObjectSerializer(serializers.Serializer):
+    """
+    A serializer to represent common fields of generic related objects
+    (e.g., StatusPost, Comment) when they are part of a notification.
+    """
+    type = serializers.CharField(read_only=True, source='_meta.model_name') 
+    id = serializers.IntegerField(read_only=True, source='pk')
+    display_text = serializers.CharField(read_only=True, source='__str__') 
+# ---- END OF CLASS DEFINITION ----
+
+# ... (GenericRelatedObjectSerializer class definition is above this)
+
+# ---- ADD THIS NotificationSerializer CLASS DEFINITION ----
+class NotificationSerializer(serializers.ModelSerializer):
+    actor = UserSerializer(read_only=True) # Assumes UserSerializer is defined/imported
+    
+    # Use the helper serializer for our GFK fields
+    target = GenericRelatedObjectSerializer(read_only=True, allow_null=True)
+    action_object = GenericRelatedObjectSerializer(read_only=True, allow_null=True)
+
+    class Meta:
+        model = Notification # Link to your Notification model
+        fields = [
+            'id',
+            # 'recipient', # Typically not needed in the response list if API is for the authenticated user
+            'actor',
+            'verb',
+            'notification_type',
+            'target',           
+            'action_object',    
+            'timestamp',
+            'is_read',
+        ]
+        # For this serializer, all fields will be read-only by default when using ModelSerializer
+        # unless explicitly made writable. We are primarily using it for listing notifications.
+        # If you wanted to allow updating 'is_read' via this serializer with a PATCH,
+        # you'd remove 'is_read' from the global read_only_fields below and handle it.
+        # For now, let's make them all read_only for the list view.
+        read_only_fields = fields 
+# ---- END OF NotificationSerializer CLASS DEFINITION ----
+
+# Your other existing serializer classes (UserSerializer, StatusPostSerializer, etc.) would typically follow.
+
+# Basic serializer for the built-in User model (to nest in profile)
+
 
 # Serializer for our UserProfile model
 class UserProfileSerializer(serializers.ModelSerializer):
