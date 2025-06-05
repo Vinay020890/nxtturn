@@ -185,14 +185,19 @@ const toggleLike = async () => {
     </header>
     <div class="post-content">
       <!-- Display video if it exists -->
+           <!-- Corrected Logic: Display video if it exists -->
       <div v-if="post.video" class="post-video-container">
-        <video controls class="post-video">
-          <source :src="post.video" type="video/mp4"> <!-- Adjust type if needed, or detect from URL -->
+        <!-- Optional debug text: <p style="font-weight: bold; color: purple;">VIDEO:</p> -->
+        <video controls class="post-video" :src="post.video">
+          <!-- Using direct src on video tag is often sufficient. 
+               You can add <source> tags if you have multiple video formats for the same video. -->
           Your browser does not support the video tag.
         </video>
       </div>
-      <!-- Else, display image if it exists (and no video) -->
-      <div v-else-if="post.image" class="post-image-container">
+
+      <!-- Corrected Logic: Display image if it exists (this will now be checked independently) -->
+      <div v-if="post.image" class="post-image-container">
+        <!-- Optional debug text: <p style="font-weight: bold; color: teal;">IMAGE:</p> -->
         <img :src="post.image" :alt="`Image for post by ${post.author.username}`" class="post-image" />
       </div>
 
