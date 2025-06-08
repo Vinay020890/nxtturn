@@ -6,12 +6,19 @@ import { useAuthStore } from '@/stores/auth';
 import type { User } from '@/stores/auth'; // Shared type
 import { useCommentStore } from '@/stores/comment'; // Import comment store
 
+
+const MAX_REPLY_DEPTH = 1;
+
 const props = defineProps<{
   comment: Comment;
   parentPostType: string;    // Prop for parent's post_type
   parentObjectId: number;    // Prop for parent's object_id
   parentPostActualId: number; // Prop for parent's actual model ID (for count update)
+  currentDepth?: number;
 }>();
+
+// Set a default for currentDepth if not provided (for top-level comments)
+const effectiveDepth = computed(() => props.currentDepth ?? 0); //
 
 const authStore = useAuthStore();
 const commentStore = useCommentStore(); // Get comment store instance
@@ -49,6 +56,12 @@ const isCommentAuthor = computed(() => {
   }
   return false;
 });
+
+// ---- COMPUTED PROPERTY TO CHECK IF REPLIES ARE ALLOWED ----
+const canReplyToThisComment = computed(() => {
+  return effectiveDepth.value < MAX_REPLY_DEPTH; // <<<< NEW
+});
+// ---- END ----
 
 // --- MODIFIED editComment function ---
 function editComment() {
@@ -133,11 +146,18 @@ function cancelEdit() {
 
 // ---- ADD THESE METHODS FOR REPLY ----
 function toggleReplyForm() {
-  showReplyForm.value = !showReplyForm.value;
-  if (showReplyForm.value) {
-    isEditing.value = false; // Close edit form if opening reply form
+  // Check depth BEFORE trying to show the form if it's currently hidden
+  if (!showReplyForm.value && !canReplyToThisComment.value) { 
+      alert(`Replies are limited to ${MAX_REPLY_DEPTH} level(s).`); // Or handle more gracefully
+      return; // Prevent the form from opening
   }
-  replyContent.value = ''; // Clear content when toggling
+
+  showReplyForm.value = !showReplyForm.value; // Now toggle the form visibility
+
+  if (showReplyForm.value) {
+    isEditing.value = false; 
+  }
+  replyContent.value = ''; 
   replyError.value = null;
 }
 
@@ -181,7 +201,7 @@ async function submitReply() {
 </script>
 
 <template>
-  <div class="comment-item">
+  <div class="comment-item" :style="{ 'margin-left': effectiveDepth > 0 ? (effectiveDepth * 20) + 'px' : '0px' }">
     <div class="comment-header">
       <div> <!-- Wrapper for author and timestamp -->
         <span class="comment-author">{{ props.comment.author.username }}</span>
@@ -196,8 +216,12 @@ async function submitReply() {
         <button v-if="isCommentAuthor && !isEditing && !showReplyForm" @click="editComment" class="action-button edit-button">Edit</button>
         <button v-if="isCommentAuthor && !isEditing && !showReplyForm" @click="deleteComment" class="action-button delete-button">Delete</button>
         
-        <!-- Show Reply button if authenticated AND not currently editing this comment -->
-        <button v-if="authStore.isAuthenticated && !isEditing" @click="toggleReplyForm" class="action-button reply-button">
+        <!-- MODIFIED: Show Reply button if authenticated, not editing, AND canReplyToThisComment is true -->
+        <button 
+          v-if="authStore.isAuthenticated && !isEditing && canReplyToThisComment" 
+          @click="toggleReplyForm" 
+          class="action-button reply-button"
+        >
           {{ showReplyForm ? 'Cancel Reply' : 'Reply' }}
         </button>
       </div>
@@ -215,27 +239,21 @@ async function submitReply() {
       </div>
     </div>
 
-    <!-- Display reply form IF showReplyForm is true -->
+    <!-- Display reply form IF showReplyForm is true (toggleReplyForm already checks depth) -->
     <div v-if="showReplyForm" class="reply-form-container">
       <textarea v-model="replyContent" placeholder="Write a reply..." rows="2" class="reply-textarea"></textarea>
       <div class="reply-form-actions">
         <button @click="submitReply" :disabled="isSubmittingReply || !replyContent.trim()" class="action-button save-button">
           {{ isSubmittingReply ? 'Replying...' : 'Submit Reply' }}
         </button>
-        <button @click="toggleReplyForm" class="action-button cancel-button">Cancel</button>
+        <button @click="toggleReplyForm" class="action-button cancel-button">Cancel</button> <!-- This button will effectively become "Cancel" when form is open -->
       </div>
       <p v-if="replyError" class="error-message reply-error">{{ replyError }}</p>
     </div>
 
-    <!-- Placeholder for displaying actual replies to this comment -
-         This will be a future step, might involve fetching props.comment.replies 
-         or having another v-for loop here with <CommentItem v-for="reply in props.comment.replies" ... />
-         if your Comment interface and data fetching supports nested replies.
-    -->
-
-        <!-- ---- ADD THIS SECTION TO DISPLAY REPLIES ---- -->
+    <!-- Section to display replies -->
     <div v-if="directReplies && directReplies.length > 0" class="replies-container">
-      <!-- Recursively render CommentItem for each reply -->
+      <!-- Recursively render CommentItem for each reply, passing the incremented depth -->
       <CommentItem
         v-for="reply in directReplies"
         :key="reply.id"
@@ -243,10 +261,9 @@ async function submitReply() {
         :parentPostType="props.parentPostType"
         :parentObjectId="props.parentObjectId"
         :parentPostActualId="props.parentPostActualId"
+        :currentDepth="effectiveDepth + 1"  
       />
     </div>
-    <!-- ---- END OF REPLIES SECTION ---- -->
-
   </div>
 </template>
 

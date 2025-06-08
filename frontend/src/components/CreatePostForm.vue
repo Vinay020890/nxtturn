@@ -16,6 +16,10 @@ const selectedImageFile = ref<File | null>(null);
 const imagePreviewUrl = ref<string | null>(null);
 const selectedVideoFile = ref<File | null>(null);
 
+// Template refs for file inputs
+const imageInputRef = ref<HTMLInputElement | null>(null); // <<<< NEW
+const videoInputRef = ref<HTMLInputElement | null>(null); // <<<< NEW
+
 // 4. ADD THIS WATCH FUNCTION:
 // Watch for changes in postContent to clear the error message from the store
 watch(postContent, (newValue) => {
@@ -28,7 +32,7 @@ watch(postContent, (newValue) => {
   }
 });
 
-// ---- ADD THIS NEW METHOD ----
+
 // Still inside <script setup lang="ts"> in CreatePostForm.vue
 // Make sure imagePreviewUrl is defined above this:
 // const imagePreviewUrl = ref<string | null>(null);
@@ -52,6 +56,7 @@ const handleImageFileChange = (event: Event) => {
       // Optional: Handle file reading errors
       console.error("FileReader error:", e);
       imagePreviewUrl.value = null; // Clear preview on error
+      selectedImageFile.value = null; // Also clear the file if reading fails
     };
 
     reader.readAsDataURL(file); // Start reading the file as a data URL
@@ -85,6 +90,33 @@ const handleVideoFileChange = (event: Event) => {
 };
 // ---- END OF NEW METHOD FOR VIDEO ----
 
+// ---- 👇👇👇 ADD THIS NEW METHOD FOR REMOVING IMAGE 👇👇👇 ----
+const removeSelectedImage = () => {
+  if (imagePreviewUrl.value) {
+    // Revoke the object URL to free up memory, if you were using URL.createObjectURL
+    // Since we are using FileReader and data URLs, this step is not strictly necessary for memory,
+    // but good practice if you switch to URL.createObjectURL.
+    // For data URLs, simply nullifying is enough.
+  }
+  selectedImageFile.value = null;
+  imagePreviewUrl.value = null;
+  // Reset the file input so the user can select the same file again if they wish
+  if (imageInputRef.value) {
+    imageInputRef.value.value = ''; // This is the key to truly clear the input
+  }
+};
+// ---- END OF NEW METHOD ----
+
+// ---- 👇👇👇 ADD THIS NEW METHOD FOR REMOVING VIDEO 👇👇👇 ----
+const removeSelectedVideo = () => {
+  selectedVideoFile.value = null;
+  // Reset the file input
+  if (videoInputRef.value) {
+    videoInputRef.value.value = ''; // This is the key to truly clear the input
+  }
+};
+// ---- END OF NEW METHOD ----
+
 
 
 // 5. Define the handleSubmit function
@@ -93,14 +125,12 @@ const handleVideoFileChange = (event: Event) => {
 const handleSubmit = async () => {
   const currentContent = postContent.value.trim();
   const currentImageFile = selectedImageFile.value;
-  const currentVideoFile = selectedVideoFile.value; // <<<< NEW: Get selected video
+  const currentVideoFile = selectedVideoFile.value;
 
-  // MODIFIED Validation: ensure either content, an image, OR a video is provided
   if (!currentContent && !currentImageFile && !currentVideoFile) {
     feedStore.createPostError = "Please provide text, an image, or a video for your post.";
     return;
   }
-  // Clear any previous error if validation now passes
   if (feedStore.createPostError) {
     feedStore.createPostError = null;
   }
@@ -110,37 +140,33 @@ const handleSubmit = async () => {
   if (currentContent) {
     formData.append('content', currentContent);
   }
-  // Note: We don't need an 'else' for content if it's empty.
-  // The backend serializer has content as optional.
-  // The overall validation (content OR image OR video) is done above and by the backend.
-
   if (currentImageFile) {
     formData.append('image', currentImageFile);
   }
-
-  if (currentVideoFile) { // <<<< NEW: Append video if selected
+  if (currentVideoFile) {
     formData.append('video', currentVideoFile);
   }
 
-  const newPost = await feedStore.createPost(formData); // formData now potentially includes video
+  const newPost = await feedStore.createPost(formData);
 
   if (newPost) {
-    console.log("CreatePostForm: Post submitted successfully!", newPost); // Log the newPost for debugging
+    console.log("CreatePostForm: Post submitted successfully!", newPost);
     postContent.value = '';
-    selectedImageFile.value = null;
-    imagePreviewUrl.value = null;
-    selectedVideoFile.value = null; // <<<< NEW: Clear selected video file state
+    // Call removal functions to ensure inputs are also reset
+    removeSelectedImage(); // <<<< MODIFIED
+    removeSelectedVideo(); // <<<< MODIFIED
 
-    // Attempt to reset file inputs visually
-    const imageFileInput = document.getElementById('postImageInput') as HTMLInputElement;
-    if (imageFileInput) {
-      imageFileInput.value = '';
-    }
-    // We will add an ID "postVideoInput" to the video input in the template
-    const videoFileInput = document.getElementById('postVideoInput') as HTMLInputElement;
-    if (videoFileInput) {
-      videoFileInput.value = ''; // <<<< NEW: Attempt to reset video file input
-    }
+    // The explicit resetting via getElementById can be removed if template refs are used consistently
+    // but keeping it for now won't hurt, it's just redundant with the calls above if refs are set up.
+    // However, it's better to rely on the `removeSelectedImage/Video` methods for resetting.
+    // const imageFileInput = document.getElementById('postImageInput') as HTMLInputElement;
+    // if (imageFileInput) {
+    //   imageFileInput.value = '';
+    // }
+    // const videoFileInput = document.getElementById('postVideoInput') as HTMLInputElement;
+    // if (videoFileInput) {
+    //   videoFileInput.value = '';
+    // }
   } else {
     console.error("CreatePostForm: Failed to submit post. Error should be in store's createPostError.");
   }
@@ -155,46 +181,67 @@ const handleSubmit = async () => {
       <div v-if="createPostError" class="error-message">
         {{ createPostError }}
       </div>
-      <textarea v-model="postContent" placeholder="What's on your mind? (Optional if adding an image)" rows="4"
-        :disabled="isCreatingPost"></textarea> <!-- 'required' attribute removed -->
+      <textarea
+        v-model="postContent"
+        placeholder="What's on your mind? (Optional if adding image/video)" 
+        rows="4"
+        :disabled="isCreatingPost"
+      ></textarea>
 
-      <!-- ADD THIS FILE INPUT SECTION -->
       <div class="form-group-image-upload">
         <label for="postImageInput">Add an image (optional):</label>
-        <input type="file" id="postImageInput" @change="handleImageFileChange" accept="image/png, image/jpeg, image/gif"
-          :disabled="isCreatingPost" />
-        <!-- Optional: display selected file name or a preview -->
-        <p v-if="selectedImageFile" class="selected-file-info">
-          Selected: {{ selectedImageFile.name }}
-        </p>
+        <input
+          type="file"
+          id="postImageInput"
+          ref="imageInputRef" 
+          @change="handleImageFileChange"
+          accept="image/png, image/jpeg, image/gif"
+          :disabled="isCreatingPost"
+        />
+        
+        <!-- Image preview and remove button container -->
+        <div v-if="selectedImageFile" class="file-selection-info"> <!-- <<<< ADDED WRAPPER DIV -->
+          <p class="selected-file-info">
+            Selected: {{ selectedImageFile.name }}
+          </p>
+          <!-- 👇👇👇 ADD THIS REMOVE BUTTON 👇👇👇 -->
+          <button type="button" @click="removeSelectedImage" class="remove-file-button" :disabled="isCreatingPost">
+            Remove Image
+          </button>
+        </div>
 
-        <!-- 👇👇👇 ADD THIS IMAGE PREVIEW SECTION INSIDE .form-group-image-upload 👇👇👇 -->
-        <div v-if="imagePreviewUrl" class="image-preview-container">
+        <div v-if="imagePreviewUrl" class="image-preview-container"> <!-- This section structure is the same -->
           <img :src="imagePreviewUrl" alt="Selected image preview" class="image-preview" />
         </div>
-        <!-- END OF IMAGE PREVIEW SECTION -->
-
       </div>
-      <!-- END OF FILE INPUT SECTION -->
 
-      <!-- ---- ADD THIS VIDEO INPUT SECTION ---- -->
       <div class="form-group-video-upload">
         <label for="postVideoInput">Add a video (optional):</label>
         <input
           type="file"
           id="postVideoInput"
+          ref="videoInputRef" 
           @change="handleVideoFileChange"
-          accept="video/mp4, video/webm, video/ogg" 
+          accept="video/mp4, video/webm, video/ogg"
           :disabled="isCreatingPost"
         />
-        <!-- Optional: display selected video file name -->
-        <p v-if="selectedVideoFile" class="selected-file-info">
-          Selected: {{ selectedVideoFile.name }}
-        </p>
-      </div>
-      <!-- ---- END OF VIDEO INPUT SECTION ---- -->
 
-      <button type="submit" :disabled="isCreatingPost || (postContent.trim() === '' && selectedImageFile === null && selectedVideoFile === null)">
+        <!-- Video selection info and remove button container -->
+        <div v-if="selectedVideoFile" class="file-selection-info"> <!-- <<<< ADDED WRAPPER DIV -->
+          <p class="selected-file-info">
+            Selected: {{ selectedVideoFile.name }}
+          </p>
+          <!-- 👇👇👇 ADD THIS REMOVE BUTTON 👇👇👇 -->
+          <button type="button" @click="removeSelectedVideo" class="remove-file-button" :disabled="isCreatingPost">
+            Remove Video
+          </button>
+        </div>
+      </div>
+
+      <button
+        type="submit"
+        :disabled="isCreatingPost || (postContent.trim() === '' && !selectedImageFile && !selectedVideoFile)" 
+      >
         {{ isCreatingPost ? 'Posting...' : 'Post' }}
       </button>
     </form>
@@ -208,7 +255,6 @@ const handleSubmit = async () => {
   border-radius: 8px;
   padding: 1rem 1.5rem;
   margin-bottom: 2rem;
-  /* Space below the form */
 }
 
 .create-post-form h3 {
@@ -218,7 +264,7 @@ const handleSubmit = async () => {
   font-weight: 600;
 }
 
-textarea {
+.create-post-form textarea { /* Made selector more specific */
   width: 100%;
   padding: 0.75rem;
   border: 1px solid #ccc;
@@ -226,15 +272,13 @@ textarea {
   font-size: 1rem;
   margin-bottom: 0.75rem;
   resize: vertical;
-  /* Allow vertical resizing */
   box-sizing: border-box;
-  /* Include padding and border in element's total width and height */
 }
 
-button {
+/* Styles for the main submit button */
+.create-post-form button[type="submit"] {
   padding: 0.6rem 1.2rem;
   background-color: #007bff;
-  /* Blue */
   color: white;
   border: none;
   border-radius: 4px;
@@ -242,55 +286,92 @@ button {
   cursor: pointer;
   transition: background-color 0.2s ease;
   float: right;
-  /* Align button to the right */
 }
 
-button:disabled {
+.create-post-form button[type="submit"]:disabled {
   background-color: #ccc;
   cursor: not-allowed;
 }
 
-button:not(:disabled):hover {
+.create-post-form button[type="submit"]:not(:disabled):hover {
   background-color: #0056b3;
 }
 
+/* Consolidated error message style */
 .error-message {
-  color: #dc3545;
-  background-color: #f8d7da;
-  border: 1px solid #f5c6cb;
-  padding: 0.75rem;
+  color: red; /* Kept the explicit red from one of the definitions */
+  background-color: #ffebee; /* Kept from the same definition */
+  border: 1px solid red; /* Kept from the same definition */
+  padding: 0.75rem; /* Using rem from the other for consistency */
   border-radius: 4px;
-  margin-bottom: 1rem;
+  margin-bottom: 1rem; /* Using rem for consistency */
   font-size: 0.9rem;
 }
 
-/* In <style scoped> */
-.form-group-image-upload {
-  margin-bottom: 1rem;
+/* Consolidated styles for file input groups */
+.form-group-image-upload,
+.form-group-video-upload {
+  margin-bottom: 15px; /* Used the 15px value */
 }
 
-.form-group-image-upload label {
+.form-group-image-upload label,
+.form-group-video-upload label {
   display: block;
   margin-bottom: 0.25rem;
   font-weight: 500;
   font-size: 0.9em;
 }
 
-.form-group-image-upload input[type="file"] {
-  display: block;
-  font-size: 0.9em;
+.form-group-image-upload input[type="file"],
+.form-group-video-upload input[type="file"] {
+  display: block; /* Ensures it takes up its own line */
+  /* font-size: 0.9em; /* Removed as browser default is usually fine and consistent */
 }
 
-.selected-file-info {
-  font-size: 0.85em;
+/* Styles for the container of selected file name and remove button */
+.file-selection-info {
+  display: flex;
+  align-items: center;
+  margin-top: 5px;
+}
+
+/* Styles for the selected file name paragraph */
+.file-selection-info .selected-file-info { /* More specific selector */
+  margin: 0;
+  margin-right: 10px;
+  font-size: 0.9em; /* Kept this more specific size */
   color: #555;
-  margin-top: 0.25rem;
-  font-style: italic;
+  font-style: italic; /* Added from one of the original definitions */
 }
 
+/* Styles for the "Remove File" buttons */
+.remove-file-button { /* General class for both remove buttons */
+  padding: 3px 8px;
+  font-size: 0.8em;
+  background-color: #f8f9fa;
+  color: #dc3545;
+  border: 1px solid #dc3545;
+  border-radius: 4px;
+  cursor: pointer;
+  /* margin-left: auto; /* Optional: if you want to push it to the right within flex container */
+}
+
+.remove-file-button:hover {
+  background-color: #dc3545;
+  color: white;
+}
+
+.remove-file-button:disabled {
+  background-color: #e9ecef;
+  border-color: #ced4da;
+  color: #6c757d;
+  cursor: not-allowed;
+}
+
+/* Image Preview Styles */
 .image-preview-container {
   margin-top: 10px;
-  text-align: left; /* Or center */
+  text-align: left; /* Or center, if you prefer */
 }
 
 .image-preview {
@@ -300,20 +381,4 @@ button:not(:disabled):hover {
   border-radius: 4px;
   object-fit: cover;
 }
-
-/* In <style scoped> */
-.form-group-video-upload { /* Or combine with .form-group-image-upload if styles are identical */
-  margin-bottom: 1rem;
-}
-.form-group-video-upload label {
-  display: block;
-  margin-bottom: 0.25rem;
-  font-weight: 500;
-  font-size: 0.9em;
-}
-.form-group-video-upload input[type="file"] {
-  display: block;
-  font-size: 0.9em;
-}
-/* .selected-file-info styles already exist and will apply */
 </style>

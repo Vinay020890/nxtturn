@@ -68,9 +68,14 @@ export const useFeedStore = defineStore('feed', () => {
   const totalPages = ref(1);
   const hasNextPage = ref(false);
 
+   
+
   // NEW: State for create post errors
   const createPostError = ref<string | null>(null);
   const isCreatingPost = ref(false); // NEW: For loading state during post creation
+
+  // DEFINE YOUR STANDARD PAGE SIZE HERE
+  const ITEMS_PER_PAGE = 10; // Or whatever your backend pagination page_size is
 
   // --- Getters (Computed) ---
   // (Example: No active getters currently defined)
@@ -119,8 +124,14 @@ export const useFeedStore = defineStore('feed', () => {
 
       currentPage.value = page;
       hasNextPage.value = response.data.next !== null;
-      const pageSize = fetchedPosts.length > 0 ? fetchedPosts.length : 10;
-      totalPages.value = Math.ceil(response.data.count / pageSize);
+      // const pageSize = fetchedPosts.length > 0 ? fetchedPosts.length : 10;
+      // totalPages.value = Math.ceil(response.data.count / pageSize);
+      // NEW CALCULATION:
+      if (response.data.count > 0) {
+        totalPages.value = Math.ceil(response.data.count / ITEMS_PER_PAGE);
+      } else {
+        totalPages.value = 1; // Or 0 if you prefer for an empty feed display
+      }
 
     } catch (err: any) {
       console.error("FeedStore: Error fetching feed:", err);
