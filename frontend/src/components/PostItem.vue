@@ -29,6 +29,22 @@ const { isCreatingComment, createCommentError } = storeToRefs(commentStore);
 const showComments = ref(false);
 const newCommentContent = ref('');
 
+// --- HELPER / UTILITY FUNCTIONS (Component-Specific) ---
+// 👇👇👇 IDEAL SPOT FOR linkifyContent 👇👇👇
+function linkifyContent(text: string | null | undefined): string {
+  if (!text) return '';
+  const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])|(\bwww\.[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
+  return text.replace(urlRegex, function(url) {
+    let fullUrl = url;
+    if (!fullUrl.match(/^https?:\/\//i) && fullUrl.startsWith('www.')) {
+      fullUrl = 'http://' + fullUrl;
+    }
+    return `<a href="${fullUrl}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+  });
+}
+// ------------------------------------
+
+
 
 // --- Watch for input changes to clear comment creation errors ---
 watch(newCommentContent, () => {
@@ -202,7 +218,7 @@ const toggleLike = async () => {
       </div>
 
       <!-- Display content if it exists (always show content regardless of media) -->
-      <p v-if="post.content" class="post-text-content">{{ post.content }}</p>
+      <p v-if="post.content" class="post-text-content" v-html="linkifyContent(post.content)"></p>
     </div>
     <footer class="post-footer">
       <button @click="toggleLike" :class="{ 'liked': post.is_liked_by_user }" class="like-button"
@@ -479,6 +495,14 @@ const toggleLike = async () => {
     /* Your existing styles for post.content p tag can go here or remain as they are */
     /* If content and media are both present, you might want specific margins */
     margin-top: 10px; /* Example: add space if media is above */
+}
+
+.post-text-content a { /* Target links within the v-html rendered content */
+  color: #007bff;
+  text-decoration: underline;
+}
+.post-text-content a:hover {
+  text-decoration: none;
 }
 
 /* Ensure your existing .post-image-container and .post-image styles are still there */

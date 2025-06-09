@@ -34,6 +34,21 @@ const isSubmittingReply = ref(false);
 const replyError = ref<string | null>(null);
 // ---- END OF REFS FOR REPLY ---
 
+// --- HELPER / UTILITY FUNCTIONS (Component-Specific) ---
+// 👇👇👇 IDEAL SPOT FOR linkifyContent 👇👇👇
+function linkifyContent(text: string | null | undefined): string {
+  if (!text) return '';
+  const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])|(\bwww\.[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
+  return text.replace(urlRegex, function(url) {
+    let fullUrl = url;
+    if (!fullUrl.match(/^https?:\/\//i) && fullUrl.startsWith('www.')) {
+      fullUrl = 'http://' + fullUrl;
+    }
+    return `<a href="${fullUrl}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+  });
+}
+// -----------------------------------
+
 // ---- ADD THIS COMPUTED PROPERTY FOR REPLIES ----
 const directReplies = computed(() => {
   const postKey = `${props.parentPostType}_${props.parentObjectId}`;
@@ -290,7 +305,7 @@ async function handleToggleCommentLike() {
 
     <!-- Display main comment content OR edit form for main comment -->
     <div v-if="!isEditing" class="comment-content">
-      <p>{{ props.comment.content }}</p>
+      <p v-html="linkifyContent(props.comment.content)"></p>
     </div>
     <div v-else class="comment-edit-form"> <!-- v-else implies isEditing is true -->
       <textarea v-model="editableContent" rows="3"></textarea>
@@ -496,4 +511,14 @@ async function handleToggleCommentLike() {
   background-color: #e7f3ff; /* Light blue hover when liked */
 }
 /* ---- 👆👆👆 END OF LIKE BUTTON STYLES 👆👆👆 ---- */
+
+.comment-content p a {
+  color: #007bff;
+  text-decoration: underline;
+}
+.comment-content p a:hover {
+  text-decoration: none;
+}
+
+
 </style>
