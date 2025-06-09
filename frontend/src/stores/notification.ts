@@ -63,6 +63,8 @@ export const useNotificationStore = defineStore('notification', () => {
     pageSize: 10, // If you want to store/control page size from here, otherwise API dictates
   })
 
+   const ITEMS_PER_PAGE_NOTIFICATIONS = 10; 
+
   // --- Getters (Computed Properties) ---
   // Example: A simple getter for the unread count
   // const hasUnreadNotifications = computed(() => unreadCount.value > 0);
@@ -128,10 +130,11 @@ export const useNotificationStore = defineStore('notification', () => {
 
       // Calculate total pages (assuming API doesn't provide it directly)
       // Use a default page_size if results are empty, otherwise derive from results length or a known page size
-      const pageSize =
-        data.results.length > 0 ? data.results.length : pagination.value.pageSize || 10 // Assuming default 10
-      pagination.value.totalPages = Math.ceil(data.count / pageSize)
-      if (pagination.value.totalPages === 0 && data.count > 0) pagination.value.totalPages = 1
+       if (data.count > 0) {
+        pagination.value.totalPages = Math.ceil(data.count / ITEMS_PER_PAGE_NOTIFICATIONS); 
+      } else {
+        pagination.value.totalPages = 0; 
+      }
     } catch (err: any) {
       console.error('NotificationStore: Error fetching notifications:', err)
       error.value = err.response?.data?.detail || err.message || 'Failed to fetch notifications.'
