@@ -196,6 +196,11 @@ class Comment(models.Model):
 
     parent = models.ForeignKey('self', on_delete=models.CASCADE, blank=True, null=True, related_name='replies') # Keep commented out for now (for nested replies later)
 
+
+     # 👇👇👇 THIS IS THE NEW LINE YOU NEED TO ADD 👇👇👇
+    likes = GenericRelation('Like', related_query_name='comment_likes')
+    # 👆👆👆 THIS IS THE NEW LINE YOU NEED TO ADD 👆👆👆
+    
     class Meta:
         ordering = ['created_at'] # Show oldest comments first
         # Add indexes for faster lookups based on the generic relation fields

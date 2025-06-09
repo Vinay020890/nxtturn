@@ -465,6 +465,13 @@ class CommentSerializer(serializers.ModelSerializer):
     )
     # ---- END OF parent FIELD DEFINITION ----
 
+     # ---- NEW FIELDS FOR LIKES ON COMMENTS ----
+    like_count = serializers.SerializerMethodField()
+    is_liked_by_user = serializers.SerializerMethodField()
+    # This content_type_id is for the COMMENT ITSELF, to identify it as a likable object
+    comment_content_type_id = serializers.SerializerMethodField(method_name='get_comment_content_type_id_for_like') # Renamed method for clarity
+    # ---- END NEW FIELDS ----
+
     # Fields for identifying the parent object when CREATING a comment
     # These are write-only; they are not part of the Comment model itself.
     # We'll use these in the view to find the parent object.
@@ -482,11 +489,15 @@ class CommentSerializer(serializers.ModelSerializer):
             # Read-only fields related to the generic foreign key (useful for frontend)
             'content_type_id', # ID of the ContentType model instance
             'object_id',       # ID of the related object
-            'parent' 
+            'parent',
 
             # Write-only fields for creation input
             # 'content_type',
             #'object_id',
+            # ---- ADD NEW FIELDS TO LIST ----
+            'like_count',
+            'is_liked_by_user',
+            'comment_content_type_id', # This is the ContentType ID OF THE COMMENT ITSELF
         ]
         read_only_fields = [
             'id',
@@ -495,6 +506,11 @@ class CommentSerializer(serializers.ModelSerializer):
             'updated_at',
             'content_type_id', # Read-only representation of the GenericFK link
             'object_id',       # Read-only representation of the GenericFK link
+
+            # ---- ADD NEW READ-ONLY FIELDS HERE ----
+            'like_count',
+            'is_liked_by_user',
+            'comment_content_type_id',
         ]
         # Note: The 'content_type' and 'object_id' fields in the Meta.fields list
         # are overridden by the explicit field definitions above for write_only behavior.
@@ -509,6 +525,35 @@ class CommentSerializer(serializers.ModelSerializer):
 
     # We will set the author and link the comment to the content_object
     # within the API view's perform_create method.
+    # ---- NEW METHODS FOR LIKES ON COMMENTS ----
+    def get_like_count(self, obj: Comment) -> int:
+        """ Returns the like count for this specific comment instance. """
+        if hasattr(obj, 'likes'): # Checks for the GenericRelation 'likes' on the Comment model
+            return obj.likes.count()
+        return 0
+
+    def get_is_liked_by_user(self, obj: Comment) -> bool:
+        """ Check if the current user (from context) has liked this comment. """
+        request = self.context.get('request')
+        # Ensure request and authenticated user exist in context
+        if not request or not hasattr(request, 'user') or not request.user.is_authenticated:
+            return False
+        
+        # Get the ContentType for the Comment model itself
+        comment_model_content_type = ContentType.objects.get_for_model(Comment) # Or obj.__class__
+        return Like.objects.filter(
+            content_type=comment_model_content_type, # ContentType of the comment
+            object_id=obj.pk,                        # Primary key of the comment
+            user=request.user
+        ).exists()
+
+    def get_comment_content_type_id_for_like(self, obj: Comment) -> int:
+        """
+        Returns the ContentType ID of the Comment model itself.
+        This is used by the frontend to construct the 'like' API endpoint for this comment.
+        """
+        return ContentType.objects.get_for_model(Comment).id # Or obj.__class__
+    # ---- END NEW METHODS ----
 
 
 # --- Add this new Serializer for Feed Items ---

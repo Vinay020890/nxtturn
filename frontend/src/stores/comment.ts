@@ -24,6 +24,12 @@ export interface Comment {
   object_id: number;        // ID of the related object (e.g., the StatusPost's ID)
   
   parent: number | null;    // <<<<------ ID of the parent comment if this is a reply, otherwise null
+
+  // ---- 👇👇👇 ADD THESE NEW PROPERTIES 👇👇👇 ----
+  like_count: number;
+  is_liked_by_user: boolean;
+  comment_content_type_id: number; // ContentType ID OF THE COMMENT ITSELF (for liking this comment)
+  // ---- END OF NEW PROPERTIES ----
 }
 
 // Define the store
@@ -98,8 +104,7 @@ export const useCommentStore = defineStore('comment', () => {
 
       if (response.data && response.data.id) {
         const newComment = response.data;
-        console.log(`CommentStore: Comment/Reply created successfully for ${postKey}`, newComment);
-        
+        console.log(`CommentStore: Comment/Reply created successfully for ${postKey}`, newComment);        
         if (!Array.isArray(commentsByPost.value[postKey])) {
           commentsByPost.value[postKey] = [];
         }
@@ -260,6 +265,53 @@ export const useCommentStore = defineStore('comment', () => {
     }
   }
 
+  // ---- 👇👇👇 THIS IS THE NEW ACTION FUNCTION 👇👇👇 ----
+  async function toggleLikeOnComment(
+    commentId: number,
+    commentContentTypeId: number, // The ContentType ID of the Comment model itself
+    parentPostType: string,       // e.g., 'statuspost' (to find the comment in local state)
+    parentObjectId: number        // e.g., 1 (ID of the statuspost, to find the comment in local state)
+  ) {
+    const postKey = `${parentPostType}_${parentObjectId}`;
+    
+    const commentsList = commentsByPost.value[postKey];
+    if (!commentsList) {
+      console.error(`CommentStore: No comments loaded for post ${postKey} to toggle like for comment ${commentId}.`);
+      // Optionally throw an error or display a message to the user
+      return; 
+    }
+
+    const commentIndex = commentsList.findIndex(c => c.id === commentId);
+
+    if (commentIndex === -1) {
+      console.error(`CommentStore: Comment with ID ${commentId} not found in store for post ${postKey} to toggle like.`);
+      return; 
+    }
+
+    try {
+      console.log(`CommentStore: Toggling like for comment ID ${commentId} (ContentTypeID for Comment model: ${commentContentTypeId}) on post ${postKey}`);
+      // Ensure your API base URL is handled by axiosInstance correctly (e.g., includes /api/)
+      const response = await axiosInstance.post<{ liked: boolean; like_count: number }>(
+        `/content/${commentContentTypeId}/${commentId}/like/`
+      );
+
+      if (response.status === 200) {
+        const { liked, like_count } = response.data;
+        // Update the specific comment in the store
+        commentsByPost.value[postKey][commentIndex].is_liked_by_user = liked;
+        commentsByPost.value[postKey][commentIndex].like_count = like_count;
+        console.log(`CommentStore: Comment ID ${commentId} like status updated to ${liked}, count ${like_count}`);
+      } else {
+        console.error('CommentStore: Failed to toggle like on comment, API responded with status:', response.status);
+      }
+    } catch (error: any) {
+      console.error('CommentStore: Error toggling like on comment API call:', error);
+      // It's good practice to re-throw the error so the component can be notified and potentially update the UI (e.g., show an alert)
+      throw error; 
+    }
+  }
+  // ---- 👆👆👆 END OF THE NEW ACTION FUNCTION 👆👆👆 ----
+
   return {
     commentsByPost,
     isLoading,
@@ -270,6 +322,7 @@ export const useCommentStore = defineStore('comment', () => {
     createCommentError,
     deleteComment,
     editComment,
+    toggleLikeOnComment,
   };
 
 });

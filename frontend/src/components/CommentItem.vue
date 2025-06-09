@@ -198,6 +198,52 @@ async function submitReply() {
 }
 // ---- END OF METHODS FOR REPLY ----
 
+// ---- 👇👇👇 ADD THIS NEW METHOD FOR LIKING COMMENTS 👇👇👇 ----
+async function handleToggleCommentLike() {
+  // Ensure all necessary properties are available on props.comment
+  if (
+    !props.comment ||
+    typeof props.comment.id === 'undefined' ||
+    typeof props.comment.comment_content_type_id === 'undefined' // This comes from the updated Comment interface
+  ) {
+    console.error(
+      "CommentItem: Cannot toggle like because comment data is incomplete (id or comment_content_type_id missing). Comment data:",
+      JSON.parse(JSON.stringify(props.comment)) // Log a deep copy for inspection
+    );
+    alert("An error occurred. Required comment information is missing."); // User feedback
+    return;
+  }
+
+  // Prevent action if not authenticated (though button might be hidden, good safeguard)
+  if (!authStore.isAuthenticated) {
+    alert("Please log in to like comments.");
+    return;
+  }
+
+  console.log(
+    `CommentItem: Attempting to toggle like for comment ID ${props.comment.id}, ` +
+    `ContentTypeID: ${props.comment.comment_content_type_id}, ` +
+    `Parent Post: ${props.parentPostType}_${props.parentObjectId}`
+  );
+
+  try {
+    await commentStore.toggleLikeOnComment(
+      props.comment.id,
+      props.comment.comment_content_type_id,
+      props.parentPostType,
+      props.parentObjectId
+    );
+    // The UI should update reactively because the store's state (comment.is_liked_by_user, comment.like_count)
+    // for this specific comment object will be modified by the store action.
+    console.log(`CommentItem: Like toggled successfully for comment ID ${props.comment.id} via store.`);
+  } catch (error) {
+    console.error(`CommentItem: Error calling toggleLikeOnComment store action for comment ID ${props.comment.id}:`, error);
+    // Provide user feedback (can be more sophisticated than an alert)
+    alert("Failed to update like status. Please try again.");
+  }
+}
+// ---- 👆👆👆 END OF NEW METHOD 👆👆👆 ----
+
 </script>
 
 <template>
@@ -224,6 +270,21 @@ async function submitReply() {
         >
           {{ showReplyForm ? 'Cancel Reply' : 'Reply' }}
         </button>
+
+         <!-- ---- 👇👇👇 ADD LIKE BUTTON AND COUNT HERE (inside .comment-actions) 👇👇👇 ---- -->
+        <button 
+          v-if="authStore.isAuthenticated && !isEditing && !showReplyForm" 
+          @click="handleToggleCommentLike" 
+          class="action-button like-comment-button"
+          :class="{ 'liked': props.comment.is_liked_by_user }"
+          :title="props.comment.is_liked_by_user ? 'Unlike this comment' : 'Like this comment'"
+        >
+          <!-- Display 'Unlike' or 'Like' text -->
+          {{ props.comment.is_liked_by_user ? 'Unlike' : 'Like' }} 
+          <!-- Display the like count -->
+          ({{ props.comment.like_count ?? 0 }})
+        </button>
+        <!-- ---- 👆👆👆 END OF LIKE BUTTON AND COUNT 👆👆👆 ---- -->
       </div>
     </div>
 
@@ -414,4 +475,25 @@ async function submitReply() {
 }
 
 /* You might not need extra styling for .comment-item itself if the container provides enough */
+
+/* ---- 👇👇👇 ADD STYLES FOR THE NEW LIKE BUTTON 👇👇👇 ---- */
+.like-comment-button {
+  color: #6c757d; /* Default: Grey, similar to cancel or a neutral action */
+  /* Add any other base styling if different from generic .action-button */
+}
+
+.like-comment-button:hover {
+  background-color: #f1f1f1; /* Light grey hover */
+  text-decoration: none;
+}
+
+.like-comment-button.liked {
+  color: #007bff;         /* Blue when liked (or your preferred "active" color) */
+  font-weight: bold;      /* Optional: make it bold when liked */
+}
+
+.like-comment-button.liked:hover {
+  background-color: #e7f3ff; /* Light blue hover when liked */
+}
+/* ---- 👆👆👆 END OF LIKE BUTTON STYLES 👆👆👆 ---- */
 </style>
