@@ -35,7 +35,7 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-fallback-default-key-if-no
 DEBUG = os.getenv('DEBUG', 'False').upper() == 'TRUE' # Reads from .env, defaults to False
 # ---- END OF MODIFICATION FOR SECRET_KEY AND DEBUG ----
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['192.168.31.35', 'localhost', '127.0.0.1']
 
 
 # Application definition
@@ -204,4 +204,5 @@ REST_AUTH = {
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:5173', # Your Vite server URL
     'http://127.0.0.1:5173', # Sometimes needed as well
+    'http://192.168.31.35:5173', # <--- ADD THIS LINE (access from your mobile)
 ]

@@ -197,7 +197,7 @@ class StatusPostListCreateView(generics.ListCreateAPIView):
     Use UserPostListView for user-specific posts.
     """
     # Use select_related/prefetch_related here too
-    queryset = StatusPost.objects.select_related('author__profile').prefetch_related('likes').order_by('-created_at')
+    queryset = StatusPost.objects.select_related('author__userprofile').prefetch_related('likes').order_by('-created_at')
     serializer_class = StatusPostSerializer
     permission_classes = [IsAuthenticatedOrReadOnly] # Read all, create if authenticated
     pagination_class = PageNumberPagination # Add pagination
@@ -215,7 +215,7 @@ class StatusPostListCreateView(generics.ListCreateAPIView):
 
 class StatusPostRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     """ Retrieve, update, or delete a single StatusPost (GET, PUT, PATCH, DELETE). """
-    queryset = StatusPost.objects.select_related('author__profile').prefetch_related('likes').all()
+    queryset = StatusPost.objects.select_related('author__userprofile').prefetch_related('likes').all()
     serializer_class = StatusPostSerializer
     permission_classes = [IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly] # Read if public/auth, write if owner
     lookup_field = 'pk'
