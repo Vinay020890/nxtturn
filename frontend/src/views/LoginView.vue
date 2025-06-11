@@ -60,8 +60,16 @@ const handleLogin = async () => {
       </div>
       <button type="submit">Login</button>
     </form>
-    <!-- Add link to registration page later -->
-    <!-- <p>Don't have an account? <router-link to="/register">Register</router-link></p> -->
+    <!-- 👇 MODIFIED SECTION 👇 -->
+    <div class="extra-links">
+      <p>
+        Don't have an account?
+        <router-link :to="{ name: 'register' }" class="link-to-register">Create one</router-link>
+        <!-- If your register route is not named 'Register', use path: -->
+        <!-- <router-link to="/register" class="link-to-register">Create one</router-link> -->
+      </p>
+    </div>
+    <!-- END OF MODIFIED SECTION -->
   </div>
 </template>
 
@@ -104,5 +112,27 @@ button:hover {
   color: red;
   margin-bottom: 1rem;
   font-size: 0.9em;
+}
+
+.extra-links {
+  margin-top: 1.5rem; /* Space above the "Don't have an account?" text */
+  text-align: center; /* Center the text */
+  font-size: 0.9em;   /* Slightly smaller font */
+}
+
+.extra-links p {
+  color: #adb5bd; /* Light gray text, adjust to your theme */
+  margin-bottom: 0; /* Remove default paragraph bottom margin if not needed */
+}
+
+.link-to-register {
+  color: #28a745;   /* Green color, similar to your buttons or an accent color */
+  text-decoration: none;
+  font-weight: 500; /* Make the link text slightly bolder */
+}
+
+.link-to-register:hover {
+  text-decoration: underline;
+  color: #218838; /* Darker green on hover */
 }
 </style>
