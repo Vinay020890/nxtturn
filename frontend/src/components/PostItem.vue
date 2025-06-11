@@ -32,6 +32,22 @@ const showComments = ref(false);
 const newCommentContent = ref('');
 
 const localDeleteError = ref<string | null>(null); 
+// 👇 PASTE THESE NEW STATE VARIABLES HERE
+const isEditing = ref(false); // To toggle edit mode
+const editContent = ref('');
+const editImageFile = ref<File | null>(null);
+const editImagePreviewUrl = ref<string | null>(null);
+const editVideoFile = ref<File | null>(null);
+const editVideoFileName = ref<string | null>(null); // To show selected video file name or "Current Video"
+
+const localEditError = ref<string | null>(null); // For errors during edit submission
+const isSubmittingEdit = ref(false); // To disable form during submission
+
+// Flags to track if user wants to remove existing media
+const removeCurrentImage = ref(false);
+const removeCurrentVideo = ref(false);
+// END OF NEW STATE VARIABLES
+
 
 // ===========================================
 // 👇 ADD THIS COMPUTED PROPERTY
@@ -254,98 +270,371 @@ async function handleDeletePost() {
 }
 // ===========================================
 
+// ===========================================
+// === NEW: Methods for Post Editing ===
+// ===========================================
+
+function toggleEditMode() {
+  isEditing.value = !isEditing.value;
+  localEditError.value = null; // Clear any previous edit error
+
+  if (isEditing.value) {
+    // Entering edit mode: pre-fill form data from the current post
+    editContent.value = props.post.content || '';
+    
+    // Reset file inputs and previews for new edit session
+    editImageFile.value = null;
+    editImagePreviewUrl.value = props.post.image || null; // Show current image initially
+    removeCurrentImage.value = false; // Reset flag
+
+    editVideoFile.value = null;
+    editVideoFileName.value = props.post.video ? 'Current Video' : null; // Indicate if a video exists by name/URL
+    removeCurrentVideo.value = false; // Reset flag
+
+  }
+  // No specific action needed when exiting edit mode via "Cancel"
+  // Form fields will be re-populated if user clicks "Edit" again.
+}
+
+function handleEditImageFileChange(event: Event) {
+  const target = event.target as HTMLInputElement;
+  if (target.files && target.files[0]) {
+    editImageFile.value = target.files[0];
+    editImagePreviewUrl.value = URL.createObjectURL(target.files[0]);
+    removeCurrentImage.value = false; // If a new image is selected, we are not trying to remove the (now old) current one
+    localEditError.value = null; 
+  }
+}
+
+function removeEditImage() { // Used when user clicks "Remove Image" for the *newly selected* or *currently displayed* image
+  editImageFile.value = null;       // Clear any newly selected file
+  editImagePreviewUrl.value = null; // Clear the preview
+  removeCurrentImage.value = true;  // Set flag to indicate the original image (if any) should be removed
+  
+  // Visually clear the file input
+  const imageInput = document.getElementById('edit-post-image') as HTMLInputElement;
+  if (imageInput) imageInput.value = '';
+}
+
+
+function handleEditVideoFileChange(event: Event) {
+  const target = event.target as HTMLInputElement;
+  if (target.files && target.files[0]) {
+    editVideoFile.value = target.files[0];
+    editVideoFileName.value = target.files[0].name; // Show new file name
+    removeCurrentVideo.value = false; // If a new video is selected, we are not trying to remove the (now old) current one
+    localEditError.value = null;
+  }
+}
+
+function removeEditVideo() { // Used when user clicks "Remove Selected Video" for a *newly selected* video
+  editVideoFile.value = null;
+  editVideoFileName.value = null; // Clear the display name
+  // Note: This does NOT set removeCurrentVideo.value to true.
+  // This function is for clearing a *newly selected* video before submission.
+  // removeExistingVideoForUpdate is for removing a video that's already part of the post.
+
+  const videoInput = document.getElementById('edit-post-video') as HTMLInputElement;
+  if (videoInput) videoInput.value = '';
+}
+
+function removeExistingVideoForUpdate() { // Used when user clicks "Remove Current Video" for an *existing* video on the post
+    editVideoFile.value = null;         // Ensure no new video file is considered
+    editVideoFileName.value = null;     // Clear any display of current/new video
+    removeCurrentVideo.value = true;    // Set flag to indicate original video should be removed
+}
+
+
+async function handleUpdatePost() {
+  localEditError.value = null;
+  isSubmittingEdit.value = true;
+
+  // Basic validation: ensure at least one field (content, new image, new video, or keeping existing media) is present.
+  const hasContent = editContent.value && editContent.value.trim() !== '';
+  const hasNewImage = !!editImageFile.value;
+  const hasNewVideo = !!editVideoFile.value;
+  
+  // Check if existing media is being kept (i.e., not flagged for removal and no new media uploaded to replace it)
+  const isKeepingExistingImage = !!props.post.image && !removeCurrentImage.value && !hasNewImage;
+  const isKeepingExistingVideo = !!props.post.video && !removeCurrentVideo.value && !hasNewVideo;
+
+  if (!hasContent && !hasNewImage && !hasNewVideo && !isKeepingExistingImage && !isKeepingExistingVideo) {
+    localEditError.value = 'Post must have content, an image, or a video.';
+    isSubmittingEdit.value = false;
+    return;
+  }
+
+  const formData = new FormData();
+  let contentChanged = editContent.value !== (props.post.content || '');
+
+  // 1. Append content if it has changed from original, or if it's new content.
+  // Also append if it was empty and now has content, or had content and is now empty.
+  if (contentChanged || (editContent.value && !props.post.content)) {
+      formData.append('content', editContent.value);
+  } else if (!editContent.value && props.post.content) { // Clearing existing content
+      formData.append('content', '');
+  } else if (hasContent) { // If content is present and unchanged, but other things might change, send it.
+      // Or, if API is PATCH, only send if changed. For simplicity with current structure for StatusPostSerializer validation:
+      formData.append('content', editContent.value);
+  }
+
+
+  // 2. Handle Image
+  if (editImageFile.value) { // New image uploaded
+    formData.append('image', editImageFile.value);
+  } else if (removeCurrentImage.value && props.post.image) { // Existing image flagged for removal
+    formData.append('image', ''); // Send empty string to clear
+  }
+  // If no new image and not removing existing, the existing image on server remains untouched with PATCH.
+
+  // 3. Handle Video
+  if (editVideoFile.value) { // New video uploaded
+    formData.append('video', editVideoFile.value);
+  } else if (removeCurrentVideo.value && props.post.video) { // Existing video flagged for removal
+    formData.append('video', ''); // Send empty string to clear
+  }
+  // If no new video and not removing existing, the existing video on server remains untouched with PATCH.
+
+
+  // Check if any actual data is being sent for update
+  // (content changed, new image, new video, or clearing existing image/video)
+  let actualChangesMade = false;
+  for (const _ of formData.entries()) { // Iterate to see if formData has any entries
+      actualChangesMade = true;
+      break;
+  }
+  // Also consider if content was the same but is now explicitly set (even if to same value, to satisfy serializer if media is removed)
+  if (!actualChangesMade && hasContent && editContent.value === (props.post.content || '')) {
+      // This case handles if only media was removed, and content remained the same (but non-empty)
+      // The serializer needs content if media is gone.
+      // However, if content was already on formData, this is redundant.
+      // Let's refine: if formData is empty but content *should* be there (e.g. media removed)
+      if (!formData.has('content') && hasContent) {
+          formData.append('content', editContent.value);
+          actualChangesMade = true;
+      }
+  }
+
+
+  if (!actualChangesMade) {
+      // This means content is the same as original, no new files, and no media removal flags.
+      isEditing.value = false; // Just exit edit mode
+      isSubmittingEdit.value = false;
+      return;
+  }
+  
+
+  try {
+    const success = await feedStore.updatePost(
+        props.post.id,
+        props.post.post_type, // 'statuspost'
+        formData
+    );
+
+    if (success) {
+      isEditing.value = false; // Exit edit mode
+      // Reset flags for next edit session on another post or this one later
+      removeCurrentImage.value = false;
+      removeCurrentVideo.value = false;
+    } else {
+      localEditError.value = feedStore.updatePostError || 'Failed to update post.';
+    }
+  } catch (error) {
+    console.error('PostItem: Error calling updatePost store action', error);
+    localEditError.value = 'An unexpected error occurred while updating the post.';
+  } finally {
+    isSubmittingEdit.value = false;
+  }
+}
+// ===========================================
+// === END OF NEW Methods for Post Editing ===
+
+
+// ===========================================
+
+// ===========================================
+// === NEW: Watchers for Edit Form Previews ===
+// ===========================================
+watch(() => props.post.image, (newVal, oldVal) => {
+    // Only update preview if not currently editing this post,
+    // to avoid overwriting user's pending changes in the edit form.
+    if (!isEditing.value) {
+        editImagePreviewUrl.value = newVal || null;
+        // If post.image changes externally, it implies we are no longer trying to remove it
+        // based on a previous "Remove Image" click in an old edit session.
+        removeCurrentImage.value = false;
+    }
+});
+
+watch(() => props.post.video, (newVal, oldVal) => {
+    if (!isEditing.value) {
+        editVideoFileName.value = newVal ? (newVal.substring(newVal.lastIndexOf('/') + 1) || 'Current Video') : null;
+        // If post.video changes externally, reset the removal flag.
+        removeCurrentVideo.value = false;
+    }
+});
+// ===========================================
+// === END OF NEW Watchers ===
+// ===========================================
+
 </script>
 
 <template>
   <article class="post-item">
     <header class="post-header">
-      <div class="author-info"> 
+      <div class="author-info">
         <router-link :to="{ name: 'profile', params: { username: post.author.username } }" class="author-link">
           <span class="author-username">{{ post.author.username }}</span>
         </router-link>
         <span class="timestamp" v-if="post.created_at">{{ format(new Date(post.created_at), 'Pp') }}</span>
       </div>
 
-      <div v-if="isOwner" class="post-actions"> 
-        <button 
+      <!-- MODIFIED: Post Actions - Edit and Delete Buttons -->
+      <div v-if="isOwner" class="post-actions">
+        <button
+          @click="toggleEditMode"
+          :disabled="post.isDeleting || isEditing"
+          class="edit-button">
+          {{ isEditing ? 'Cancel Edit' : 'Edit' }}
+        </button>
+        <button
           @click="handleDeletePost"
-          :disabled="post.isDeleting"
+          :disabled="post.isDeleting || isEditing"
           class="delete-button">
           {{ post.isDeleting ? 'Deleting...' : 'Delete' }}
         </button>
       </div>
+      <!-- END OF MODIFIED Post Actions -->
     </header>
 
-    
-    
     <div v-if="localDeleteError" class="error-message post-delete-error">
       {{ localDeleteError }}
     </div>
 
-    <div class="post-content">
-      
+    <!-- MODIFIED: Conditional Display - Show Post OR Edit Form -->
+    <!-- Display Mode (Not Editing) -->
+    <div v-if="!isEditing" class="post-content">
       <div v-if="post.video" class="post-video-container">
         <video controls class="post-video" :src="post.video">
           Your browser does not support the video tag.
         </video>
       </div>
-
       <div v-if="post.image" class="post-image-container">
         <img :src="post.image" :alt="`Image for post by ${post.author.username}`" class="post-image" />
       </div>
-
       <p v-if="post.content" class="post-text-content" v-html="linkifyContent(post.content)"></p>
     </div>
 
+    <!-- Edit Mode Form -->
+    <div v-if="isEditing" class="edit-post-form">
+      <form @submit.prevent="handleUpdatePost">
+        <!-- Error Message for Edit -->
+        <div v-if="localEditError" class="error-message post-edit-error">
+          {{ localEditError }}
+        </div>
+
+        <!-- Content Textarea -->
+        <div class="form-group">
+          <label for="edit-post-content">Content:</label>
+          <textarea
+            id="edit-post-content"
+            v-model="editContent"
+            rows="3"
+            placeholder="What's on your mind?"
+          ></textarea>
+        </div>
+
+        <!-- Image Input & Preview -->
+        <div class="form-group">
+          <label for="edit-post-image">Image:</label>
+          <input type="file" id="edit-post-image" @change="handleEditImageFileChange" accept="image/*" />
+          <div v-if="editImagePreviewUrl" class="image-preview edit-image-preview">
+            <img :src="editImagePreviewUrl" alt="Image preview" />
+            <button type="button" @click="removeEditImage" class="remove-media-button">Remove Image</button>
+          </div>
+        </div>
+
+        <!-- Video Input & Preview/Info -->
+        <div class="form-group">
+          <label for="edit-post-video">Video:</label>
+          <input type="file" id="edit-post-video" @change="handleEditVideoFileChange" accept="video/*" />
+          <!-- Show selected new video -->
+          <div v-if="editVideoFile" class="video-preview edit-video-preview">
+            <p>Selected: {{ editVideoFileName }}</p>
+            <button type="button" @click="removeEditVideo" class="remove-media-button">Clear Selection</button>
+          </div>
+          <!-- Show info about current video if no new one is selected AND not flagged for removal-->
+          <div v-else-if="props.post.video && editVideoFileName && !removeCurrentVideo" class="video-preview edit-video-preview">
+             <p>Current video: <a :href="props.post.video" target="_blank">{{ editVideoFileName.startsWith('http') ? 'View Current Video' : editVideoFileName }}</a></p>
+             <button type="button" @click="removeExistingVideoForUpdate" class="remove-media-button">Remove Current Video</button>
+          </div>
+        </div>
+
+        <!-- Validation Helper Message for Edit Form -->
+        <p v-if="!editContent.trim() && !editImageFile && !editVideoFile && !editImagePreviewUrl && !(props.post.video && editVideoFileName && !removeCurrentVideo)" class="info-message">
+            Post must have content, an image, or a video.
+        </p>
+
+        <!-- Form Actions (Submit and Cancel) -->
+        <div class="form-actions">
+          <button type="submit" :disabled="isSubmittingEdit">
+            {{ isSubmittingEdit ? 'Saving...' : 'Save Changes' }}
+          </button>
+          <button type="button" @click="toggleEditMode" :disabled="isSubmittingEdit">Cancel</button>
+        </div>
+      </form>
+    </div>
+    <!-- END OF MODIFIED Conditional Display -->
+
+
     <footer class="post-footer">
       <button @click="toggleLike" :class="{ 'liked': post.is_liked_by_user }" class="like-button"
-        :disabled="post.isLiking || post.isDeleting">
+        :disabled="post.isLiking || post.isDeleting || isEditing"> <!-- MODIFIED: Disable if editing -->
         {{ likeButtonText }}
       </button>
       <span>Likes: {{ post.like_count ?? 0 }}</span> |
-      <button @click="toggleCommentDisplay" class="comment-toggle-button" 
-        :disabled="post.isDeleting">
+      <button @click="toggleCommentDisplay" class="comment-toggle-button"
+        :disabled="post.isDeleting || isEditing"> <!-- MODIFIED: Disable if editing -->
         Comments: {{ post.comment_count ?? 0 }} {{ showComments ? '(-)' : '(+)' }}
       </button>
     </footer>
 
-    <section v-if="showComments && !post.isDeleting" class="comments-section">
+    <section v-if="showComments && !post.isDeleting && !isEditing" class="comments-section"> <!-- MODIFIED: Hide if editing -->
       <div v-if="isLoadingComments" class="comments-loading">
         Loading comments...
       </div>
-      <div v-else-if="commentError" class="comments-error"> {/* This v-else-if expects isLoadingComments to be false */}
+      <div v-else-if="commentError" class="comments-error">
         Error loading comments: {{ commentError }}
         <button @click="loadComments">Retry</button>
       </div>
-      <div v-else-if="Array.isArray(commentsForThisPost)"> 
+      <div v-else-if="Array.isArray(commentsForThisPost)">
         <template v-if="commentsForThisPost.length > 0">
           <CommentItem v-for="comment in commentsForThisPost" :key="comment.id" :comment="comment"
             :parentPostType="props.post.post_type" :parentObjectId="props.post.object_id"
             :parentPostActualId="props.post.id" />
         </template>
-        <div v-else class="no-comments"> {/* This v-else expects commentsForThisPost.length to be 0 */}
+        <div v-else class="no-comments">
           No comments yet.
         </div>
       </div>
-      <div v-else class="comments-error"> {/* This v-else is a fallback if commentsForThisPost isn't an array */}
+      <div v-else class="comments-error">
         Could not display comments (unexpected data structure).
       </div>
 
       <form v-if="isAuthenticated" @submit.prevent="handleCommentSubmit" class="comment-form">
-        
         <div v-if="createCommentError" class="error-message comment-submit-error">
           {{ createCommentError }}
         </div>
-        <textarea 
-            v-model="newCommentContent" 
-            placeholder="Add a comment..." 
-            rows="2" 
-            :disabled="isCreatingComment || post.isDeleting"
+        <textarea
+            v-model="newCommentContent"
+            placeholder="Add a comment..."
+            rows="2"
+            :disabled="isCreatingComment || post.isDeleting || isEditing" 
             required>
         </textarea>
-        <button 
-            type="submit" 
-            :disabled="isCreatingComment || !newCommentContent.trim() || post.isDeleting">
+        <button
+            type="submit"
+            :disabled="isCreatingComment || !newCommentContent.trim() || post.isDeleting || isEditing">
           {{ isCreatingComment ? 'Submitting...' : 'Submit Comment' }}
         </button>
       </form>
@@ -662,5 +951,178 @@ async function handleDeletePost() {
   text-decoration: none; /* Remove underline when disabled */
   cursor: not-allowed;
 }
+
+/* In PostItem.vue <style scoped> */
+/* --- ADD THESE NEW STYLES --- */
+
+.edit-button {
+  padding: 3px 8px;
+  background-color: #5bc0de; /* Info blue - or choose another color */
+  color: white;
+  border: 1px solid #46b8da;
+  border-radius: 4px; /* Match your other buttons */
+  font-size: 0.85em; /* Match your .like-button */
+  cursor: pointer;
+  margin-right: 5px; /* Space between edit and delete buttons */
+  transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
+}
+
+.edit-button:hover:not(:disabled) {
+  background-color: #31b0d5;
+  border-color: #269abc;
+}
+
+.edit-button:disabled {
+  background-color: #a7d9ed; /* Lighter, muted color */
+  border-color: #93cfe7;
+  opacity: 0.65; /* Consistent with your .like-button:disabled */
+  cursor: not-allowed;
+}
+
+/* Styles for the Edit Form Container */
+.edit-post-form {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px dashed #ccc; /* Dashed border to distinguish from normal post view */
+  border-radius: 4px;
+  background-color: #f9f9f9; /* Slightly different background */
+}
+
+.edit-post-form .form-group {
+  margin-bottom: 0.75rem;
+}
+
+.edit-post-form label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-weight: bold;
+  font-size: 0.9em;
+  color: #333;
+}
+
+.edit-post-form textarea,
+.edit-post-form input[type="file"] {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.95em;
+  box-sizing: border-box; /* Important for width 100% and padding */
+  margin-top: 0.25rem; /* Space after label if input is not directly part of it */
+}
+
+.edit-post-form textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.edit-post-form input[type="file"] {
+    font-size: 0.9em; /* Adjust font size for file input text */
+}
+
+/* Styles for Image and Video Previews in Edit Form */
+.image-preview.edit-image-preview,
+.video-preview.edit-video-preview {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid #e0e0e0;
+  background-color: #fff;
+  border-radius: 4px;
+  display: inline-block; /* Or block if you want it full width */
+  max-width: 100%;
+}
+
+.image-preview.edit-image-preview img {
+  max-width: 200px; /* Or your preferred max size */
+  max-height: 200px;
+  display: block;
+  border-radius: 4px;
+}
+
+.video-preview.edit-video-preview p {
+  font-size: 0.9em;
+  color: #555;
+  margin: 0;
+}
+.video-preview.edit-video-preview a {
+  color: #007bff;
+}
+
+.remove-media-button {
+    font-size: 0.8em;
+    padding: 3px 6px;
+    margin-left: 10px;
+    vertical-align: middle; /* Align with text or image */
+    background-color: #f8f9fa;
+    border: 1px solid #ced4da;
+    color: #dc3545; /* Reddish color for remove action */
+    border-radius: 3px;
+    cursor: pointer;
+}
+.remove-media-button:hover {
+    background-color: #e9ecef;
+    border-color: #adb5bd;
+    color: #c82333;
+}
+
+
+/* Form Actions (Save, Cancel buttons) */
+.edit-post-form .form-actions {
+  margin-top: 1rem;
+  display: flex;
+  gap: 0.5rem; /* Space between buttons */
+  justify-content: flex-start; /* Align buttons to the start */
+}
+
+.edit-post-form .form-actions button {
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9em;
+  font-weight: 500;
+  transition: background-color 0.2s ease, opacity 0.2s ease;
+}
+
+.edit-post-form .form-actions button[type="submit"] {
+  background-color: #28a745; /* Green for save */
+  color: white;
+}
+.edit-post-form .form-actions button[type="submit"]:hover:not(:disabled) {
+  background-color: #218838;
+}
+
+.edit-post-form .form-actions button[type="button"] { /* Cancel button */
+  background-color: #6c757d; /* Standard gray */
+  color: white;
+}
+.edit-post-form .form-actions button[type="button"]:hover:not(:disabled) {
+  background-color: #5a6268;
+}
+
+.edit-post-form .form-actions button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+/* Error and Info Messages in Edit Form */
+.post-edit-error { /* Using your existing naming convention */
+  color: #a94442;
+  background-color: #f2dede;
+  border: 1px solid #ebccd1;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.info-message { /* For the "Post must have content..." helper text */
+    font-size: 0.85em;
+    color: #666;
+    margin-top: 0.5rem;
+    margin-bottom: 0.75rem;
+    padding: 0.25rem;
+}
+/* --- END OF NEW STYLES --- */
 
 </style>

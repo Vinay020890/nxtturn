@@ -245,6 +245,35 @@ function incrementCommentCountInUserPosts(postId: number, postType: string) {
 }
 // ---- END OF NEW ACTION ----
 
+// === NEW: updateUserPost ACTION ===
+// ===========================================
+function updateUserPost(updatedPostData: Post) {
+  console.log('ProfileStore: Attempting to update post in userPosts. Post ID:', updatedPostData.id);
+  
+  // Ensure userPosts.value is not null and is an array before trying to findIndex
+  if (userPosts.value && Array.isArray(userPosts.value)) {
+    const postIndex = userPosts.value.findIndex(
+      p => p.id === updatedPostData.id && p.post_type === updatedPostData.post_type
+    );
+
+    if (postIndex !== -1) {
+      // Merge the updated data from the server with the existing post.
+      // Important: Ensure `isUpdating` (if present on updatedPostData or local post) is set to false.
+      userPosts.value[postIndex] = { 
+          ...userPosts.value[postIndex], // Spread existing post to keep any local-only client-side flags
+          ...updatedPostData,            // Overlay with new data from server
+          isUpdating: false              // Explicitly ensure isUpdating is false after update
+      };
+      console.log('ProfileStore: Post updated in userPosts:', userPosts.value[postIndex]);
+    } else {
+      console.warn('ProfileStore: Post ID', updatedPostData.id, '(Type:', updatedPostData.post_type, ') not found in userPosts. No local state update performed in profile store.');
+    }
+  } else {
+    console.warn('ProfileStore: userPosts is not initialized or not an array. Cannot update post.');
+  }
+}
+// ===========================================
+
   return {
     currentProfile,
     userPosts,
@@ -263,5 +292,6 @@ function incrementCommentCountInUserPosts(postId: number, postType: string) {
     updateProfilePicture, // <-- Ensure this is returned
     toggleLikeInUserPosts,
     incrementCommentCountInUserPosts,
+    updateUserPost,
   };
 });

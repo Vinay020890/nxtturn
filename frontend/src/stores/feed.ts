@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 import { defineStore } from 'pinia';
 import axiosInstance from '@/services/axiosInstance';
 import { useAuthStore } from './auth'; // May need auth status later
+import { useProfileStore } from './profile';
 
 // Define the expected shape of an Author object from the API
 interface PostAuthor {
@@ -38,6 +39,7 @@ export interface Post {
   // Optional frontend-only state for better UX
   isLiking?: boolean; // Flag to disable button during API call
   isDeleting?: boolean; 
+  isUpdating?: boolean;
 }
 // ==========================================
 
@@ -76,6 +78,7 @@ export const useFeedStore = defineStore('feed', () => {
   const isCreatingPost = ref(false); // NEW: For loading state during post creation
 
   const deletePostError = ref<string | null>(null);
+  const updatePostError = ref<string | null>(null);
 
   // DEFINE YOUR STANDARD PAGE SIZE HERE
   const ITEMS_PER_PAGE = 10; // Or whatever your backend pagination page_size is
@@ -395,6 +398,85 @@ function incrementCommentCount(postId: number, postType: string) {
   }
   // ===========================================
 
+  // ===========================================
+// === NEW: updatePost ACTION ===
+// ===========================================
+async function updatePost(postId: number, postType: string, formData: FormData): Promise<boolean> {
+  updatePostError.value = null;
+  const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
+  
+  if (postIndex !== -1) {
+    posts.value[postIndex].isUpdating = true;
+  }
+
+  try {
+    let apiUrl = '';
+    // Assuming 'statuspost' is the primary type for /posts/ endpoint
+    if (postType.toLowerCase() === 'statuspost') {
+      apiUrl = `/posts/${postId}/`; // Uses /api/community/posts/<id>/ implicitly via axiosInstance
+    } else {
+      console.error(`FeedStore: Update for post_type '${postType}' is not configured.`);
+      updatePostError.value = `Update for post type '${postType}' is not supported here.`;
+      if (postIndex !== -1 && posts.value[postIndex]) posts.value[postIndex].isUpdating = false;
+      return false;
+    }
+    
+    console.log(`FeedStore: Calling API: PATCH ${apiUrl} for post ID ${postId}`);
+    const response = await axiosInstance.patch<Post>(apiUrl, formData); // Expecting the updated Post object
+
+    if (response.status === 200 && response.data) {
+      console.log(`FeedStore: Post ${postId} updated successfully from backend. Response:`, response.data);
+      if (postIndex !== -1 && posts.value[postIndex]) {
+        // Merge response data with existing post to preserve any frontend-only flags
+        // Ensure post_type from original post is preserved if not in response
+        // and reset isUpdating flag.
+        posts.value[postIndex] = { 
+            ...posts.value[postIndex], // Keep existing client-side flags not in response
+            ...response.data,          // Overlay with server response
+            post_type: posts.value[postIndex].post_type, // Ensure post_type is correct
+            isUpdating: false 
+        };
+      }
+      
+      // Sync with profile store
+      const profileStore = useProfileStore(); // Ensure this is imported at the top
+      profileStore.updateUserPost(response.data); // We'll define this in profile.ts next
+
+      return true;
+    } else {
+      updatePostError.value = `Failed to update post (status: ${response.status}).`;
+      if (postIndex !== -1 && posts.value[postIndex]) posts.value[postIndex].isUpdating = false;
+      return false;
+    }
+  } catch (err: any) {
+    console.error(`FeedStore: Error updating post ${postId}:`, err);
+    let message = 'An error occurred while updating the post.';
+    if (err.response && err.response.data) {
+        if (typeof err.response.data === 'string') {
+            message = err.response.data;
+        } else if (typeof err.response.data === 'object') {
+            // Try to construct a message from DRF error object
+            const errors = [];
+            for (const key in err.response.data) {
+                if (Array.isArray(err.response.data[key])) {
+                    errors.push(`${key}: ${err.response.data[key].join(', ')}`);
+                } else {
+                    errors.push(`${key}: ${err.response.data[key]}`);
+                }
+            }
+            if (errors.length > 0) message = errors.join('; ');
+            else if (err.response.data.detail) message = err.response.data.detail;
+        }
+    }
+    updatePostError.value = message;
+    if (postIndex !== -1 && posts.value[postIndex]) {
+      posts.value[postIndex].isUpdating = false;
+    }
+    return false;
+  }
+}
+// ===========================================
+
 
   // --- Return exposed state, getters, and actions ---
   return {
@@ -410,11 +492,13 @@ function incrementCommentCount(postId: number, postType: string) {
     isCreatingPost,     // The new loading state for post creation
 
     deletePostError,
+    updatePostError,
     // getters can be exposed here if defined
     fetchFeed,
     createPost,
     toggleLike,
     incrementCommentCount, 
     deletePost,
+    updatePost,
   };
 });
