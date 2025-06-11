@@ -3,7 +3,7 @@
 import axios from 'axios';
 
 // Base URL for your Django backend API
-const API_BASE_URL = 'http://127.0.0.1:8000/api/'; // Trailing slash is important
+const API_BASE_URL = 'http://192.168.31.35:8000/api/'; // Your desktop's IP and Django port
 
 // Create a custom Axios instance
 const axiosInstance = axios.create({

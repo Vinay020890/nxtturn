@@ -37,6 +37,7 @@ export interface Post {
 
   // Optional frontend-only state for better UX
   isLiking?: boolean; // Flag to disable button during API call
+  isDeleting?: boolean; 
 }
 // ==========================================
 
@@ -73,6 +74,8 @@ export const useFeedStore = defineStore('feed', () => {
   // NEW: State for create post errors
   const createPostError = ref<string | null>(null);
   const isCreatingPost = ref(false); // NEW: For loading state during post creation
+
+  const deletePostError = ref<string | null>(null);
 
   // DEFINE YOUR STANDARD PAGE SIZE HERE
   const ITEMS_PER_PAGE = 10; // Or whatever your backend pagination page_size is
@@ -111,7 +114,8 @@ export const useFeedStore = defineStore('feed', () => {
       // Add isLiking flag to posts coming from API
       const fetchedPosts = response.data.results.map(post => ({
           ...post,
-          isLiking: false // Initialize flag
+          isLiking: false, // Initialize flag
+          isDeleting: false
       }));
 
       if (page === 1) {
@@ -168,7 +172,7 @@ export const useFeedStore = defineStore('feed', () => {
       console.log("FeedStore: Post created successfully", response.data);
       // Add the new post to the beginning of the posts array
       // Ensure the new post from API response has all necessary client-side flags like isLiking
-      const newPostResponseData = { ...response.data, isLiking: false, image: response.data.image || null }; // Ensure image is part of the new post object
+      const newPostResponseData = { ...response.data, isLiking: false,isDeleting: false, image: response.data.image || null, video: response.data.video || null  }; // Ensure image is part of the new post object
       posts.value.unshift(newPostResponseData);
 
       return newPostResponseData; // Return created post object
@@ -307,6 +311,90 @@ function incrementCommentCount(postId: number, postType: string) {
 }
 // ---- END OF NEW ACTION ----
 
+// ===========================================
+  // === NEW deletePost ACTION ===
+  // ===========================================
+  async function deletePost(postId: number, postType: string): Promise<boolean> {
+    console.log(`FeedStore: Attempting to delete post ID: ${postId}, Type: ${postType}`);
+    deletePostError.value = null; // Clear previous delete errors
+
+    const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
+    let postToDelete: Post | null = null;
+
+    if (postIndex !== -1) {
+      postToDelete = posts.value[postIndex];
+      if (postToDelete.isDeleting) {
+        console.warn(`FeedStore: Delete operation already in progress for post ${postId}.`);
+        return false; // Or throw an error if preferred
+      }
+      postToDelete.isDeleting = true; // Set loading state for this specific post
+    } else {
+      // If post is not in the current feed list (e.g., deleting from profile page directly affecting backend)
+      // We can still proceed with the API call.
+      // Or, you might decide this action only works on posts currently in the feed.
+      // For now, let's allow API call even if not in local `posts` array.
+      console.warn(`FeedStore: Post ID ${postId} (Type: ${postType}) not found in local feed state. Proceeding with API call.`);
+    }
+
+    try {
+      const authStore = useAuthStore();
+      if (!authStore.isAuthenticated) {
+        deletePostError.value = "User not authenticated. Please login to delete posts.";
+        console.warn("FeedStore: User not authenticated, cannot delete post.");
+        if (postToDelete) postToDelete.isDeleting = false;
+        return false;
+      }
+
+      // IMPORTANT: Construct the correct API endpoint.
+      // Assuming 'statuspost' is the relevant post_type for direct deletion via /posts/<id>/
+      // If you have other deletable post types with different base URLs, this needs adjustment.
+      let apiUrl = '';
+      if (postType.toLowerCase() === 'statuspost') { // Make sure this matches your post_type string
+        apiUrl = `/posts/${postId}/`; // Ensure this matches your DRF URL for StatusPostRetrieveUpdateDestroyView
+      } else {
+        // Handle other post types or throw an error if only StatusPosts are deletable via this store action
+        console.error(`FeedStore: Deletion for post_type '${postType}' is not configured.`);
+        deletePostError.value = `Deletion for post type '${postType}' is not supported here.`;
+        if (postToDelete) postToDelete.isDeleting = false;
+        return false;
+      }
+      
+      console.log(`FeedStore: Calling API: DELETE ${apiUrl}`);
+      await axiosInstance.delete(apiUrl); // DELETE requests usually expect a 204 No Content response
+
+      console.log(`FeedStore: Post ${postId} deleted successfully from backend.`);
+
+      // If the post was found and deleted from local state
+      if (postIndex !== -1) {
+        posts.value.splice(postIndex, 1);
+        console.log(`FeedStore: Post ${postId} removed from local feed state.`);
+      }
+      
+      return true; // Indicate success
+
+    } catch (err: any) {
+      console.error(`FeedStore: Error deleting post ${postId}:`, err);
+      if (err.response && err.response.data) {
+        if (err.response.status === 403) {
+             deletePostError.value = "You do not have permission to delete this post.";
+        } else if (err.response.status === 404) {
+            deletePostError.value = "Post not found. It might have already been deleted.";
+        } else if (err.response.data.detail) {
+            deletePostError.value = err.response.data.detail;
+        } else {
+            deletePostError.value = "Failed to delete post. Server error.";
+        }
+      } else if (err.message) {
+        deletePostError.value = err.message;
+      } else {
+        deletePostError.value = 'An unexpected error occurred while deleting the post.';
+      }
+      if (postToDelete) postToDelete.isDeleting = false; // Reset loading state on error
+      return false; // Indicate failure
+    }
+  }
+  // ===========================================
+
 
   // --- Return exposed state, getters, and actions ---
   return {
@@ -320,10 +408,13 @@ function incrementCommentCount(postId: number, postType: string) {
       // ADD THESE TWO LINES (can be anywhere within the return object):
     createPostError,    // The new error state for post creation
     isCreatingPost,     // The new loading state for post creation
+
+    deletePostError,
     // getters can be exposed here if defined
     fetchFeed,
     createPost,
     toggleLike,
     incrementCommentCount, 
+    deletePost,
   };
 });

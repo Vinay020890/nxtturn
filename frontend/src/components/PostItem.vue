@@ -22,12 +22,29 @@ const commentStore = useCommentStore();
 const authStore = useAuthStore();
 const profileStore = useProfileStore();
 
+const { currentUser, isAuthenticated } = storeToRefs(authStore);
+
 // --- GET REACTIVE REFS FROM COMMENT STORE FOR CREATION ---
 const { isCreatingComment, createCommentError } = storeToRefs(commentStore);
 
 // --- Local State ---
 const showComments = ref(false);
 const newCommentContent = ref('');
+
+const localDeleteError = ref<string | null>(null); 
+
+// ===========================================
+// 👇 ADD THIS COMPUTED PROPERTY
+const isOwner = computed(() => {
+  // If user is not logged in, or no current user data, or post has no author, they can't be the owner.
+  if (!isAuthenticated.value || !currentUser.value || !props.post.author) {
+    return false;
+  }
+  // Compare the logged-in user's ID with the post author's ID.
+  // Make sure `currentUser.value.id` and `props.post.author.id` are correct for your setup.
+  return currentUser.value.id === props.post.author.id;
+});
+// ===========================================
 
 // --- HELPER / UTILITY FUNCTIONS (Component-Specific) ---
 // 👇👇👇 IDEAL SPOT FOR linkifyContent 👇👇👇
@@ -189,82 +206,146 @@ const toggleLike = async () => {
   }
 };
 // ---- END OF REPLACEMENT ----
+
+// ===========================================
+// === NEW: Method to Handle Post Deletion ===
+// ===========================================
+// 👇 ADD THIS ASYNC FUNCTION
+async function handleDeletePost() {
+  localDeleteError.value = null;      // Clear any previous local error for this item
+  feedStore.deletePostError = null; // Clear any global error in the store too
+
+  // This check is a safeguard, the button should ideally not even be visible if not owner.
+  if (!isOwner.value) {
+    alert("You can only delete your own posts."); 
+    return;
+  }
+
+  // Ask for confirmation before deleting
+  const confirmed = window.confirm("Are you sure you want to delete this post? This action cannot be undone.");
+  if (!confirmed) {
+    return; // User clicked "Cancel"
+  }
+
+  try {
+    // Call the deletePost action from your feedStore
+    // props.post.id is the ID of the post to delete
+    // props.post.post_type is its type (e.g., 'statuspost')
+    const success = await feedStore.deletePost(props.post.id, props.post.post_type);
+
+    if (success) {
+      // The post was deleted successfully. 
+      // The feedStore removed it from its list, so the UI should update automatically
+      // if this PostItem is part of a v-for loop over feedStore.posts.
+      console.log(`PostItem: Post ${props.post.id} successfully deleted.`);
+    } else {
+      // Deletion failed, the store should have set an error message.
+      // Display it locally for this post item.
+      localDeleteError.value = feedStore.deletePostError || "Failed to delete post. Please try again.";
+      // You could also show an alert here:
+      // alert(localDeleteError.value); 
+    }
+  } catch (error) { 
+    // This catch is for unexpected errors if the store action itself throws an unhandled error.
+    console.error(`PostItem: Unexpected error during handleDeletePost for post ${props.post.id}:`, error);
+    localDeleteError.value = "An unexpected error occurred while trying to delete the post.";
+    // alert(localDeleteError.value);
+  }
+}
+// ===========================================
+
 </script>
 
 <template>
   <article class="post-item">
     <header class="post-header">
-      <router-link :to="{ name: 'profile', params: { username: post.author.username } }" class="author-link">
-        <span class="author-username">{{ post.author.username }}</span>
-      </router-link>
-      <span class="timestamp" v-if="post.created_at">{{ format(new Date(post.created_at), 'Pp') }}</span>
+      <div class="author-info"> 
+        <router-link :to="{ name: 'profile', params: { username: post.author.username } }" class="author-link">
+          <span class="author-username">{{ post.author.username }}</span>
+        </router-link>
+        <span class="timestamp" v-if="post.created_at">{{ format(new Date(post.created_at), 'Pp') }}</span>
+      </div>
+
+      <div v-if="isOwner" class="post-actions"> 
+        <button 
+          @click="handleDeletePost"
+          :disabled="post.isDeleting"
+          class="delete-button">
+          {{ post.isDeleting ? 'Deleting...' : 'Delete' }}
+        </button>
+      </div>
     </header>
+
+    
+    
+    <div v-if="localDeleteError" class="error-message post-delete-error">
+      {{ localDeleteError }}
+    </div>
+
     <div class="post-content">
-      <!-- Display video if it exists -->
-           <!-- Corrected Logic: Display video if it exists -->
+      
       <div v-if="post.video" class="post-video-container">
-        <!-- Optional debug text: <p style="font-weight: bold; color: purple;">VIDEO:</p> -->
         <video controls class="post-video" :src="post.video">
-          <!-- Using direct src on video tag is often sufficient. 
-               You can add <source> tags if you have multiple video formats for the same video. -->
           Your browser does not support the video tag.
         </video>
       </div>
 
-      <!-- Corrected Logic: Display image if it exists (this will now be checked independently) -->
       <div v-if="post.image" class="post-image-container">
-        <!-- Optional debug text: <p style="font-weight: bold; color: teal;">IMAGE:</p> -->
         <img :src="post.image" :alt="`Image for post by ${post.author.username}`" class="post-image" />
       </div>
 
-      <!-- Display content if it exists (always show content regardless of media) -->
       <p v-if="post.content" class="post-text-content" v-html="linkifyContent(post.content)"></p>
     </div>
+
     <footer class="post-footer">
       <button @click="toggleLike" :class="{ 'liked': post.is_liked_by_user }" class="like-button"
-        :disabled="post.isLiking">
+        :disabled="post.isLiking || post.isDeleting">
         {{ likeButtonText }}
       </button>
       <span>Likes: {{ post.like_count ?? 0 }}</span> |
-      <button @click="toggleCommentDisplay" class="comment-toggle-button">
+      <button @click="toggleCommentDisplay" class="comment-toggle-button" 
+        :disabled="post.isDeleting">
         Comments: {{ post.comment_count ?? 0 }} {{ showComments ? '(-)' : '(+)' }}
       </button>
     </footer>
 
-    <section v-if="showComments" class="comments-section">
-      <!-- Loading state for comments -->
+    <section v-if="showComments && !post.isDeleting" class="comments-section">
       <div v-if="isLoadingComments" class="comments-loading">
         Loading comments...
       </div>
-      <!-- Error state for comments -->
-      <div v-else-if="commentError" class="comments-error">
+      <div v-else-if="commentError" class="comments-error"> {/* This v-else-if expects isLoadingComments to be false */}
         Error loading comments: {{ commentError }}
         <button @click="loadComments">Retry</button>
       </div>
-      <!-- Display comments or "no comments" message -->
-      <div v-else-if="Array.isArray(commentsForThisPost)">
+      <div v-else-if="Array.isArray(commentsForThisPost)"> {/* This v-else-if expects commentError to be falsey */}
         <template v-if="commentsForThisPost.length > 0">
           <CommentItem v-for="comment in commentsForThisPost" :key="comment.id" :comment="comment"
             :parentPostType="props.post.post_type" :parentObjectId="props.post.object_id"
             :parentPostActualId="props.post.id" />
-
         </template>
-        <div v-else class="no-comments">
+        <div v-else class="no-comments"> {/* This v-else expects commentsForThisPost.length to be 0 */}
           No comments yet.
         </div>
       </div>
-      <!-- Fallback if commentsForThisPost is not an array -->
-      <div v-else class="comments-error">
+      <div v-else class="comments-error"> {/* This v-else is a fallback if commentsForThisPost isn't an array */}
         Could not display comments (unexpected data structure).
       </div>
 
-      <form v-if="authStore.isAuthenticated" @submit.prevent="handleCommentSubmit" class="comment-form">
+      <form v-if="isAuthenticated" @submit.prevent="handleCommentSubmit" class="comment-form">
+        {/* This v-if for createCommentError is standalone, which is fine */}
         <div v-if="createCommentError" class="error-message comment-submit-error">
           {{ createCommentError }}
         </div>
-        <textarea v-model="newCommentContent" placeholder="Add a comment..." rows="2" :disabled="isCreatingComment"
-          required></textarea>
-        <button type="submit" :disabled="isCreatingComment || !newCommentContent.trim()">
+        <textarea 
+            v-model="newCommentContent" 
+            placeholder="Add a comment..." 
+            rows="2" 
+            :disabled="isCreatingComment || post.isDeleting"
+            required>
+        </textarea>
+        <button 
+            type="submit" 
+            :disabled="isCreatingComment || !newCommentContent.trim() || post.isDeleting">
           {{ isCreatingComment ? 'Submitting...' : 'Submit Comment' }}
         </button>
       </form>
@@ -507,4 +588,79 @@ const toggleLike = async () => {
 
 /* Ensure your existing .post-image-container and .post-image styles are still there */
 /* --- End Comment Form Styles --- */
+
+/* Styles for the container of the delete button, placed in the header */
+.post-actions {
+  margin-left: auto; /* This will push the delete button to the far right of the header */
+  padding-left: 10px; /* Some space between author info and the delete button */
+}
+
+/* Styles for the new Delete button */
+.delete-button {
+  padding: 3px 8px; /* Similar padding to your .like-button */
+  background-color: #f0ad4e; /* An orange/warning color, less aggressive than pure red initially */
+  color: white;
+  border: 1px solid #eea236;
+  border-radius: 4px; /* Match your other buttons */
+  font-size: 0.85em; /* Match your .like-button */
+  cursor: pointer;
+  font-weight: normal; /* Or bold if you prefer */
+  transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
+}
+
+.delete-button:hover:not(:disabled) {
+  background-color: #ec971f; /* Darker orange on hover */
+  border-color: #d58512;
+}
+
+/* Styles for when the delete button is disabled (e.g., during the API call) */
+.delete-button:disabled {
+  background-color: #f5d6ab; /* Lighter, muted orange */
+  border-color: #f1c688;
+  opacity: 0.65; /* Consistent with your .like-button:disabled */
+  cursor: not-allowed;
+}
+
+/* Styles for the error message specifically for post deletion */
+.post-delete-error {
+  color: #a94442; /* Text color for errors (often dark red) */
+  background-color: #f2dede; /* Background color for error messages (often light pink/red) */
+  border: 1px solid #ebccd1; /* Border color for error messages */
+  padding: 0.75rem 1rem;   /* Padding inside the error message box */
+  margin-top: 0.5rem;      /* Space above the error message */
+  margin-bottom: 0.75rem;  /* Space below the error message */
+  border-radius: 4px;      /* Rounded corners, matching other elements */
+  font-size: 0.9em;        /* Font size for the error text */
+  text-align: left;        /* Align text to the left */
+}
+
+/*
+  Your .post-header currently has 'align-items: baseline;'.
+  If the delete button (which might be taller due to padding) doesn't align well
+  with the author username/timestamp, you might want to change it to 'flex-start'.
+  Try it as is first. If alignment is off, then modify .post-header:
+*/
+/*
+.post-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start; // CHANGED from baseline if vertical alignment is an issue
+  margin-bottom: 0.5rem;
+  font-size: 0.9em;
+}
+*/
+
+/*
+  You already have good disabled styles for .like-button and .comment-form button.
+  The :disabled="... || post.isDeleting" added in the template will use those.
+  The .comment-toggle-button doesn't have an explicit :disabled style in your current CSS.
+  You might want to add one for consistency if it looks odd when disabled.
+  Example:
+*/
+.comment-toggle-button:disabled {
+  color: #aaa; /* Lighter color for disabled state */
+  text-decoration: none; /* Remove underline when disabled */
+  cursor: not-allowed;
+}
+
 </style>
