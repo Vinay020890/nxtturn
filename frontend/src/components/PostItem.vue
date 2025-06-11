@@ -317,7 +317,7 @@ async function handleDeletePost() {
         Error loading comments: {{ commentError }}
         <button @click="loadComments">Retry</button>
       </div>
-      <div v-else-if="Array.isArray(commentsForThisPost)"> {/* This v-else-if expects commentError to be falsey */}
+      <div v-else-if="Array.isArray(commentsForThisPost)"> 
         <template v-if="commentsForThisPost.length > 0">
           <CommentItem v-for="comment in commentsForThisPost" :key="comment.id" :comment="comment"
             :parentPostType="props.post.post_type" :parentObjectId="props.post.object_id"
@@ -332,7 +332,7 @@ async function handleDeletePost() {
       </div>
 
       <form v-if="isAuthenticated" @submit.prevent="handleCommentSubmit" class="comment-form">
-        {/* This v-if for createCommentError is standalone, which is fine */}
+        
         <div v-if="createCommentError" class="error-message comment-submit-error">
           {{ createCommentError }}
         </div>
