@@ -1,202 +1,100 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { useAuthStore } from '@/stores/auth'; // Import the auth store
+import { useAuthStore } from '@/stores/auth';
 import { useRouter } from 'vue-router'; 
 
 const username = ref('');
 const password = ref('');
-const errorMessage = ref<string | null>(null); // To store potential login errors
+const errorMessage = ref<string | null>(null);
+const showPassword = ref(false);
 
-const showPassword = ref(false); // Initially password is hidden
-
-const authStore = useAuthStore(); // Get the auth store instance
+const authStore = useAuthStore();
 const router = useRouter();
 
 const togglePasswordVisibility = () => {
   showPassword.value = !showPassword.value;
 };
 
-
 const handleLogin = async () => {
-  errorMessage.value = null; // Clear previous errors
-  console.log('Login attempt:', username.value);
-
+  errorMessage.value = null;
   try {
-    // Call the login action from the Pinia store
-    // The action currently mocks success or throws an error
     await authStore.login({
       username: username.value,
       password: password.value,
     });
-
-    // If the above line doesn't throw an error, it succeeded (in our mock)
-    console.log('LoginView: Login action succeeded.');
-    // --- WE WILL ADD REDIRECTION LATER ---
-    router.push({ name: 'feed' }); // <-- ADD THIS LINE to redirect
-
+    router.push({ name: 'feed' });
   } catch (error: any) {
-    // Handle errors thrown by the authStore.login action
-    console.error('LoginView: Login action failed:', error);
-
-    // Basic error display for now (we'll refine later)
-    // Attempt to get DRF non_field_errors first
     if (error?.response?.data?.non_field_errors) {
          errorMessage.value = error.response.data.non_field_errors.join(' ');
     } else {
-         // If no specific error, show a generic one
-         errorMessage.value = 'Login failed. Please check credentials or try again.';
+         errorMessage.value = 'Login failed. Please check your credentials.';
     }
   }
 };
 </script>
 
 <template>
-  <div class="login-view">
-    <h1>Login</h1>
-    <form @submit.prevent="handleLogin">
-      <div class="form-group">
-        <label for="username">Username:</label>
-        <input type="text" id="username" v-model="username" required />
-      </div>
+  <div class="flex items-center justify-center min-h-[calc(100vh-150px)] bg-gray-50">
+    <div class="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md">
+      <h1 class="text-2xl font-bold text-center text-gray-900">Sign in to your account</h1>
+      
+      <form @submit.prevent="handleLogin" class="space-y-6">
+        <div>
+          <label for="username" class="block text-sm font-medium text-gray-700">Username</label>
+          <div class="mt-1">
+            <input 
+              type="text" 
+              id="username" 
+              v-model="username" 
+              required 
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+        </div>
 
-      <div class="form-group">
-        <label for="password">Password:</label>
-        <div class="password-input-wrapper">
-          <input
-            :type="showPassword ? 'text' : 'password'"
-            id="password"
-            v-model="password"
-            required
-          />
-          <button type="button" @click="togglePasswordVisibility" class="password-toggle-btn" aria-label="Toggle password visibility">
-            <span v-if="showPassword">
-              <!-- Bootstrap Icons: eye-slash-fill -->
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" class="bi bi-eye-slash-fill" viewBox="0 0 16 16">
-                <path d="m10.79 12.912-1.614-1.615a3.5 3.5 0 0 1-4.474-4.474l-2.06-2.06C.938 6.278 0 8 0 8s3 5.5 8 5.5a7.029 7.029 0 0 0 2.79-.588zM5.21 3.088A7.028 7.028 0 0 1 8 2.5c5 0 8 5.5 8 5.5s-.939 1.721-2.641 3.238l-2.062-2.062a3.5 3.5 0 0 0-4.474-4.474L5.21 3.089z"/>
-                <path d="M5.525 7.646a2.5 2.5 0 0 0 2.829 2.829l-2.83-2.829zm4.95.708-2.829-2.83a2.5 2.5 0 0 1 2.829 2.829zm3.171 6-12-12 .708-.708 12 12-.708.708z"/>
-              </svg>
-            </span>
-            <span v-else>
-              <!-- Bootstrap Icons: eye-fill -->
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" class="bi bi-eye-fill" viewBox="0 0 16 16">
-                <path d="M10.5 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"/>
-                <path d="M0 8s3-5.5 8-5.5S16 8 16 8s-3 5.5-8 5.5S0 8 0 8zm8 3.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/>
-              </svg>
-            </span>
+        <div>
+          <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
+          <div class="mt-1 relative">
+            <input
+              :type="showPassword ? 'text' : 'password'"
+              id="password"
+              v-model="password"
+              required
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+            />
+            <button 
+              type="button" 
+              @click="togglePasswordVisibility" 
+              class="absolute inset-y-0 right-0 flex items-center px-3 text-gray-500 hover:text-gray-700"
+              aria-label="Toggle password visibility"
+            >
+              <svg v-if="showPassword" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a9.97 9.97 0 01-1.563 3.029m-2.177-4.573A3 3 0 0012 9.5m-3.955 3.955A3 3 0 0012 14.5M3 3l18 18" /></svg>
+              <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+            </button>
+          </div>
+        </div>
+
+        <div v-if="errorMessage" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4" role="alert">
+          <p>{{ errorMessage }}</p>
+        </div>
+        
+        <div>
+          <button 
+            type="submit"
+            :disabled="authStore.isLoading"
+            class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-blue-300"
+          >
+            {{ authStore.isLoading ? 'Signing in...' : 'Sign in' }}
           </button>
         </div>
-      </div>
+      </form>
 
-      <div v-if="errorMessage" class="error-message">
-        {{ errorMessage }}
-      </div>
-      <button type="submit">Login</button>
-    </form>
-    <div class="extra-links">
-      <p>
-        Don't have an account?
-        <router-link :to="{ name: 'register' }" class="link-to-register">Create one</router-link>
+      <p class="mt-6 text-center text-sm text-gray-600">
+        Not a member?
+        <router-link :to="{ name: 'register' }" class="font-medium text-blue-600 hover:text-blue-500">
+          Create an account
+        </router-link>
       </p>
     </div>
   </div>
 </template>
-
-<style scoped>
-.login-view {
-  max-width: 400px;
-  margin: 2rem auto;
-  padding: 1.5rem;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  /* Add more mobile-first styles */
-}
-.form-group {
-  margin-bottom: 1rem;
-}
-.form-group label {
-  display: block;
-  margin-bottom: 0.3rem;
-}
-.form-group input {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  box-sizing: border-box; /* Include padding and border in the element's total width and height */
-}
-button {
-  padding: 0.6rem 1.2rem;
-  background-color: #4CAF50; /* Example color */
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  width: 100%; /* Make button full width */
-}
-button:hover {
-  background-color: #45a049;
-}
-.error-message {
-  color: red;
-  margin-bottom: 1rem;
-  font-size: 0.9em;
-}
-
-.extra-links {
-  margin-top: 1.5rem; /* Space above the "Don't have an account?" text */
-  text-align: center; /* Center the text */
-  font-size: 0.9em;   /* Slightly smaller font */
-}
-
-.extra-links p {
-  color: #adb5bd; /* Light gray text, adjust to your theme */
-  margin-bottom: 0; /* Remove default paragraph bottom margin if not needed */
-}
-
-.link-to-register {
-  color: #28a745;   /* Green color, similar to your buttons or an accent color */
-  text-decoration: none;
-  font-weight: 500; /* Make the link text slightly bolder */
-}
-
-.link-to-register:hover {
-  text-decoration: underline;
-  color: #218838; /* Darker green on hover */
-}
-
-.password-input-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.password-input-wrapper input {
-  /* Ensure the input takes full width of its parent .form-group minus space for button */
-  /* padding-right is crucial if button is positioned absolutely inside */
-  padding-right: 4rem; /* Adjust this value based on your button's width + desired spacing */
-}
-
-.password-toggle-btn {
-  position: absolute;
-  right: 0.5rem; /* Adjust for desired position from the right edge */
-  top: 50%;
-  transform: translateY(-50%);
-  background: none; /* Crucial: remove default button background */
-  border: none;     /* Crucial: remove default button border */
-  color: #adb5bd;    /* Color for the "Show/Hide" text or an icon */
-  cursor: pointer;
-  padding: 0.25rem 0.5rem; /* Make it easy to click */
-  font-size: 0.8em;       /* Adjust font size of "Show/Hide" */
-  line-height: 1;         /* Helps with vertical alignment of text */
-  
-  /* Override general button styles from your component's global button style */
-  width: auto;             /* Don't make it full width */
-  background-color: transparent !important; /* Force transparent if other styles interfere */
-}
-
-.password-toggle-btn:hover {
-  color: #e0e0e0; /* Brighter color on hover */
-  background-color: transparent !important; /* Ensure no background change on hover */
-}
-/* END OF ADDED STYLES for password toggle */
-</style>

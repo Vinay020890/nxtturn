@@ -1,114 +1,71 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory } from 'vue-router';
 import 'vue-router';
 import { useAuthStore } from '@/stores/auth';
-import NotificationsPage from '../views/NotificationsPage.vue';
 
-// RegisterView is already imported, which is fine, but we'll use lazy loading below
-// import RegisterView from '../views/RegisterView.vue';
-
-// We removed the imports for HomeView and AboutView
-
-// --- ADD THIS TYPE DECLARATION ---
 declare module 'vue-router' {
   interface RouteMeta {
-    requiresAuth?: boolean // Indicates if authentication is required
-    requiresGuest?: boolean // Indicates if the route is only for guests (unauthenticated users)
+    requiresAuth?: boolean;
+    requiresGuest?: boolean;
   }
 }
-// --- END OF TYPE DECLARATION ---
 
 const router = createRouter({
-  // This uses the browser's history API for clean URLs (no #)
   history: createWebHistory(import.meta.env.BASE_URL),
-
-  // The 'routes' array defines the pages of our application.
   routes: [
-
-     // --- FEED ROUTE ---
-     {
-      path: '/', // The root path of the application
-      name: 'feed', // Name for programmatic navigation
-      // Lazy-load the component for better performance
-      component: () => import('../views/FeedView.vue'), // Points to the FeedView component
+    {
+      path: '/',
+      name: 'feed',
+      component: () => import('@/views/FeedView.vue'),
       meta: { requiresAuth: true }
     },
-    // --- END OF FEED ROUTE ---
-
-    // --- LOGIN ROUTE ---
     {
-      path: '/login', // The URL path for the login page
-      name: 'login',  // A unique name for this route (optional but good practice)
-      // Lazy-load the component
-      component: () => import('../views/LoginView.vue'),
+      path: '/login',
+      name: 'login',
+      component: () => import('@/views/LoginView.vue'), // Corrected filename
       meta: { requiresGuest: true }
     },
-    // --- END OF LOGIN ROUTE ---
-
-    // --- ADD REGISTER ROUTE HERE ---
     {
-      path: '/register', // The URL path for the registration page
-      name: 'register', // A unique name for this route
-      // Lazy-load the component for better performance
-      component: () => import('../views/RegisterView.vue'),
+      path: '/register',
+      name: 'register',
+      component: () => import('@/views/RegisterView.vue'), // Corrected filename
       meta: { requiresGuest: true }
     },
-    // --- END OF REGISTER ROUTE ---
-
-    // --- ADD THE NEW PROFILE ROUTE ---
     {
-      path: '/profile/:username', // Dynamic segment ':username'
+      path: '/profile/:username',
       name: 'profile',
-      // Lazy-load the component (we'll create ProfileView.vue next)
-      component: () => import('@/views/ProfileView.vue'), // Use alias @
-      // Let's allow anyone (logged in or not) to view profiles for now
-      meta: { requiresAuth: false }
+      component: () => import('@/views/ProfileView.vue'),
+      meta: { requiresAuth: false } 
     },
-    // --- END OF PROFILE ROUTE ---
-
-    // ---- ADD THE NEW NOTIFICATIONS ROUTE OBJECT HERE ----
     {
       path: '/notifications',
       name: 'notifications',
-      component: NotificationsPage, // Use the direct import since it's not lazy-loaded in this example
-                                    // Or use: () => import('../views/NotificationsPage.vue') for lazy loading
-      meta: { requiresAuth: true } // Notifications should require authentication
+      component: () => import('@/views/NotificationsPage.vue'),
+      meta: { requiresAuth: true }
     },
-    // ---- END OF NOTIFICATIONS ROUTE ----
 
-    /*
-    EXAMPLES of routes we might add later:
-    ... (rest of your comments remain the same) ...
-    */
+    {
+      path: '/search',
+      name: 'search',
+      component: () => import('@/views/SearchPage.vue'),
+      meta: { requiresAuth: true }
+    },
+    
   ],
-})
+});
 
-// --- NAVIGATION GUARD LOGIC ---
 router.beforeEach((to, from, next) => {
-  // Get the auth store instance *inside* the guard
-  // This ensures we get the latest state
   const authStore = useAuthStore();
-
   const requiresAuth = to.meta.requiresAuth;
   const requiresGuest = to.meta.requiresGuest;
-  const isAuthenticated = authStore.isAuthenticated; // Check if user is logged in
-
-  console.log(`Navigating to: ${to.path}, requiresAuth: ${requiresAuth}, requiresGuest: ${requiresGuest}, isAuthenticated: ${isAuthenticated}`); // Debug log
+  const isAuthenticated = authStore.isAuthenticated;
 
   if (requiresAuth && !isAuthenticated) {
-    // Case 1: Route requires login, but user is not logged in
-    console.log('Guard: Redirecting to login');
-    next({ name: 'login' }); // Redirect to the login page
+    next({ name: 'login' });
   } else if (requiresGuest && isAuthenticated) {
-    // Case 2: Route requires guest (e.g., login/register), but user IS logged in
-    console.log('Guard: Redirecting to feed');
-    next({ name: 'feed' }); // Redirect authenticated users to the main feed page
+    next({ name: 'feed' });
   } else {
-    // Case 3: No special requirements, or requirements met
-    console.log('Guard: Allowing navigation');
-    next(); // Allow navigation to proceed
+    next();
   }
 });
-// --- END OF NAVIGATION GUARD LOGIC ---
 
-// Export the router instance to be used in main.ts
-export default router
+export default router;

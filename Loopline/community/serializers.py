@@ -1,575 +1,254 @@
+import json
 from rest_framework import serializers
-# from django.contrib.auth.models import User
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
-from .models import UserProfile, Follow, StatusPost, ForumCategory, Group, ForumPost, Comment, Like, Conversation, Message, Notification
+from django.db import transaction
+
+# Updated model imports to include PostMedia
+from .models import (
+    UserProfile, Follow, StatusPost, PostMedia, ForumCategory, Group, 
+    ForumPost, Comment, Like, Conversation, Message, Notification
+)
 
 User = get_user_model() 
 
+class PostMediaSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+    class Meta:
+        model = PostMedia
+        fields = ['id', 'media_type', 'file_url']
+    def get_file_url(self, obj):
+        request = self.context.get('request')
+        if request and obj.file:
+            return request.build_absolute_uri(obj.file.url)
+        return obj.file.url if obj.file else None
+
+# In community/serializers.py
+
 class UserSerializer(serializers.ModelSerializer):
+    # Add a new field to get the picture URL
+    picture = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        # Select only the fields needed publicly for the profile view
-        fields = ['id', 'username', 'first_name', 'last_name']
-        read_only_fields = ['id', 'username'] # Usually username isn't changed here
+        fields = ['id', 'username', 'first_name', 'last_name', 'picture'] # Add 'picture' to fields
 
-# ---- ADD THIS CLASS DEFINITION ----
+    def get_picture(self, obj):
+        # 'obj' is the User instance.
+        # We try to get the related userprofile and its picture.
+        # This is safe and won't crash if a profile or picture doesn't exist.
+        try:
+            profile = obj.userprofile
+            if profile.picture:
+                request = self.context.get('request')
+                if request:
+                    return request.build_absolute_uri(profile.picture.url)
+                return profile.picture.url
+        except UserProfile.DoesNotExist:
+            return None
+        return None
+
+# ... (Keep GenericRelatedObjectSerializer, NotificationSerializer, UserProfileSerializer, UserProfileUpdateSerializer as they are) ...
 class GenericRelatedObjectSerializer(serializers.Serializer):
-    """
-    A serializer to represent common fields of generic related objects
-    (e.g., StatusPost, Comment) when they are part of a notification.
-    """
     type = serializers.CharField(read_only=True, source='_meta.model_name') 
     id = serializers.IntegerField(read_only=True, source='pk')
     display_text = serializers.CharField(read_only=True, source='__str__') 
-# ---- END OF CLASS DEFINITION ----
 
-# ... (GenericRelatedObjectSerializer class definition is above this)
-
-# ---- ADD THIS NotificationSerializer CLASS DEFINITION ----
 class NotificationSerializer(serializers.ModelSerializer):
-    actor = UserSerializer(read_only=True) # Assumes UserSerializer is defined/imported
-    
-    # Use the helper serializer for our GFK fields
+    actor = UserSerializer(read_only=True)
     target = GenericRelatedObjectSerializer(read_only=True, allow_null=True)
     action_object = GenericRelatedObjectSerializer(read_only=True, allow_null=True)
-
     class Meta:
-        model = Notification # Link to your Notification model
-        fields = [
-            'id',
-            # 'recipient', # Typically not needed in the response list if API is for the authenticated user
-            'actor',
-            'verb',
-            'notification_type',
-            'target',           
-            'action_object',    
-            'timestamp',
-            'is_read',
-        ]
-        # For this serializer, all fields will be read-only by default when using ModelSerializer
-        # unless explicitly made writable. We are primarily using it for listing notifications.
-        # If you wanted to allow updating 'is_read' via this serializer with a PATCH,
-        # you'd remove 'is_read' from the global read_only_fields below and handle it.
-        # For now, let's make them all read_only for the list view.
+        model = Notification
+        fields = ['id', 'actor', 'verb', 'notification_type', 'target', 'action_object', 'timestamp', 'is_read']
         read_only_fields = fields 
-# ---- END OF NotificationSerializer CLASS DEFINITION ----
 
-# Your other existing serializer classes (UserSerializer, StatusPostSerializer, etc.) would typically follow.
-
-# Basic serializer for the built-in User model (to nest in profile)
-
-
-# Serializer for our UserProfile model
 class UserProfileSerializer(serializers.ModelSerializer):
-    # Nest the UserSerializer to include basic user info when reading
     user = UserSerializer(read_only=True)
-    # Explicitly declare ArrayFields if needed, though ModelSerializer might handle basic cases
     skills = serializers.ListField(child=serializers.CharField(max_length=100), required=False, allow_null=True)
     interests = serializers.ListField(child=serializers.CharField(max_length=100), required=False, allow_null=True)
     is_followed_by_request_user = serializers.SerializerMethodField()
-    picture = serializers.ImageField(read_only=True) # <-- ADDED THIS LINE
-
+    picture = serializers.ImageField(read_only=True)
     class Meta:
         model = UserProfile
-        # List all fields from UserProfile model you want in the API response
-        # Note: 'user' field here refers to the foreign key ID when writing,
-        # but the nested UserSerializer when reading (due to read_only=True above)
-        fields = [
-            'user',
-            'bio',
-            'location_city',
-            'location_state',
-            'college_name',
-            'major',
-            'graduation_year',
-            'linkedin_url',
-            'portfolio_url',
-            'skills',
-            'interests',
-            # 'profile_picture_url',
-            'picture',
-            'updated_at',
-            'is_followed_by_request_user'
-        ]
-        # Make profile fields writable (except user and updated_at)
-        # The 'user' field on the profile itself shouldn't be changed via this API
+        fields = ['user', 'bio', 'location_city', 'location_state', 'college_name', 'major', 'graduation_year', 'linkedin_url', 'portfolio_url', 'skills', 'interests', 'picture', 'updated_at', 'is_followed_by_request_user']
         read_only_fields = ['user', 'updated_at', 'is_followed_by_request_user']
-
     def get_is_followed_by_request_user(self, obj):
-        """
-        Checks if the user making the request is following the user profile being serialized.
-        'obj' here is the UserProfile instance.
-        """
-        # Get the request user from the context (passed by the view)
         request = self.context.get('request')
-        if not request or not request.user or not request.user.is_authenticated:
-            return False # Anonymous users don't follow anyone
+        if not request or not request.user.is_authenticated:
+            return False
+        return Follow.objects.filter(follower=request.user, following=obj.user).exists()
 
-        request_user = request.user
-        profile_user = obj.user # The user whose profile this is
-
-        if request_user == profile_user:
-            return False # Cannot follow yourself
-
-        # Check if a Follow relationship exists
-        # Need to import the Follow model
-        from .models import Follow # Make sure this import is at the TOP of the file
-        is_following = Follow.objects.filter(
-            follower=request_user,
-            following=profile_user
-        ).exists()
-        return is_following
-    # --- END ADD METHOD ---
-
-# Serializer specifically for UPDATING the profile (doesn't need nested user)
 class UserProfileUpdateSerializer(serializers.ModelSerializer):
-    # Explicitly declare ArrayFields for writing/updating
     skills = serializers.ListField(child=serializers.CharField(max_length=100), required=False, allow_null=True)
     interests = serializers.ListField(child=serializers.CharField(max_length=100), required=False, allow_null=True)
     picture = serializers.ImageField(required=False, allow_null=True, use_url=False)
-
     class Meta:
         model = UserProfile
-        # Only include fields that the user is allowed to update
-        fields = [
-            'bio',
-            'location_city',
-            'location_state',
-            'college_name',
-            'major',
-            'graduation_year',
-            'linkedin_url',
-            # 'portfolio_url',
-            'picture',
-            'skills',
-            'interests',
-            # 'profile_picture_url',
-            'picture', # <-- ADDED THIS LINE
-        ]
+        fields = ['bio', 'location_city', 'location_state', 'college_name', 'major', 'graduation_year', 'linkedin_url', 'picture', 'skills', 'interests']
 
 
-# Add this serializer below UserProfileUpdateSerializer
-
-# --- UPDATED StatusPostSerializer ---
+# --- HEAVILY REFACTORED StatusPostSerializer with UPDATE logic ---
 class StatusPostSerializer(serializers.ModelSerializer):
-    """
-    Serializer for StatusPost model. Includes author info, like status, and IDs for liking.
-    """
-    author = UserSerializer(read_only=True) # Use the UserSerializer
+    author = UserSerializer(read_only=True)
     is_liked_by_user = serializers.SerializerMethodField()
-    like_count = serializers.SerializerMethodField() # Use the model property
+    like_count = serializers.SerializerMethodField()
     content_type_id = serializers.SerializerMethodField()
     object_id = serializers.SerializerMethodField()
     post_type = serializers.SerializerMethodField()   
-    comment_count = serializers.SerializerMethodField()   # <-- ADD THIS LINE 
+    comment_count = serializers.SerializerMethodField()
 
-     # ---- 1. EXPLICITLY DEFINE 'content' and 'image' FIELDS ----
-    content = serializers.CharField(
-        required=False,        # Makes it optional
-        allow_blank=True,      # Allows empty string ""
-        allow_null=True,       # Allows null (None)
-        style={'base_template': 'textarea.html'} # Optional: for DRF browsable API
-    )
-    image = serializers.ImageField(
-        max_length=None,       # Default
-        use_url=True,          # Ensures URL is returned in responses
-        required=False,        # Makes it optional
-        allow_null=True,       # Allows null (None)
-        allow_empty_file=True  # Allow empty file submission to clear image (DRF default is False, but allow_null=True often handles this)
-                               # For clearing, usually client sends 'image': null.
-                               # We'll primarily rely on required=False and allow_null=True.
-    )
-    # ---- END OF EXPLICIT FIELD DEFINITIONS ---- 
+    # --- Fields for Displaying and Creating/Updating Media ---
+    media = PostMediaSerializer(many=True, read_only=True)
+    
+    # For creating/updating with new media (write-only)
+    images = serializers.ListField(child=serializers.ImageField(use_url=False), write_only=True, required=False)
+    videos = serializers.ListField(child=serializers.FileField(use_url=False), write_only=True, required=False)
 
-    video = serializers.FileField(max_length=None, use_url=True, required=False, allow_null=True)  
+    # --- NEW: Field for deleting existing media during an update ---
+    # We expect a JSON string like "[1, 2, 5]" from the FormData
+    media_to_delete = serializers.CharField(write_only=True, required=False)
+
 
     class Meta:
         model = StatusPost
         fields = [
-            'id',
-            'author',           # Nested UserSerializer
-            'content',
-            'image',
-            'video',
-            'created_at',
-            'updated_at',
-            'like_count',       # Added
-            'is_liked_by_user', # Added
-            'content_type_id',  # Added for constructing like URL
-            'object_id',        # Added for constructing like URL
-            'post_type',        # <-- ADDED/ENSURED PRESENT
-            'comment_count',    # <-- ADDED/ENSURED PRESENT
-            
-            
+            'id', 'author', 'content', 'created_at', 'updated_at',
+            'like_count', 'is_liked_by_user', 'content_type_id', 'object_id', 
+            'post_type', 'comment_count',
+            # Fields for media
+            'media',
+            'images',
+            'videos',
+            'media_to_delete' # New write-only field
         ]
-        # Ensure all read-only fields are listed
         read_only_fields = [
             'id', 'author', 'created_at', 'updated_at', 'like_count',
-            'is_liked_by_user', 'content_type_id', 'object_id', 'post_type', 'comment_count'    
+            'is_liked_by_user', 'content_type_id', 'object_id', 'post_type',
+            'comment_count', 'media'
         ]
-    # ---- 2. ADD THE 'validate' METHOD ----
-    # A good place is after Meta and before get_... methods
-    def validate(self, data): # <<<<------ THIS IS THE UPDATED METHOD
-        is_creating = self.instance is None
-        final_content_value = data.get('content', self.instance.content if not is_creating else None)
-        final_content_str = str(final_content_value).strip() if final_content_value else ""
 
-        final_image_exists = False
-        if 'image' in data:
-            if data['image']:
-                final_image_exists = True
-        elif not is_creating and self.instance.image:
-            final_image_exists = True
+    def validate_media_to_delete(self, value):
+        """
+        Validate and parse the JSON string of media IDs to delete.
+        """
+        try:
+            ids = json.loads(value)
+            if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
+                raise serializers.ValidationError("'media_to_delete' must be a JSON string of a list of integers.")
+            return ids
+        except (json.JSONDecodeError, TypeError):
+            raise serializers.ValidationError("Invalid JSON format for 'media_to_delete'.")
 
-        final_video_exists = False
-        if 'video' in data:
-            if data['video']:
-                final_video_exists = True
-        elif not is_creating and self.instance.video:
-            final_video_exists = True
+    def validate(self, data):
+        """
+        Validate that on update, the post will not become empty.
+        """
+        if self.instance: # This is an update (PATCH/PUT)
+            content = data.get('content', self.instance.content)
+            new_images = data.get('images', [])
+            new_videos = data.get('videos', [])
+            media_to_delete_ids = data.get('media_to_delete', [])
 
-        if not final_content_str and not final_image_exists and not final_video_exists:
-            raise serializers.ValidationError("A post must have either text content, an image, or a video.")
+            # Calculate what the final media count will be
+            current_media_count = self.instance.media.count()
+            surviving_media_count = self.instance.media.exclude(id__in=media_to_delete_ids).count()
+            
+            final_media_count = surviving_media_count + len(new_images) + len(new_videos)
+
+            if not (content and content.strip()) and final_media_count == 0:
+                raise serializers.ValidationError("A post cannot be empty. It must have text content or at least one media file.")
+        
+        else: # This is a creation (POST)
+            content = data.get('content', '').strip()
+            images = data.get('images', [])
+            videos = data.get('videos', [])
+            if not content and not images and not videos:
+                raise serializers.ValidationError("A post must have text content, an image, or a video.")
+        
         return data
-     
 
-     # --- Add this method ---
+    def create(self, validated_data):
+        # ... (create method remains unchanged) ...
+        request = self.context.get('request')
+        images_data = validated_data.pop('images', [])
+        videos_data = validated_data.pop('videos', [])
+        validated_data.pop('media_to_delete', None) # Remove if present, not used in create
+        
+        validated_data['author'] = request.user
+        post = StatusPost.objects.create(**validated_data)
+
+        media_to_create = []
+        for image_file in images_data:
+            media_to_create.append(PostMedia(post=post, media_type='image', file=image_file))
+        for video_file in videos_data:
+            media_to_create.append(PostMedia(post=post, media_type='video', file=video_file))
+        if media_to_create:
+            PostMedia.objects.bulk_create(media_to_create)
+        return post
+
+    # --- NEW: Custom update method to handle gallery edits ---
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        # 1. Pop the media-related, non-model fields
+        images_data = validated_data.pop('images', [])
+        videos_data = validated_data.pop('videos', [])
+        media_to_delete_ids = validated_data.pop('media_to_delete', [])
+        
+        # 2. Update the StatusPost content field if it's provided
+        # The base `update` method handles this well.
+        instance = super().update(instance, validated_data)
+
+        # 3. Delete specified media items
+        if media_to_delete_ids:
+            # Important: ensure we only delete media belonging to this post and owned by the user
+            instance.media.filter(id__in=media_to_delete_ids).delete()
+
+        # 4. Create new media items
+        media_to_create = []
+        for image_file in images_data:
+            media_to_create.append(PostMedia(post=instance, media_type='image', file=image_file))
+        for video_file in videos_data:
+            media_to_create.append(PostMedia(post=instance, media_type='video', file=video_file))
+        
+        if media_to_create:
+            PostMedia.objects.bulk_create(media_to_create)
+            
+        instance.save()
+        return instance
+
+    # --- get_* methods remain unchanged ---
     def get_like_count(self, obj):
-        """
-        Returns the like count for the post instance.
-        Accesses the 'like_count' property or calculates it.
-        """
-        # Check if the object is already saved (has a pk)
-        # For a newly created object *before* the response, obj.likes might work if relations are set up
-        # Or access the property if defined on the model
-        if hasattr(obj, 'like_count'): # Check if property exists (preferred)
-             # For a new object, this property should return 0
-             return obj.like_count
-        elif hasattr(obj, 'pk') and obj.pk is not None and hasattr(obj, 'likes'): # Fallback if property doesn't exist but object is saved
-             return obj.likes.count()
-        return 0 # Default for unsaved or non-likable objects
-    # --- End added method ---
+        return obj.likes.count() if hasattr(obj, 'likes') else 0
 
     def get_is_liked_by_user(self, obj):
-        """ Check if the current user (from context) has liked this post. """
         user = self.context.get('request').user
         if user and user.is_authenticated:
             content_type = ContentType.objects.get_for_model(obj)
-            return Like.objects.filter(
-                content_type=content_type,
-                object_id=obj.pk,
-                user=user
-            ).exists()
+            return Like.objects.filter(content_type=content_type, object_id=obj.pk, user=user).exists()
         return False
 
     def get_content_type_id(self, obj):
-        """ Get the ContentType ID for the StatusPost model. """
-        content_type = ContentType.objects.get_for_model(obj)
-        return content_type.id
+        return ContentType.objects.get_for_model(obj).id
 
     def get_object_id(self, obj):
-        """ Get the primary key of the StatusPost instance. """
         return obj.pk
 
-    # Ensure the create method sets the author from the request context if needed
-    # (This might be handled in the View, but good practice to have here too
-    # if this serializer is used for creation directly)
-     # ---- 3. MODIFY THE 'create' METHOD ----
-    def create(self, validated_data):
-        request = self.context.get('request')
-        if request and hasattr(request, 'user'):
-            validated_data['author'] = request.user
-        
-        # REMOVE this check, as content is now optional, and 'validate' method handles the combined check.
-        # if 'content' not in validated_data: # OLD CHECK
-        #      raise serializers.ValidationError({"content": "Content field is required."}) # OLD CHECK
-        
-        return super().create(validated_data)
-    # ---- END OF 'create' METHOD MODIFICATION ----
-    
     def get_post_type(self, obj):
-    # obj is the StatusPost instance here
-        return obj.__class__.__name__.lower() # Should return 'statuspost'
+        return obj.__class__.__name__.lower()
     
     def get_comment_count(self, obj):
-    # obj is the StatusPost instance
-        if obj and hasattr(obj, 'pk') and obj.pk is not None:
-        # Import ContentType and Comment models here if not already imported at top
-        # from django.contrib.contenttypes.models import ContentType
-        # from .models import Comment # Assuming Comment model is in the same app
-        
+        if obj and obj.pk:
             content_type = ContentType.objects.get_for_model(obj)
             return Comment.objects.filter(content_type=content_type, object_id=obj.pk).count()
         return 0
 
-
-# Add these serializers
-
-class ForumCategorySerializer(serializers.ModelSerializer):
-    """Serializer for ForumCategory model."""
-    class Meta:
-        model = ForumCategory
-        fields = ['id', 'name', 'description'] # Add 'slug' later if implemented
-
-class ForumPostSerializer(serializers.ModelSerializer):
-    """
-    Serializer for ForumPost model. Includes basic author info.
-    Used for listing posts and retrieving detail.
-    """
-    author = UserSerializer(read_only=True)
-    # category_id = serializers.PrimaryKeyRelatedField(queryset=ForumCategory.objects.all(), source='category', write_only=True, required=False, allow_null=True) # For writing category link
-    # group_id = serializers.PrimaryKeyRelatedField(queryset=Group.objects.all(), source='group', write_only=True, required=False, allow_null=True) # For writing group link
-    # We might need separate serializers for create/update if linking gets complex
-
-    # Optionally include category name when reading list/detail
-    category_name = serializers.CharField(source='category.name', read_only=True, allow_null=True)
-    # Optionally include group name when reading list/detail
-    group_name = serializers.CharField(source='group.name', read_only=True, allow_null=True)
-
-
-    class Meta:
-        model = ForumPost
-        fields = [
-            'id',
-            'author',
-            'category', # Foreign key ID on write/read (can be null)
-            'group',    # Foreign key ID on write/read (can be null)
-            'category_name', # Read-only name
-            'group_name',    # Read-only name
-            'title',
-            'content',
-            'created_at',
-            'updated_at',
-            # Add comment/like counts later
-        ]
-        read_only_fields = ['author', 'created_at', 'updated_at', 'category_name', 'group_name']
-        # Make category/group writable by ID, but author/timestamps read-only
-
-# Potentially needed for creating/updating posts, simpler input
-class ForumPostCreateUpdateSerializer(serializers.ModelSerializer):
-     class Meta:
-        model = ForumPost
-        fields = [
-            'category', # Expecting category ID
-            'group',    # Expecting group ID (only one should be provided)
-            'title',
-            'content',
-        ]
-        # Add validation later to ensure either category OR group is provided, not both/neither
-
-
-# Add this serializer for Groups
-
-class GroupSerializer(serializers.ModelSerializer):
-    """
-    Serializer for the Group model. Includes creator info and member count.
-    """
-    # Use UserSerializer for creator, make read-only as creator doesn't change
-    creator = UserSerializer(read_only=True)
-    # Add a count of members (read-only)
-    member_count = serializers.IntegerField(source='members.count', read_only=True)
-
-    class Meta:
-        model = Group
-        fields = [
-            'id',
-            'name',
-            'description',
-            'creator',      # Nested UserSerializer on read
-            'member_count', # Calculated field
-            'members',      # Shows list of member IDs (can customize later if needed)
-            'created_at',
-            # 'slug',       # Add later if using slugs
-            # 'is_public',  # Add later if implementing privacy
-        ]
-        # Make certain fields read-only in this context
-        read_only_fields = ['creator', 'member_count', 'created_at']
-        # We might need a separate Create serializer if 'members' shouldn't be set directly on creation
-
-# Optional: A simpler serializer for creating a group if needed later
-# class GroupCreateSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = Group
-#         fields = ['name', 'description'] # Only allow setting these on creation
-
-
-# --- Add this new serializer ---
-
-class LikeSerializer(serializers.ModelSerializer):
-    """
-    Serializer for the Like model.
-    Handles serialization for creating and viewing likes.
-    Uses the existing UserSerializer for author details.
-    """
-    # Use your existing UserSerializer for read-only user representation
-    user = UserSerializer(read_only=True)
-
-    # Fields for linking to the specific post type when CREATING a like.
-    # These are write-only because we don't need to send them back when reading a like.
-    # The 'source' argument maps these input fields to the actual model fields.
-    status_post_id = serializers.PrimaryKeyRelatedField(
-        queryset=StatusPost.objects.all(), source='status_post', write_only=True, required=False, allow_null=True
-    )
-    forum_post_id = serializers.PrimaryKeyRelatedField(
-        queryset=ForumPost.objects.all(), source='forum_post', write_only=True, required=False, allow_null=True
-    )
-
-    class Meta:
-        model = Like
-        fields = [
-            'id',
-            'user',          # Uses UserSerializer for reading (shows nested user info)
-            'status_post',   # Read-only representation (shows the related post ID by default)
-            'forum_post',    # Read-only representation (shows the related post ID by default)
-            'created_at',
-
-            # These fields are only used for INPUT (writing/creating):
-            'status_post_id',
-            'forum_post_id',
-        ]
-        # User is set automatically, timestamps are auto, linked posts are shown via read-only fields
-        read_only_fields = ['id', 'user', 'created_at', 'status_post', 'forum_post']
-
-    def validate(self, data):
-        """
-        Check that exactly one of status_post_id or forum_post_id is provided
-        when creating a like via the API.
-        Note: 'status_post' and 'forum_post' in 'data' here refer to the resolved
-        model instances derived from status_post_id/forum_post_id inputs.
-        """
-        status_post_linked = data.get('status_post') # Check if status_post was linked
-        forum_post_linked = data.get('forum_post')   # Check if forum_post was linked
-
-        if not status_post_linked and not forum_post_linked:
-            raise serializers.ValidationError("Input must include either 'status_post_id' or 'forum_post_id'.")
-        if status_post_linked and forum_post_linked:
-            raise serializers.ValidationError("Input cannot include both 'status_post_id' and 'forum_post_id'.")
-        return data
-    
-
-# --- Add this new serializer ---
-
-class CommentSerializer(serializers.ModelSerializer):
-    """
-    Serializer for the Comment model. Uses Generic Relations.
-    """
-    # Use your existing UserSerializer for read-only author representation
-    author = UserSerializer(read_only=True)
-    
-    # ---- ADD THIS EXPLICIT parent FIELD DEFINITION ----
-    parent = serializers.PrimaryKeyRelatedField(
-        queryset=Comment.objects.all(), # DRF needs a queryset for relation fields
-        allow_null=True,                # Allows parent to be null (for top-level comments)
-        required=False                  # Not required when submitting data
-    )
-    # ---- END OF parent FIELD DEFINITION ----
-
-     # ---- NEW FIELDS FOR LIKES ON COMMENTS ----
-    like_count = serializers.SerializerMethodField()
-    is_liked_by_user = serializers.SerializerMethodField()
-    # This content_type_id is for the COMMENT ITSELF, to identify it as a likable object
-    comment_content_type_id = serializers.SerializerMethodField(method_name='get_comment_content_type_id_for_like') # Renamed method for clarity
-    # ---- END NEW FIELDS ----
-
-    # Fields for identifying the parent object when CREATING a comment
-    # These are write-only; they are not part of the Comment model itself.
-    # We'll use these in the view to find the parent object.
-    # content_type = serializers.CharField(write_only=True, help_text="Model name of the parent object (e.g., 'statuspost', 'forumpost')")
-    # object_id = serializers.IntegerField(write_only=True, help_text="ID of the parent object")
-
-    class Meta:
-        model = Comment
-        fields = [
-            'id',
-            'author',       # Nested UserSerializer for reading
-            'content',
-            'created_at',
-            'updated_at',
-            # Read-only fields related to the generic foreign key (useful for frontend)
-            'content_type_id', # ID of the ContentType model instance
-            'object_id',       # ID of the related object
-            'parent',
-
-            # Write-only fields for creation input
-            # 'content_type',
-            #'object_id',
-            # ---- ADD NEW FIELDS TO LIST ----
-            'like_count',
-            'is_liked_by_user',
-            'comment_content_type_id', # This is the ContentType ID OF THE COMMENT ITSELF
-        ]
-        read_only_fields = [
-            'id',
-            'author',
-            'created_at',
-            'updated_at',
-            'content_type_id', # Read-only representation of the GenericFK link
-            'object_id',       # Read-only representation of the GenericFK link
-
-            # ---- ADD NEW READ-ONLY FIELDS HERE ----
-            'like_count',
-            'is_liked_by_user',
-            'comment_content_type_id',
-        ]
-        # Note: The 'content_type' and 'object_id' fields in the Meta.fields list
-        # are overridden by the explicit field definitions above for write_only behavior.
-        # We explicitly list 'content_type_id' and 'object_id' (from the model)
-        # for read operations.
-     
-    
-
-    # No need for a specific validate method here for the GFK link itself,
-    # the view will handle resolving content_type string to ContentType object.
-    # Validation for 'content' length etc. could be added if needed.
-
-    # We will set the author and link the comment to the content_object
-    # within the API view's perform_create method.
-    # ---- NEW METHODS FOR LIKES ON COMMENTS ----
-    def get_like_count(self, obj: Comment) -> int:
-        """ Returns the like count for this specific comment instance. """
-        if hasattr(obj, 'likes'): # Checks for the GenericRelation 'likes' on the Comment model
-            return obj.likes.count()
-        return 0
-
-    def get_is_liked_by_user(self, obj: Comment) -> bool:
-        """ Check if the current user (from context) has liked this comment. """
-        request = self.context.get('request')
-        # Ensure request and authenticated user exist in context
-        if not request or not hasattr(request, 'user') or not request.user.is_authenticated:
-            return False
-        
-        # Get the ContentType for the Comment model itself
-        comment_model_content_type = ContentType.objects.get_for_model(Comment) # Or obj.__class__
-        return Like.objects.filter(
-            content_type=comment_model_content_type, # ContentType of the comment
-            object_id=obj.pk,                        # Primary key of the comment
-            user=request.user
-        ).exists()
-
-    def get_comment_content_type_id_for_like(self, obj: Comment) -> int:
-        """
-        Returns the ContentType ID of the Comment model itself.
-        This is used by the frontend to construct the 'like' API endpoint for this comment.
-        """
-        return ContentType.objects.get_for_model(Comment).id # Or obj.__class__
-    # ---- END NEW METHODS ----
-
-
-# --- Add this new Serializer for Feed Items ---
-
+# --- FeedItemSerializer and other serializers remain unchanged ---
+# ... (rest of your serializers.py file) ...
 class FeedItemSerializer(serializers.Serializer):
-    """
-    Serializes different feed item types (StatusPost, ForumPost)
-    into a common format for the /api/feed/ endpoint.
-    """
-    # --- Common fields expected by the frontend ---
-    id = serializers.IntegerField(read_only=True) # Usually the object's pk
-    author = UserSerializer(read_only=True) # Use the consistent UserSerializer
-    content = serializers.CharField(read_only=True) # Assuming 'content' exists
-    # image = serializers.ImageField(source='image', read_only=True, allow_null=True, use_url=True)
-    image = serializers.SerializerMethodField()
-    video = serializers.SerializerMethodField()
+    id = serializers.IntegerField(read_only=True)
+    author = UserSerializer(read_only=True)
+    content = serializers.CharField(read_only=True)
     created_at = serializers.DateTimeField(read_only=True)
     updated_at = serializers.DateTimeField(read_only=True)
     like_count = serializers.SerializerMethodField()
@@ -577,153 +256,90 @@ class FeedItemSerializer(serializers.Serializer):
     content_type_id = serializers.SerializerMethodField()
     object_id = serializers.SerializerMethodField()
     post_type = serializers.SerializerMethodField()
-    title = serializers.SerializerMethodField() # Use method field for consistency
-    comment_count = serializers.SerializerMethodField() # <-- ADDED FIELD
-
-      # ---- ADD THIS METHOD ----
-    def get_image(self, obj):
-        # Check if the object has an 'image' attribute
-        if hasattr(obj, 'image') and obj.image:
-            request = self.context.get('request')
-            if request:
-                # Build the full URL correctly
-                return request.build_absolute_uri(obj.image.url)
-            # Fallback if no request in context (less ideal, might not be full URL)
-            # but obj.image.url should usually be absolute or relative to MEDIA_URL
-            return obj.image.url
-        return None # Return None if no image attribute or no image file
-    # ---- END OF METHOD ----
-    
-    # ---- ADD THIS METHOD ----
-    def get_video(self, obj):
-        # Check if the object has a 'video' attribute and it's set
-        if hasattr(obj, 'video') and obj.video:
-            request = self.context.get('request')
-            if request:
-                # Build the full absolute URL
-                return request.build_absolute_uri(obj.video.url)
-            # Fallback if no request in context (less ideal)
-            return obj.video.url
-        return None # Return None if no video attribute or no video file
-    # ---- END OF METHOD ----
-
-    def get_post_type(self, obj):
-        """ Return a string identifying the type of the post object. """
-        return obj.__class__.__name__.lower() # e.g., 'statuspost', 'forumpost'
-
-    def get_title(self, obj):
-        """ Get the title if it exists. """
-        return getattr(obj, 'title', None) # Return None if no 'title' attribute
-
-    def get_like_count(self, obj):
-        """ Get like count using the 'likes' relation. """
-        if hasattr(obj, 'likes'): # Check if the object has the 'likes' relation manager
-             return obj.likes.count()
-        return 0 # Default if not likable
-
+    title = serializers.SerializerMethodField()
+    comment_count = serializers.SerializerMethodField()
+    media = serializers.SerializerMethodField()
+    def get_media(self, obj):
+        if hasattr(obj, 'media') and obj.media.exists():
+            return PostMediaSerializer(obj.media.all(), many=True, context=self.context).data
+        return []
+    def get_post_type(self, obj): return obj.__class__.__name__.lower()
+    def get_title(self, obj): return getattr(obj, 'title', None)
+    def get_like_count(self, obj): return obj.likes.count() if hasattr(obj, 'likes') else 0
     def get_is_liked_by_user(self, obj):
-        """ Check if the current user liked this object. """
         request = self.context.get('request')
-        if not request or not request.user or not request.user.is_authenticated:
-             return False
-
-        user = request.user
-        # Ensure the object is saved before checking likes
-        if hasattr(obj, 'pk') and obj.pk is not None and hasattr(obj, 'likes'):
+        if not request or not request.user.is_authenticated: return False
+        if obj.pk and hasattr(obj, 'likes'):
             content_type = ContentType.objects.get_for_model(obj)
-            return Like.objects.filter(
-                content_type=content_type,
-                object_id=obj.pk,
-                user=user
-            ).exists()
+            return Like.objects.filter(content_type=content_type, object_id=obj.pk, user=request.user).exists()
         return False
-
-    def get_content_type_id(self, obj):
-        content_type = ContentType.objects.get_for_model(obj)
-        return content_type.id
-
-    def get_object_id(self, obj):
-        return obj.pk
-
-    # --- ADD THIS METHOD ---
+    def get_content_type_id(self, obj): return ContentType.objects.get_for_model(obj).id
+    def get_object_id(self, obj): return obj.pk
     def get_comment_count(self, obj):
-        """ Gets the count of comments for the given object (StatusPost or ForumPost). """
-        if obj and hasattr(obj, 'pk') and obj.pk is not None:
+        if obj and obj.pk:
             content_type = ContentType.objects.get_for_model(obj)
-            # Use the Comment model directly to filter comments related to this object
             return Comment.objects.filter(content_type=content_type, object_id=obj.pk).count()
         return 0
-    # --- END ADD METHOD ---
 
-# --- Add these serializers for Private Messaging ---
+# ... (ForumCategorySerializer, ForumPostSerializer, GroupSerializer, etc. remain the same)
+class ForumCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ForumCategory
+        fields = ['id', 'name', 'description']
+
+class ForumPostSerializer(serializers.ModelSerializer):
+    author = UserSerializer(read_only=True)
+    category_name = serializers.CharField(source='category.name', read_only=True, allow_null=True)
+    group_name = serializers.CharField(source='group.name', read_only=True, allow_null=True)
+    class Meta:
+        model = ForumPost
+        fields = ['id', 'author', 'category', 'group', 'category_name', 'group_name', 'title', 'content', 'created_at', 'updated_at']
+        read_only_fields = ['author', 'created_at', 'updated_at', 'category_name', 'group_name']
+
+class GroupSerializer(serializers.ModelSerializer):
+    creator = UserSerializer(read_only=True)
+    member_count = serializers.IntegerField(source='members.count', read_only=True)
+    class Meta:
+        model = Group
+        fields = ['id', 'name', 'description', 'creator', 'member_count', 'members', 'created_at']
+        read_only_fields = ['creator', 'member_count', 'created_at']
+
+class CommentSerializer(serializers.ModelSerializer):
+    author = UserSerializer(read_only=True)
+    parent = serializers.PrimaryKeyRelatedField(queryset=Comment.objects.all(), allow_null=True, required=False)
+    like_count = serializers.SerializerMethodField()
+    is_liked_by_user = serializers.SerializerMethodField()
+    comment_content_type_id = serializers.SerializerMethodField(method_name='get_comment_content_type_id_for_like')
+    class Meta:
+        model = Comment
+        fields = ['id', 'author', 'content', 'created_at', 'updated_at', 'content_type_id', 'object_id', 'parent', 'like_count', 'is_liked_by_user', 'comment_content_type_id']
+        read_only_fields = ['id', 'author', 'created_at', 'updated_at', 'content_type_id', 'object_id', 'like_count', 'is_liked_by_user', 'comment_content_type_id']
+    def get_like_count(self, obj: Comment) -> int: return obj.likes.count()
+    def get_is_liked_by_user(self, obj: Comment) -> bool:
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated: return False
+        comment_model_content_type = ContentType.objects.get_for_model(Comment)
+        return Like.objects.filter(content_type=comment_model_content_type, object_id=obj.pk, user=request.user).exists()
+    def get_comment_content_type_id_for_like(self, obj: Comment) -> int: return ContentType.objects.get_for_model(Comment).id
 
 class MessageSerializer(serializers.ModelSerializer):
-    """
-    Serializer for the Message model.
-    """
-    # Use UserSerializer for nested sender details (read-only)
     sender = UserSerializer(read_only=True)
-
     class Meta:
         model = Message
-        fields = [
-            'id',
-            'conversation', # Show the conversation ID it belongs to
-            'sender',       # Nested user details
-            'content',
-            'timestamp',
-            # 'read_at' # Add later if implementing read receipts
-        ]
-        # On creation via API, we only need 'content' and 'conversation' ID.
-        # Sender will be set from request.user in the view.
+        fields = ['id', 'conversation', 'sender', 'content', 'timestamp']
         read_only_fields = ['id', 'sender', 'timestamp']
 
 class ConversationSerializer(serializers.ModelSerializer):
-    """
-    Serializer for the Conversation model. Includes participant details.
-    """
-    # Use UserSerializer for nested participant details (read-only)
-    # `many=True` because participants is a ManyToManyField
     participants = UserSerializer(many=True, read_only=True)
-    # Optional: Include latest message snippet or unread count later
-
     class Meta:
         model = Conversation
-        fields = [
-            'id',
-            'participants', # List of nested user details
-            'created_at',
-            'updated_at', # Useful for sorting conversations by last activity
-            # Add latest_message or unread_count fields later if needed
-        ]
-        # Most fields are read-only in this context, as conversations
-        # might be created implicitly when the first message is sent.
+        fields = ['id', 'participants', 'created_at', 'updated_at']
         read_only_fields = ['id', 'participants', 'created_at', 'updated_at']
 
-# --- End of Private Messaging Serializers ---
-
-# --- Add this simple serializer for SendMessageView Input ---
-
 class MessageCreateSerializer(serializers.Serializer):
-    """Serializer for validating input when sending a message."""
     recipient_username = serializers.CharField(max_length=150, write_only=True)
     content = serializers.CharField(write_only=True)
-
     def validate_recipient_username(self, value):
-        """Check if the recipient user exists."""
-        # Need to get User model correctly here too
-        User = get_user_model() # Get User model inside the method or ensure it's available globally
         if not User.objects.filter(username=value).exists():
             raise serializers.ValidationError("Recipient user does not exist.")
-        # Optional: Prevent sending messages to oneself
-        # Check context if request object is passed in view
-        # request = self.context.get('request')
-        # if request and request.user.username == value:
-        #     raise serializers.ValidationError("You cannot send a message to yourself.")
         return value
-
-# --- End of MessageCreateSerializer ---
-
-
-# --- End of new serializer ---
-

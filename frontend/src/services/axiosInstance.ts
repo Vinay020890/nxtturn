@@ -3,12 +3,12 @@
 import axios from 'axios';
 
 // Base URL for your Django backend API
-const API_BASE_URL = 'http://192.168.0.107:8000/api/'; // Your desktop's IP and Django port
+const API_BASE_URL = 'http://192.168.31.35:8000/api/'; // Your desktop's IP and Django port
 
 // Create a custom Axios instance
 const axiosInstance = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 5000, // Optional: 5 second timeout
+  timeout: 55000, // Optional: 5 second timeout
   headers: {
     // 'Content-Type': 'application/json',
     'Accept': 'application/json',

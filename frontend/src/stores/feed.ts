@@ -1,43 +1,50 @@
 // src/stores/feed.ts
-import { ref, computed } from 'vue';
+import { ref } from 'vue';
 import { defineStore } from 'pinia';
 import axiosInstance from '@/services/axiosInstance';
-import { useAuthStore } from './auth'; // May need auth status later
+import { useAuthStore } from './auth';
 import { useProfileStore } from './profile';
 
-// Define the expected shape of an Author object from the API
+// Define the expected shape of an Author object
 interface PostAuthor {
   id: number;
   username: string;
   first_name: string;
   last_name: string;
-  // profile_image_url?: string; // Add if you have it
+}
+
+// --- NEW: Interface for a single media item in a post gallery ---
+export interface PostMedia {
+  id: number;
+  media_type: 'image' | 'video';
+  file_url: string;
 }
 
 // ==========================================
 // === UPDATED Post Interface Definition ===
 // ==========================================
 export interface Post {
-  id: number; // This should be the same as object_id
-  post_type: string; // The model name string (e.g., 'statuspost', 'forumpost') from FeedItemSerializer
+  id: number;
+  post_type: string;
   author: PostAuthor;
-  created_at: string; // Consider using Date object later
+  created_at: string;
   updated_at: string;
-  title: string | null; // Keep if ForumPosts have titles
-  content: string;
-  image: string | null;
-  video: string | null;
-  like_count: number; // Mandatory field from serializer
-  comment_count?: number; // Optional if not always present
-  is_liked_by_user: boolean; // Mandatory field from serializer
+  title: string | null;
+  content: string | null; // Content can now be null
+  
+  // The 'media' array replaces the old 'image' and 'video' fields
+  media: PostMedia[];
 
-  // --- Fields needed for the new Like URL ---
-  content_type_id: number; // The numeric ID for the ContentType model
-  object_id: number;       // The numeric ID for this specific post object (should match 'id')
-  // --- End of fields for Like URL ---
+  like_count: number;
+  comment_count?: number;
+  is_liked_by_user: boolean;
 
-  // Optional frontend-only state for better UX
-  isLiking?: boolean; // Flag to disable button during API call
+  // Fields for liking/commenting
+  content_type_id: number;
+  object_id: number;
+
+  // Frontend-only state flags
+  isLiking?: boolean;
   isDeleting?: boolean; 
   isUpdating?: boolean;
 }
@@ -51,17 +58,7 @@ interface PaginatedFeedResponse {
   results: Post[];
 }
 
-// Define the state structure for this store
-interface FeedState {
-  posts: Post[];
-  isLoading: boolean;
-  error: string | null;
-  currentPage: number;
-  totalPages: number;
-  hasNextPage: boolean;
-}
-
-// Define the feed store using Setup Store syntax
+// Define the store using Setup Store syntax
 export const useFeedStore = defineStore('feed', () => {
   // --- State ---
   const posts = ref<Post[]>([]);
@@ -70,29 +67,18 @@ export const useFeedStore = defineStore('feed', () => {
   const currentPage = ref(1);
   const totalPages = ref(1);
   const hasNextPage = ref(false);
-
-   
-
-  // NEW: State for create post errors
   const createPostError = ref<string | null>(null);
-  const isCreatingPost = ref(false); // NEW: For loading state during post creation
-
+  const isCreatingPost = ref(false);
   const deletePostError = ref<string | null>(null);
   const updatePostError = ref<string | null>(null);
 
-  // DEFINE YOUR STANDARD PAGE SIZE HERE
-  const ITEMS_PER_PAGE = 10; // Or whatever your backend pagination page_size is
-
-  // --- Getters (Computed) ---
-  // (Example: No active getters currently defined)
+  const ITEMS_PER_PAGE = 10;
 
   // --- Actions ---
 
-  // Action to fetch feed posts from the backend
   async function fetchFeed(page: number = 1) {
     if (isLoading.value) return;
 
-    console.log(`FeedStore: Fetching feed page ${page}`);
     isLoading.value = true;
     error.value = null;
 
@@ -103,106 +89,75 @@ export const useFeedStore = defineStore('feed', () => {
     try {
       const authStore = useAuthStore();
       if (!authStore.isAuthenticated) {
-        console.warn("FeedStore: User not authenticated, aborting fetch.");
         isLoading.value = false;
         return;
       }
 
-      const response = await axiosInstance.get<PaginatedFeedResponse>('/feed/', { // Use /api/feed/
+      const response = await axiosInstance.get<PaginatedFeedResponse>('/feed/', {
         params: { page }
       });
 
-      console.log("FeedStore: API response received", response.data);
-
-      // Add isLiking flag to posts coming from API
       const fetchedPosts = response.data.results.map(post => ({
           ...post,
-          isLiking: false, // Initialize flag
+          isLiking: false,
           isDeleting: false
       }));
 
-      if (page === 1) {
-          posts.value = fetchedPosts;
-      } else {
-          // For future infinite scroll: posts.value.push(...fetchedPosts);
-          // For basic pagination, replace:
-          posts.value = fetchedPosts;
-      }
-
+      posts.value = fetchedPosts;
       currentPage.value = page;
       hasNextPage.value = response.data.next !== null;
-      // const pageSize = fetchedPosts.length > 0 ? fetchedPosts.length : 10;
-      // totalPages.value = Math.ceil(response.data.count / pageSize);
-      // NEW CALCULATION:
-      if (response.data.count > 0) {
-        totalPages.value = Math.ceil(response.data.count / ITEMS_PER_PAGE);
-      } else {
-        totalPages.value = 1; // Or 0 if you prefer for an empty feed display
-      }
+      totalPages.value = response.data.count > 0 ? Math.ceil(response.data.count / ITEMS_PER_PAGE) : 1;
 
     } catch (err: any) {
-      console.error("FeedStore: Error fetching feed:", err);
       error.value = err.response?.data?.detail || err.message || 'Failed to fetch feed.';
     } finally {
       isLoading.value = false;
-      console.log("FeedStore: Fetch finished.");
     }
   }
 
-  // REPLACE THE ENTIRE EXISTING createPost FUNCTION WITH THIS:
-    // ---- START OF REPLACEMENT ----
-  async function createPost(postData: FormData): Promise<Post | null> { // Parameter changed
-    console.log("FeedStore: Attempting to create post with FormData...");
-
+  // ==========================================
+  // === UPDATED createPost Action ===
+  // ==========================================
+  async function createPost(postData: FormData): Promise<Post | null> {
     isCreatingPost.value = true;
-    createPostError.value = null; // Clear previous errors
-
-    // Client-side validation for empty content/image is now primarily in CreatePostForm.vue
-    // The backend serializer will perform the definitive validation.
+    createPostError.value = null;
 
     try {
       const authStore = useAuthStore();
       if (!authStore.isAuthenticated) {
         createPostError.value = "User not authenticated. Please login to post.";
-        console.warn("FeedStore: User not authenticated, cannot create post.");
-        // isCreatingPost.value = false; // Moved to finally block
-        return null; // Still return null, but ensure isCreatingPost is handled in finally
+        return null;
       }
 
-      // When sending FormData, Axios automatically sets Content-Type to multipart/form-data
-      const response = await axiosInstance.post<Post>('/posts/', postData); // Send FormData directly
+      // Axios handles the 'multipart/form-data' Content-Type automatically for FormData
+      const response = await axiosInstance.post<Post>('/posts/', postData);
 
-      console.log("FeedStore: Post created successfully", response.data);
-      // Add the new post to the beginning of the posts array
-      // Ensure the new post from API response has all necessary client-side flags like isLiking
-      const newPostResponseData = { ...response.data, isLiking: false,isDeleting: false, image: response.data.image || null, video: response.data.video || null  }; // Ensure image is part of the new post object
+      // Add frontend flags to the newly created post
+      const newPostResponseData = { ...response.data, isLiking: false, isDeleting: false };
+      
+      // Add to the top of the feed
       posts.value.unshift(newPostResponseData);
 
-      return newPostResponseData; // Return created post object
+      return newPostResponseData;
 
     } catch (err: any) {
       console.error("FeedStore: Error creating post:", err);
-      // Your existing improved error message parsing logic:
       if (err.response && err.response.data) {
           let specificErrorMessage = '';
           if (typeof err.response.data === 'object' && err.response.data !== null) {
-              if (err.response.data.content && Array.isArray(err.response.data.content)) {
-                  specificErrorMessage += err.response.data.content.join(' ') + ' ';
-              }
-              if (err.response.data.image && Array.isArray(err.response.data.image)) {
-                  specificErrorMessage += err.response.data.image.join(' ') + ' ';
-              }
-              if (err.response.data.non_field_errors && Array.isArray(err.response.data.non_field_errors)) {
-                  specificErrorMessage += err.response.data.non_field_errors.join(' ');
-              } else if (err.response.data.detail && typeof err.response.data.detail === 'string') {
-                  specificErrorMessage = err.response.data.detail;
-              }
+              // Handle new 'images' and 'videos' error fields from the backend
+              const errorKeys = ['content', 'images', 'videos', 'non_field_errors', 'detail'];
+              errorKeys.forEach(key => {
+                if (err.response.data[key]) {
+                  specificErrorMessage += (Array.isArray(err.response.data[key]) ? err.response.data[key].join(' ') : err.response.data[key]) + ' ';
+                }
+              });
           }
           
           if (specificErrorMessage.trim()) {
               createPostError.value = specificErrorMessage.trim();
           } else if (typeof err.response.data === 'string') {
-                createPostError.value = err.response.data;
+              createPostError.value = err.response.data;
           } else { 
               createPostError.value = "Failed to create post. Invalid input or server error.";
           }
@@ -211,274 +166,114 @@ export const useFeedStore = defineStore('feed', () => {
       } else {
           createPostError.value = 'An unexpected error occurred while creating the post.';
       }
-      return null; // Indicate failure
+      return null;
     } finally {
-      isCreatingPost.value = false; // Reset loading state
-      console.log("FeedStore: Create post attempt finished.");
+      isCreatingPost.value = false;
     }
   }
-  // ---- END OF REPLACEMENT ----
-  // ========================================
-  // === UPDATED toggleLike Action ===
-  // ========================================
-    // In frontend/src/stores/feed.ts
-  // Replace the existing toggleLike function with this one:
+  // ==========================================
 
-  // Replace your ENTIRE existing toggleLike function with this:
-
-async function toggleLike(
-    postId: number,         // For optimistic UI update if post is in feedStore.posts
-    postType: string,       // For optimistic UI update if post is in feedStore.posts
-    contentTypeId: number,  // DIRECTLY USED for API call
-    objectId: number        // DIRECTLY USED for API call (usually same as postId for StatusPost)
+  async function toggleLike(
+    postId: number,
+    postType: string,
+    contentTypeId: number,
+    objectId: number
 ) {
-  // console.log(`FeedStore: Attempting to toggle like for CTID: ${contentTypeId}, ObjID: ${objectId}. (Originating from PostID: ${postId}, Type: ${postType})`);
-
-  // Attempt to find the post in the local feed state for optimistic UI updates
   const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
-  let originalLikedStatus: boolean | undefined = undefined;
-  let originalLikeCount: number | undefined = undefined;
-  let localPostRef: Post | null = null; // Reference to the post in local state, if found
+  let localPostRef: Post | null = null;
 
   if (postIndex !== -1) {
     localPostRef = posts.value[postIndex];
-    if (localPostRef.isLiking) {
-        // console.log(`FeedStore: Like toggle already in progress for post ${postId} in local feed state.`);
-        // Decide if you want to return or let API call proceed (API might handle concurrency)
-        // For now, let's return to prevent multiple optimistic updates if button is spammed
-        return; 
-    }
+    if (localPostRef.isLiking) return;
     localPostRef.isLiking = true;
-    originalLikedStatus = localPostRef.is_liked_by_user;
-    originalLikeCount = localPostRef.like_count;
-    // Optimistic Update for local feed state
+    const originalLikedStatus = localPostRef.is_liked_by_user;
+    const originalLikeCount = localPostRef.like_count;
+    
     localPostRef.is_liked_by_user = !localPostRef.is_liked_by_user;
     localPostRef.like_count += localPostRef.is_liked_by_user ? 1 : -1;
-    // console.log(`FeedStore: Optimistically updated post ${postId} in local feed state.`);
+    
+    try {
+      const apiUrl = `/content/${contentTypeId}/${objectId}/like/`;
+      const response = await axiosInstance.post<{ liked: boolean, like_count: number }>(apiUrl);
+      localPostRef.is_liked_by_user = response.data.liked;
+      localPostRef.like_count = response.data.like_count;
+    } catch (err: any) {
+      localPostRef.is_liked_by_user = originalLikedStatus;
+      localPostRef.like_count = originalLikeCount;
+      error.value = err.response?.data?.detail || err.message || 'Failed to toggle like.';
+      throw err;
+    } finally {
+      localPostRef.isLiking = false;
+    }
   } else {
-    // console.log(`FeedStore: Post ID ${postId}, Type ${postType} not found in local feed state. API call will proceed directly.`);
-  }
-
-  try {
-    // ALWAYS use the passed-in contentTypeId and objectId for the API call
-    const apiUrl = `/content/${contentTypeId}/${objectId}/like/`;
-    console.log(`FeedStore: Calling API: POST ${apiUrl}`);
-    
-    const response = await axiosInstance.post<{ liked: boolean, like_count: number }>(apiUrl);
-    // console.log(`FeedStore: API like toggle successful for object ${objectId}. Response:`, response.data);
-    
-    // If the post was found locally, update it with confirmed data from API
-    if (localPostRef) { // Check if we had a local reference
-        localPostRef.is_liked_by_user = response.data.liked;
-        localPostRef.like_count = response.data.like_count;
-        // console.log(`FeedStore: Confirmed API update for post ${postId} in local feed state.`);
+    // If post not in feed, just call the API. Profile store will handle UI on profile page.
+    try {
+      const apiUrl = `/content/${contentTypeId}/${objectId}/like/`;
+      await axiosInstance.post(apiUrl);
+    } catch (err: any) {
+      console.error(`FeedStore: Error toggling like for non-local object ${objectId}:`, err);
+      throw err;
     }
-    // NOTE: If the post wasn't in feedStore.posts, this action has now updated the backend.
-    // The profileStore's local update (triggered by PostItem.vue) will handle the UI on the profile page.
-    // If the user navigates back to the main feed and that post is loaded, it will have the correct state from the server.
-
-  } catch (err: any) {
-    console.error(`FeedStore: Error toggling like for object ${objectId} via API:`, err);
-    // Revert Optimistic Update on Error if it was done
-    if (localPostRef && typeof originalLikedStatus === 'boolean' && typeof originalLikeCount === 'number') {
-       localPostRef.is_liked_by_user = originalLikedStatus;
-       localPostRef.like_count = originalLikeCount;
-       console.log(`FeedStore: Reverted optimistic like state for post ${postId} in feedStore.`);
-    }
-    error.value = err.response?.data?.detail || err.message || 'Failed to toggle like.';
-    throw err; // Re-throw so PostItem.vue's catch block can also handle it (e.g., show an alert)
-  } finally {
-    if (localPostRef) {
-       localPostRef.isLiking = false;
-    }
-    // console.log(`FeedStore: Like toggle API call finished for object ${objectId}.`);
   }
 }
-// ========================================
-  // ========================================
 
-// ---- ADD THIS NEW ACTION ----
 function incrementCommentCount(postId: number, postType: string) {
-  console.log(`FeedStore: Attempting to increment comment count for Post ID: ${postId}, Type: ${postType}`);
   const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
   if (postIndex !== -1) {
-    if (typeof posts.value[postIndex].comment_count === 'number') {
-      posts.value[postIndex].comment_count!++; // Increment if it's already a number
-    } else {
-      posts.value[postIndex].comment_count = 1; // Initialize if it was undefined/null
-    }
-    console.log(`FeedStore: Incremented comment_count for post ${postId}. New count: ${posts.value[postIndex].comment_count}`);
-  } else {
-    console.warn(`FeedStore: Post ID ${postId} (Type: ${postType}) not found. Cannot increment comment count.`);
+    posts.value[postIndex].comment_count = (posts.value[postIndex].comment_count || 0) + 1;
   }
 }
-// ---- END OF NEW ACTION ----
 
-// ===========================================
-  // === NEW deletePost ACTION ===
-  // ===========================================
-  async function deletePost(postId: number, postType: string): Promise<boolean> {
-    console.log(`FeedStore: Attempting to delete post ID: ${postId}, Type: ${postType}`);
-    deletePostError.value = null; // Clear previous delete errors
-
+async function deletePost(postId: number, postType: string): Promise<boolean> {
     const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
-    let postToDelete: Post | null = null;
-
     if (postIndex !== -1) {
-      postToDelete = posts.value[postIndex];
-      if (postToDelete.isDeleting) {
-        console.warn(`FeedStore: Delete operation already in progress for post ${postId}.`);
-        return false; // Or throw an error if preferred
-      }
-      postToDelete.isDeleting = true; // Set loading state for this specific post
-    } else {
-      // If post is not in the current feed list (e.g., deleting from profile page directly affecting backend)
-      // We can still proceed with the API call.
-      // Or, you might decide this action only works on posts currently in the feed.
-      // For now, let's allow API call even if not in local `posts` array.
-      console.warn(`FeedStore: Post ID ${postId} (Type: ${postType}) not found in local feed state. Proceeding with API call.`);
+        posts.value[postIndex].isDeleting = true;
     }
 
     try {
-      const authStore = useAuthStore();
-      if (!authStore.isAuthenticated) {
-        deletePostError.value = "User not authenticated. Please login to delete posts.";
-        console.warn("FeedStore: User not authenticated, cannot delete post.");
-        if (postToDelete) postToDelete.isDeleting = false;
-        return false;
-      }
-
-      // IMPORTANT: Construct the correct API endpoint.
-      // Assuming 'statuspost' is the relevant post_type for direct deletion via /posts/<id>/
-      // If you have other deletable post types with different base URLs, this needs adjustment.
-      let apiUrl = '';
-      if (postType.toLowerCase() === 'statuspost') { // Make sure this matches your post_type string
-        apiUrl = `/posts/${postId}/`; // Ensure this matches your DRF URL for StatusPostRetrieveUpdateDestroyView
-      } else {
-        // Handle other post types or throw an error if only StatusPosts are deletable via this store action
-        console.error(`FeedStore: Deletion for post_type '${postType}' is not configured.`);
-        deletePostError.value = `Deletion for post type '${postType}' is not supported here.`;
-        if (postToDelete) postToDelete.isDeleting = false;
-        return false;
-      }
-      
-      console.log(`FeedStore: Calling API: DELETE ${apiUrl}`);
-      await axiosInstance.delete(apiUrl); // DELETE requests usually expect a 204 No Content response
-
-      console.log(`FeedStore: Post ${postId} deleted successfully from backend.`);
-
-      // If the post was found and deleted from local state
-      if (postIndex !== -1) {
-        posts.value.splice(postIndex, 1);
-        console.log(`FeedStore: Post ${postId} removed from local feed state.`);
-      }
-      
-      return true; // Indicate success
-
+        if (postType.toLowerCase() !== 'statuspost') {
+            throw new Error(`Deletion for post_type '${postType}' is not supported here.`);
+        }
+        await axiosInstance.delete(`/posts/${postId}/`);
+        if (postIndex !== -1) {
+            posts.value.splice(postIndex, 1);
+        }
+        return true;
     } catch (err: any) {
-      console.error(`FeedStore: Error deleting post ${postId}:`, err);
-      if (err.response && err.response.data) {
-        if (err.response.status === 403) {
-             deletePostError.value = "You do not have permission to delete this post.";
-        } else if (err.response.status === 404) {
-            deletePostError.value = "Post not found. It might have already been deleted.";
-        } else if (err.response.data.detail) {
-            deletePostError.value = err.response.data.detail;
-        } else {
-            deletePostError.value = "Failed to delete post. Server error.";
+        deletePostError.value = err.response?.data?.detail || err.message || 'Failed to delete post.';
+        if (postIndex !== -1 && posts.value[postIndex]) {
+            posts.value[postIndex].isDeleting = false;
         }
-      } else if (err.message) {
-        deletePostError.value = err.message;
-      } else {
-        deletePostError.value = 'An unexpected error occurred while deleting the post.';
-      }
-      if (postToDelete) postToDelete.isDeleting = false; // Reset loading state on error
-      return false; // Indicate failure
+        return false;
     }
-  }
-  // ===========================================
-
-  // ===========================================
-// === NEW: updatePost ACTION ===
-// ===========================================
-async function updatePost(postId: number, postType: string, formData: FormData): Promise<boolean> {
-  updatePostError.value = null;
-  const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
-  
-  if (postIndex !== -1) {
-    posts.value[postIndex].isUpdating = true;
-  }
-
-  try {
-    let apiUrl = '';
-    // Assuming 'statuspost' is the primary type for /posts/ endpoint
-    if (postType.toLowerCase() === 'statuspost') {
-      apiUrl = `/posts/${postId}/`; // Uses /api/community/posts/<id>/ implicitly via axiosInstance
-    } else {
-      console.error(`FeedStore: Update for post_type '${postType}' is not configured.`);
-      updatePostError.value = `Update for post type '${postType}' is not supported here.`;
-      if (postIndex !== -1 && posts.value[postIndex]) posts.value[postIndex].isUpdating = false;
-      return false;
-    }
-    
-    console.log(`FeedStore: Calling API: PATCH ${apiUrl} for post ID ${postId}`);
-    const response = await axiosInstance.patch<Post>(apiUrl, formData); // Expecting the updated Post object
-
-    if (response.status === 200 && response.data) {
-      console.log(`FeedStore: Post ${postId} updated successfully from backend. Response:`, response.data);
-      if (postIndex !== -1 && posts.value[postIndex]) {
-        // Merge response data with existing post to preserve any frontend-only flags
-        // Ensure post_type from original post is preserved if not in response
-        // and reset isUpdating flag.
-        posts.value[postIndex] = { 
-            ...posts.value[postIndex], // Keep existing client-side flags not in response
-            ...response.data,          // Overlay with server response
-            post_type: posts.value[postIndex].post_type, // Ensure post_type is correct
-            isUpdating: false 
-        };
-      }
-      
-      // Sync with profile store
-      const profileStore = useProfileStore(); // Ensure this is imported at the top
-      profileStore.updateUserPost(response.data); // We'll define this in profile.ts next
-
-      return true;
-    } else {
-      updatePostError.value = `Failed to update post (status: ${response.status}).`;
-      if (postIndex !== -1 && posts.value[postIndex]) posts.value[postIndex].isUpdating = false;
-      return false;
-    }
-  } catch (err: any) {
-    console.error(`FeedStore: Error updating post ${postId}:`, err);
-    let message = 'An error occurred while updating the post.';
-    if (err.response && err.response.data) {
-        if (typeof err.response.data === 'string') {
-            message = err.response.data;
-        } else if (typeof err.response.data === 'object') {
-            // Try to construct a message from DRF error object
-            const errors = [];
-            for (const key in err.response.data) {
-                if (Array.isArray(err.response.data[key])) {
-                    errors.push(`${key}: ${err.response.data[key].join(', ')}`);
-                } else {
-                    errors.push(`${key}: ${err.response.data[key]}`);
-                }
-            }
-            if (errors.length > 0) message = errors.join('; ');
-            else if (err.response.data.detail) message = err.response.data.detail;
-        }
-    }
-    updatePostError.value = message;
-    if (postIndex !== -1 && posts.value[postIndex]) {
-      posts.value[postIndex].isUpdating = false;
-    }
-    return false;
-  }
 }
-// ===========================================
 
+async function updatePost(postId: number, postType: string, formData: FormData): Promise<boolean> {
+    const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
+    if (postIndex !== -1) {
+        posts.value[postIndex].isUpdating = true;
+    }
 
-  // --- Return exposed state, getters, and actions ---
+    try {
+        if (postType.toLowerCase() !== 'statuspost') {
+            throw new Error(`Update for post_type '${postType}' is not supported here.`);
+        }
+        const response = await axiosInstance.patch<Post>(`/posts/${postId}/`, formData);
+        if (postIndex !== -1) {
+            posts.value[postIndex] = { ...posts.value[postIndex], ...response.data, isUpdating: false };
+        }
+        const profileStore = useProfileStore();
+        profileStore.updateUserPost(response.data);
+        return true;
+    } catch (err: any) {
+        updatePostError.value = err.response?.data?.detail || 'Failed to update post.';
+        if (postIndex !== -1 && posts.value[postIndex]) {
+            posts.value[postIndex].isUpdating = false;
+        }
+        return false;
+    }
+}
+
   return {
     posts,
     isLoading,
@@ -486,14 +281,10 @@ async function updatePost(postId: number, postType: string, formData: FormData):
     currentPage,
     totalPages,
     hasNextPage,
-
-      // ADD THESE TWO LINES (can be anywhere within the return object):
-    createPostError,    // The new error state for post creation
-    isCreatingPost,     // The new loading state for post creation
-
+    createPostError,
+    isCreatingPost,
     deletePostError,
     updatePostError,
-    // getters can be exposed here if defined
     fetchFeed,
     createPost,
     toggleLike,

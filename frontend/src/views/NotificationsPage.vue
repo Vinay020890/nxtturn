@@ -1,257 +1,107 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { useNotificationStore } from '@/stores/notification';
-import { formatDistanceToNowStrict } from 'date-fns'; // For relative timestamps
+import { formatDistanceToNowStrict } from 'date-fns';
 
 const notificationStore = useNotificationStore();
-
-const isMarkingAllRead = ref(false); // Loading state for "Mark all as read" button
+const isMarkingAllRead = ref(false);
 
 const loadNotifications = (page: number) => {
-  if (notificationStore.isLoadingList && page !== 1) return; // Prevent multiple calls if already loading, unless it's initial load
-  
-  // Basic bounds check for page number
-  // Allow page 1 even if totalPages is 0 (for initial fetch)
-  if (page < 1 || (page > notificationStore.pagination.totalPages && notificationStore.pagination.totalPages > 0 && page !==1 )) {
-    console.warn(`NotificationsPage: Attempted to load invalid page: ${page}. Current total: ${notificationStore.pagination.totalPages}`);
-    return;
-  }
+  if (notificationStore.isLoadingList && page !== 1) return;
+  if (page < 1 || (page > notificationStore.pagination.totalPages && notificationStore.pagination.totalPages > 0 && page !== 1)) return;
   notificationStore.fetchNotifications(page);
 };
 
 const markOneAsRead = async (notificationId: number) => {
-  console.log(`NotificationsPage: Marking notification ID ${notificationId} as read.`);
-  
   const notification = notificationStore.notifications.find(n => n.id === notificationId);
-  if (notification && notification.is_read) {
-    console.log(`NotificationsPage: Notification ID ${notificationId} is already marked as read.`);
-    return; 
-  }
-
-  const result = await notificationStore.markNotificationsAsRead([notificationId]);
-
-  if (result.success) {
-    console.log(`NotificationsPage: Notification ID ${notificationId} successfully marked as read.`);
-  } else {
-    console.error(`NotificationsPage: Failed to mark notification ID ${notificationId} as read. Error:`, result.error);
-    alert(result.error || "Failed to mark notification as read.");
-  }
+  if (notification && notification.is_read) return;
+  await notificationStore.markNotificationsAsRead([notificationId]);
 };
 
 async function handleMarkAllAsRead() {
   if (isMarkingAllRead.value) return;
-
-  console.log("NotificationsPage: Attempting to mark all notifications as read.");
   isMarkingAllRead.value = true;
-  
-  const result = await notificationStore.markAllNotificationsAsRead();
-
-  if (result.success) {
-    console.log("NotificationsPage: All notifications successfully marked as read.");
-  } else {
-    console.error("NotificationsPage: Failed to mark all notifications as read. Error:", result.error);
-    alert(result.error || "Failed to mark all notifications as read. Please try again.");
-  }
+  await notificationStore.markAllNotificationsAsRead();
   isMarkingAllRead.value = false;
 }
 
 onMounted(() => {
-  console.log("NotificationsPage.vue: Mounted. Fetching initial notifications.");
-  loadNotifications(1); 
+  loadNotifications(1);
 });
 </script>
 
 <template>
-  <div class="notifications-page">
-    <h2>Your Notifications</h2>
-
-    <div class="notifications-actions" v-if="notificationStore.unreadCount > 0 && notificationStore.notifications.length > 0">
-      <button @click="handleMarkAllAsRead" :disabled="isMarkingAllRead" class="mark-all-read-button">
-        {{ isMarkingAllRead ? 'Marking all...' : 'Mark all as read' }}
-      </button>
-    </div>
-
-    <div v-if="notificationStore.isLoadingList && notificationStore.notifications.length === 0" class="loading-message"> 
-      Loading notifications...
-    </div>
-
-    <div v-if="notificationStore.error && !notificationStore.isLoadingList" class="error-message">
-      <p>Error loading notifications: {{ notificationStore.error }}</p>
-      <button @click="loadNotifications(1)">Try Again</button>
-    </div>
-
-    <div v-if="!notificationStore.isLoadingList && !notificationStore.error && notificationStore.notifications.length === 0" class="empty-message">
-      You have no notifications yet.
-    </div>
-
-    <ul v-if="notificationStore.notifications.length > 0" class="notification-list">
-      <li v-for="notification in notificationStore.notifications" :key="notification.id" 
-          :class="['notification-item', { 'is-read': notification.is_read }]">
-        <div class="notification-actor">
-          <strong>{{ notification.actor.username }}</strong> {{ notification.verb }}
-        </div>
-        <div v-if="notification.target" class="notification-target">
-          on your {{ notification.target.type }}: <em>{{ notification.target.display_text }}</em>
-        </div>
-        <div v-if="notification.action_object && notification.action_object.id !== notification.target?.id" class="notification-action-object">
-          (Details: {{ notification.action_object.display_text }})
-        </div>
-        <div class="notification-timestamp">
-          {{ formatDistanceToNowStrict(new Date(notification.timestamp), { addSuffix: true }) }}
-        </div>
-        <button v-if="!notification.is_read" @click="markOneAsRead(notification.id)" class="mark-read-button">
-          Mark as Read
+  <!-- This root div now controls its own layout -->
+  <div class="container mx-auto max-w-3xl">
+    <div class="bg-white rounded-lg shadow-md p-4 sm:p-6">
+      <div class="flex justify-between items-center border-b border-gray-200 pb-4 mb-4">
+        <h1 class="text-2xl font-bold text-gray-800">Your Notifications</h1>
+        <button 
+          v-if="notificationStore.unreadCount > 0"
+          @click="handleMarkAllAsRead" 
+          :disabled="isMarkingAllRead" 
+          class="text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 px-4 py-2 rounded-full transition disabled:opacity-50"
+        >
+          {{ isMarkingAllRead ? 'Processing...' : 'Mark all as read' }}
         </button>
-      </li>
-    </ul>
+      </div>
 
-    <div v-if="!notificationStore.isLoadingList && notificationStore.pagination.totalPages > 1" class="pagination-controls">
-      <button @click="loadNotifications(notificationStore.pagination.currentPage - 1)" :disabled="!notificationStore.pagination.previous || notificationStore.isLoadingList">
-        Previous
-      </button>
-      <span>Page {{ notificationStore.pagination.currentPage }} of {{ notificationStore.pagination.totalPages }}</span>
-      <button @click="loadNotifications(notificationStore.pagination.currentPage + 1)" :disabled="!notificationStore.pagination.next || notificationStore.isLoadingList">
-        Next
-      </button>
+      <!-- Loading State -->
+      <div v-if="notificationStore.isLoadingList && notificationStore.notifications.length === 0" class="text-center py-10">
+        <p class="text-gray-500">Loading notifications...</p>
+      </div>
+
+      <!-- Error State -->
+      <div v-else-if="notificationStore.error" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md text-center">
+        <p>Error loading notifications: {{ notificationStore.error }}</p>
+        <button @click="loadNotifications(1)" class="mt-2 bg-red-500 text-white font-bold py-1 px-3 rounded-full hover:bg-red-600">Try Again</button>
+      </div>
+
+      <!-- Empty State -->
+      <div v-else-if="notificationStore.notifications.length === 0" class="text-center py-10">
+        <p class="text-gray-500">You have no notifications yet.</p>
+      </div>
+
+      <!-- Notification List -->
+      <ul v-else class="space-y-3">
+        <li 
+          v-for="notification in notificationStore.notifications" 
+          :key="notification.id" 
+          class="flex items-start gap-4 p-4 rounded-lg transition-colors"
+          :class="notification.is_read ? 'bg-gray-50 text-gray-500' : 'bg-blue-50 hover:bg-blue-100'"
+        >
+          <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center" :class="notification.is_read ? 'bg-gray-200' : 'bg-blue-200'">
+              <span v-if="notification.notification_type === 'like'">❤️</span>
+              <span v-else-if="notification.notification_type === 'comment'">💬</span>
+              <span v-else-if="notification.notification_type === 'reply'">↩️</span>
+              <span v-else>🔔</span>
+          </div>
+          <div class="flex-grow">
+            <p class="text-sm leading-snug">
+              <strong class="font-bold" :class="notification.is_read ? 'text-gray-700' : 'text-gray-900'">{{ notification.actor.username }}</strong>
+              {{ notification.verb }}
+              <span v-if="notification.target" class="font-semibold" :class="notification.is_read ? 'text-gray-600' : 'text-gray-800'">
+                your {{ notification.target.type }}.
+              </span>
+            </p>
+            <p class="text-xs text-gray-500 mt-1">
+              {{ formatDistanceToNowStrict(new Date(notification.timestamp), { addSuffix: true }) }}
+            </p>
+          </div>
+          <button v-if="!notification.is_read" @click="markOneAsRead(notification.id)" class="w-3 h-3 bg-blue-500 rounded-full flex-shrink-0 mt-1" title="Mark as read"></button>
+        </li>
+      </ul>
+
+      <!-- Pagination -->
+      <div v-if="!notificationStore.isLoadingList && notificationStore.pagination.totalPages > 1" class="flex justify-center items-center gap-4 mt-6 pt-4 border-t border-gray-200">
+        <button @click="loadNotifications(notificationStore.pagination.currentPage - 1)" :disabled="!notificationStore.pagination.previous" class="px-4 py-2 text-sm font-medium bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50">
+          Previous
+        </button>
+        <span class="text-sm text-gray-700">Page {{ notificationStore.pagination.currentPage }} of {{ notificationStore.pagination.totalPages }}</span>
+        <button @click="loadNotifications(notificationStore.pagination.currentPage + 1)" :disabled="!notificationStore.pagination.next" class="px-4 py-2 text-sm font-medium bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50">
+          Next
+        </button>
+      </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.notifications-page {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 1rem;
-}
-
-.notifications-actions {
-  margin-bottom: 1rem;
-  text-align: right;
-}
-
-.mark-all-read-button {
-  padding: 0.4rem 0.8rem;
-  font-size: 0.9em;
-  background-color: #6c757d;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.mark-all-read-button:hover {
-  background-color: #5a6268;
-}
-.mark-all-read-button:disabled {
-  background-color: #adb5bd;
-  cursor: not-allowed;
-}
-
-.loading-message, 
-.empty-message {
-  padding: 1rem;
-  text-align: center;
-  color: #555;
-}
-
-.error-message {
-  padding: 1rem;
-  text-align: center;
-  color: #dc3545;
-  border: 1px solid #f5c6cb;
-  background-color: #f8d7da;
-  border-radius: 4px;
-  margin-bottom: 1rem;
-}
-
-.notification-list {
-  list-style-type: none;
-  padding: 0;
-  margin: 0;
-}
-
-.notification-item {
-  border: 1px solid #e0e0e0;
-  padding: 0.75rem 1rem;
-  margin-bottom: 0.75rem;
-  border-radius: 6px;
-  background-color: #ffffff;
-  color: #212529;
-  line-height: 1.5;
-}
-
-.notification-item.is-read {
-  background-color: #f8f9fa;
-  color: #6c757d;
-}
-
-.notification-actor strong {
-  font-weight: bold;
-  color: #0056b3;
-}
-.notification-item.is-read .notification-actor strong {
-  color: #495057;
-}
-
-.notification-target, 
-.notification-action-object {
-  font-size: 0.9em;
-  margin-left: 0.5em;
-  color: #495057;
-}
-.notification-item.is-read .notification-target,
-.notification-item.is-read .notification-action-object {
-  color: #868e96;
-}
-
-.notification-timestamp {
-  font-size: 0.8em;
-  color: #6c757d;
-  margin-top: 0.25rem;
-  display: block;
-}
-.notification-item.is-read .notification-timestamp {
-  color: #adb5bd;
-}
-
-.mark-read-button {
-  align-self: flex-start;
-  margin-top: 0.75rem;
-  padding: 0.3rem 0.6rem;
-  font-size: 0.85em;
-  cursor: pointer;
-  background-color: #e9ecef;
-  border: 1px solid #ced4da;
-  color: #212529;
-  border-radius: 4px;
-}
-.mark-read-button:hover {
-  background-color: #dee2e6;
-}
-
-.pagination-controls {
-  margin-top: 1.5rem;
-  padding-top: 1rem;
-  border-top: 1px solid #eee;
-  text-align: center;
-}
-.pagination-controls button {
-  margin: 0 0.5rem;
-  padding: 0.5rem 1rem;
-  cursor: pointer;
-  background-color: #007bff;
-  color: white;
-  border: none;
-  border-radius: 4px;
-}
-.pagination-controls button:disabled {
-  background-color: #6c757d;
-  cursor: not-allowed;
-}
-.pagination-controls button:not(:disabled):hover {
-  background-color: #0056b3;
-}
-.pagination-controls span {
-    margin: 0 0.5rem;
-    color: #495057;
-}
-</style>
