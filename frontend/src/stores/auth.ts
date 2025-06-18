@@ -1,245 +1,141 @@
 // src/stores/auth.ts
 
-import { ref, computed } from 'vue'
-import { defineStore } from 'pinia'
+import { ref, computed } from 'vue';
+import { defineStore } from 'pinia';
 import axiosInstance from '@/services/axiosInstance';
-import router from '@/router'; // Or wherever your router instance is exported from
+import router from '@/router';
 
-// Later: import router from '@/router'; // For potential redirects
-
-// Define the shape of the User object we might store (adjust as needed)
+// Define the shape of the User object. This now matches what our API returns.
 export interface User {
   id: number;
   username: string;
   first_name: string;
   last_name: string;
   date_joined: string;
-  // Add other relevant fields from your UserSerializer if login returns them
-  // email?: string;
+  picture: string | null;
 }
 
-// --- ADD THIS INTERFACE ---
+// Interface for registration data
 interface RegistrationData {
-    email?: string;
-    username?: string;
-    password1?: string;
-    password2?: string; // dj-rest-auth typically uses password2
+  email?: string;
+  username?: string;
+  password1?: string;
+  password2?: string;
 }
-// --- END ---
 
 // Define the store
-// 'auth' is the unique ID of this store
 export const useAuthStore = defineStore('auth', () => {
   // --- State ---
-  // Use refs for reactive state properties.
-  // Initialize token from localStorage (if available) for persistence across refreshes.
   const authToken = ref<string | null>(localStorage.getItem('authToken') || null);
-  const currentUser = ref<User | null>(null); // Initialize user as null
-  // TODO: Add loading/error states if needed
+  const currentUser = ref<User | null>(null);
 
   // --- Getters ---
-  // Computed properties derived from state.
-  const isAuthenticated = computed(() => !!authToken.value); // True if token exists
+  const isAuthenticated = computed(() => !!authToken.value);
   const userDisplay = computed(() => currentUser.value?.username || 'Guest');
 
   // --- Actions ---
-  // Functions that can modify the state. Often asynchronous for API calls.
 
   function setToken(token: string | null) {
     authToken.value = token;
     if (token) {
       localStorage.setItem('authToken', token);
-      // TODO: Set token in axios headers for subsequent requests (via interceptor is best)
+      axiosInstance.defaults.headers.common['Authorization'] = `Token ${token}`;
     } else {
       localStorage.removeItem('authToken');
-      // TODO: Remove token from axios headers
+      delete axiosInstance.defaults.headers.common['Authorization'];
       // Also clear user data when logging out
       currentUser.value = null;
     }
   }
 
-  function setUser(apiUserObject: any | null) { // Changed parameter name and type for clarity
-    if (apiUserObject && typeof apiUserObject.pk !== 'undefined') { // Check if apiUserObject and pk exist
-      currentUser.value = {
-        id: apiUserObject.pk,         // Map 'pk' from API to 'id'
-        username: apiUserObject.username,
-        first_name: apiUserObject.first_name || '', // Add fallback for potentially missing names
-        last_name: apiUserObject.last_name || '',   // Add fallback
-        date_joined: apiUserObject.date_joined || '', // <-- ADD THIS LINE
-        // email: apiUserObject.email, // Uncomment if you add email to your User interface
-      };
-    } else if (apiUserObject) { // If apiUserObject exists but pk doesn't, it might already be our User type
-      currentUser.value = apiUserObject as User; // Assume it's already our User type
-    }
-    else {
-      currentUser.value = null; // Set to null if apiUserObject is null
-    }
+  // Simplified setUser function
+  function setUser(user: User | null) {
+    currentUser.value = user;
   }
 
-  // Action to perform login API call
-        // Replace the OLD login function with THIS one
-        async function login(credentials: { username: string, password: any }) {
-            // Clear previous user state first
-            setToken(null);
-            setUser(null);
-            try {
-              console.log('Attempting login via store action:', credentials.username);
-    
-              // --- REPLACE MOCK WITH REAL API CALL ---
-              // Make the actual POST request to the backend login endpoint
-              const response = await axiosInstance.post('/auth/login/', credentials);
-              // --- END OF API CALL ---
-    
-              // Check if the response contains the authentication key
-              if (response.data && response.data.key) {
-                // If yes, store the token
-                setToken(response.data.key);
-                console.log('Token set from API response:', response.data.key);
-    
-                // NOTE: dj-rest-auth login usually doesn't return full user details.
-                // We might need a separate call to get user info later.
-                if (response.data.user) {
-                   // If user data IS returned (less common), set it
-                   setUser(response.data.user);
-                   console.log('User set from login response:', response.data.user);
-                } else {
-                   console.log('Login successful. Token obtained. User details may need separate fetch.');
-                   await fetchUserProfile();
-                }
-                return true; // Indicate login success to the component
-    
-              } else {
-                 // Handle unexpected response format from the API
-                 console.error("Login response missing 'key':", response.data);
-                 throw new Error("Login response did not contain authentication key.");
-              }
-    
-            } catch (error) {
-              // Handle errors from the Axios request (network error, 4xx/5xx status)
-              console.error('Store login action failed:', error);
-              setToken(null); // Ensure token/user are cleared on failure
-              setUser(null);
-              // Re-throw the error so the component (LoginView) can catch it
-              // and display an appropriate message to the user.
-              throw error;
-            }
-          }
-
-  // --- END OF LOGIN FUNCTION ---
-
-    // Your REVISED logout function
-async function logout() { // Make it async
-  console.log('Logging out via store action / function...'); // Updated log
-
-  // --- ADD API CALL within try...finally ---
-  try {
-    // Make request to backend logout endpoint
-    // Use relative path '/logout/' assuming baseURL includes '/api/'
-    console.log('Attempting backend logout...');
-    await axiosInstance.post('/auth/logout/'); // <-- ADD /auth/ part
-    console.log('Backend logout successful.');
-  } catch (error: any) {
-    // Log the error but proceed with client-side logout anyway
-    console.error('Backend logout call failed (proceeding with client logout):', error);
-  } finally {
-    // --- ENSURE THIS ALWAYS RUNS ---
-    console.log('Performing client-side logout cleanup.');
-    // Clear token using your existing function
-    setToken(null);
-    // Ensure Axios default headers are cleared if they were set manually elsewhere
-    delete axiosInstance.defaults.headers.common['Authorization'];
-    // -----------------------------
-
-    // Redirect to login page (keep commented out if handled elsewhere)
-    router.push('/login');
-    console.log('Client-side logout cleanup finished.');
-    // NOTE: Redirection might need to happen *after* this async function completes
-    // in the component that calls it, or via router guards.
-  }
-}
-
-  // Action to fetch user profile (if not included in login response)
-  async function fetchUserProfile() {
-    // Ensure there's a token before trying to fetch
-    if (!authToken.value) {
-        console.log('fetchUserProfile: No auth token found, skipping fetch.');
-        return;
-    }
-    // Note: The interceptor should automatically add the token header
+  // Corrected login action
+  async function login(credentials: { username: string; password: any }) {
     try {
-        console.log('Fetching user profile...');
-        // --- REPLACE PLACEHOLDER WITH REAL API CALL ---
-        const response = await axiosInstance.get('/auth/user/'); // Call the user detail endpoint
-        // --- END OF API CALL ---
+      const response = await axiosInstance.post('/auth/login/', credentials);
 
-        if (response.data) {
-            // If successful, store user data
-            setUser(response.data); // Assuming response.data is the User object shape we expect
-            console.log('User profile fetched and stored:', response.data);
-        } else {
-             // Handle unexpected empty response
-             console.warn('Fetched user profile but response data was empty.');
-             setUser(null);
-        }
-    } catch (error: any) {
-        console.error('Failed to fetch user profile:', error);
-        // If we get 401 Unauthorized, the token is likely invalid/expired
-        if (error.response && error.response.status === 401) {
-          console.log('Token invalid/expired. Logging out.');
-          // Automatically log out if token is bad
-          logout(); // Call the logout action to clear state
-        } else {
-          // For other errors, just clear user state
-          setUser(null);
-        }
-    }
-  }
-  // --- END OF fetchUserProfile modification ---
+      if (response.data && response.data.key) {
+        // 1. Set the token from the login response
+        setToken(response.data.key);
 
-  // --- ADD THE REGISTER FUNCTION HERE ---
-async function register(registrationData: RegistrationData) {
-    console.log("Sending registration details to backend:", registrationData);
-    try {
-      // Send the 'registrationData' to the backend URL '/auth/registration/'
-      // Ensure this URL matches your Django dj-rest-auth setup
-      const response = await axiosInstance.post('/auth/registration/', registrationData);
-      console.log("Backend registration request finished successfully:", response.data);
-      // Registration usually doesn't log the user in, so no need to setToken or setUser here.
-      // We don't need to return anything specific here unless the backend response is useful.
+        // 2. IMMEDIATELY fetch the full user profile using the new token
+        await fetchUserProfile();
+
+        return true; // Indicate login success to the component
+      } else {
+        throw new Error("Login response did not contain an authentication key.");
+      }
     } catch (error) {
-      // If the backend sends back an error (like username taken)
-      console.error("Backend registration failed!", error);
-      // We need to tell the component that called this function there was an error.
-      throw error; // Re-throw the error for the component to catch
+      // Clear everything on failure
+      setToken(null);
+      setUser(null);
+      console.error('Store login action failed:', error);
+      throw error; // Re-throw for the component to handle
     }
   }
-  // --- END OF REGISTER FUNCTION ---
 
-  // --- ADD THE initializeAuth FUNCTION DEFINITION ---
-async function initializeAuth() {
-    console.log("Initializing auth store...");
-    // Check localStorage directly first
-    const tokenFromStorage = localStorage.getItem('authToken');
-  
-    if (tokenFromStorage && !authToken.value) {
-      // If token exists in storage but not in state, update state
-      console.log("Found token in localStorage, setting it in store.");
-      setToken(tokenFromStorage); // Use the existing setToken action
-    }
-  
-    // Now check if we have a token in the state (either loaded or already present)
-    // and if the user profile hasn't been loaded yet
-    if (authToken.value && !currentUser.value) {
-      console.log("Token exists in store, attempting to fetch user profile.");
-      // Use existing fetchUserProfile action, it handles the token internally
-      await fetchUserProfile();
-    } else if (!authToken.value) {
-      console.log("No auth token found during initialization.");
-    } else {
-      console.log("User profile already loaded or initialization not needed now.");
+  // Logout action
+  async function logout() {
+    try {
+      await axiosInstance.post('/auth/logout/');
+    } catch (error: any) {
+      console.error('Backend logout call failed (proceeding with client logout):', error);
+    } finally {
+      // Ensure this always runs
+      setToken(null);
+      router.push('/login');
     }
   }
-  // --- END OF initializeAuth FUNCTION DEFINITION ---
+
+  // Action to fetch user profile
+  async function fetchUserProfile() {
+    if (!authToken.value) {
+      return;
+    }
+    try {
+      const response = await axiosInstance.get<User>('/auth/user/');
+      if (response.data) {
+        setUser(response.data);
+      } else {
+        setUser(null);
+      }
+    } catch (error: any) {
+      console.error('Failed to fetch user profile:', error);
+      if (error.response && error.response.status === 401) {
+        // Automatically log out if token is bad
+        logout();
+      } else {
+        setUser(null);
+      }
+    }
+  }
+
+  // Registration action
+  async function register(registrationData: RegistrationData) {
+    try {
+      await axiosInstance.post('/auth/registration/', registrationData);
+    } catch (error) {
+      console.error("Backend registration failed!", error);
+      throw error; // Re-throw for the component to handle
+    }
+  }
+
+  // Initialization action
+  async function initializeAuth() {
+    const tokenFromStorage = localStorage.getItem('authToken');
+
+    if (tokenFromStorage && !authToken.value) {
+      setToken(tokenFromStorage);
+    }
+
+    if (authToken.value && !currentUser.value) {
+      await fetchUserProfile();
+    }
+  }
 
   // --- Return state, getters, and actions ---
   return {
@@ -253,6 +149,6 @@ async function initializeAuth() {
     logout,
     fetchUserProfile,
     register,
-    initializeAuth
-  }
-})
+    initializeAuth,
+  };
+});

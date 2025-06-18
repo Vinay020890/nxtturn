@@ -196,6 +196,8 @@ REST_AUTH = {
     # --- ADD THIS LINE ---
     'REGISTER_SERIALIZER': 'dj_rest_auth.registration.serializers.RegisterSerializer',
     # --- END OF ADDITION ---
+     # --- ADD THIS LINE FOR THE USER AVATAR FIX ---
+    'USER_DETAILS_SERIALIZER': 'community.serializers.UserSerializer',
 
     # You might have other keys here too
 }

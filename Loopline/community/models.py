@@ -214,10 +214,12 @@ class Notification(models.Model):
     LIKE = 'like'
     COMMENT = 'comment'
     REPLY = 'reply'
+    MENTION = 'mention'
     NOTIFICATION_TYPE_CHOICES = [
         (LIKE, 'Like on your Post'),
         (COMMENT, 'Comment on your Post'),
         (REPLY, 'Reply to your Comment'),
+        (MENTION, 'Mention in a Post/Comment'),
     ]
     notification_type = models.CharField(max_length=50, choices=NOTIFICATION_TYPE_CHOICES, blank=True, null=True)
     action_object_content_type = models.ForeignKey(ContentType, related_name='notification_action_object', on_delete=models.CASCADE, null=True, blank=True)
@@ -267,6 +269,45 @@ class Message(models.Model):
 
     def __str__(self):
         return f"Message from {self.sender.username} in Convo ID {self.conversation.id} at {self.timestamp.strftime('%Y-%m-%d %H:%M')}"
+    
+class Poll(models.Model):
+    """
+    Represents a poll attached to a StatusPost.
+    """
+    post = models.OneToOneField(StatusPost, on_delete=models.CASCADE, related_name='poll')
+    question = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Poll for Post ID {self.post.id}: {self.question}"
+
+class PollOption(models.Model):
+    """
+    Represents one choice/option within a Poll.
+    """
+    poll = models.ForeignKey(Poll, on_delete=models.CASCADE, related_name='options')
+    text = models.CharField(max_length=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Option for Poll ID {self.poll.id}: {self.text}"
+
+class PollVote(models.Model):
+    """
+    Represents a single user's vote on a poll option.
+    Ensures a user can only vote once per poll.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='poll_votes')
+    poll = models.ForeignKey(Poll, on_delete=models.CASCADE, related_name='votes')
+    option = models.ForeignKey(PollOption, on_delete=models.CASCADE, related_name='votes')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'poll') # One vote per user per poll
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Vote by {self.user.username} on Poll ID {self.poll.id}"
 
 @receiver(post_save, sender=User)
 def create_user_profile(sender, instance, created, **kwargs):

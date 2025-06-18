@@ -10,6 +10,9 @@ import { useProfileStore } from '@/stores/profile';
 export interface CommentAuthor {
   id: number;
   username: string;
+  first_name: string;      
+  last_name: string;       
+  picture: string | null;
 }
 
 export interface Comment {

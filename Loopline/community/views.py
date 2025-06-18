@@ -5,7 +5,8 @@ from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from django.contrib.contenttypes.models import ContentType
 from django.http import Http404
-from django.db.models import Q, Count, Value, CharField
+from django.db.models import Q, Count, Value, CharField, Case, When
+from django.db import transaction
 
 from rest_framework import generics, status, views, serializers
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAuthenticatedOrReadOnly
@@ -15,7 +16,7 @@ from rest_framework.pagination import PageNumberPagination
 
 from .models import (
     UserProfile, Follow, StatusPost, ForumCategory, Group, ForumPost,
-    Comment, Like, Conversation, Message, Notification 
+    Comment, Like, Conversation, Message, Notification, Poll, PollOption, PollVote
 )
 from .serializers import (
     UserSerializer, UserProfileSerializer, UserProfileUpdateSerializer,
@@ -60,7 +61,7 @@ class UserPostListView(generics.ListAPIView):
     pagination_class = PageNumberPagination
     def get_queryset(self):
         user = get_object_or_404(User, username=self.kwargs.get('username'))
-        return StatusPost.objects.filter(author=user).select_related('author__userprofile').prefetch_related('likes', 'media').order_by('-created_at')
+        return StatusPost.objects.filter(author=user).select_related('author__userprofile').prefetch_related('likes', 'media', 'poll__options', 'poll__votes').order_by('-created_at')
     def get_serializer_context(self):
         return {'request': self.request}
 
@@ -106,14 +107,31 @@ class UserSearchAPIView(generics.ListAPIView):
         query = self.request.query_params.get('q', None)
         if not query or not query.strip():
             return User.objects.none()
-        search_filter = (Q(username__icontains=query) | Q(first_name__icontains=query) | Q(last_name__icontains=query))
-        return User.objects.filter(search_filter).distinct()
+
+        search_filter = (
+            Q(username__icontains=query) |
+            Q(first_name__icontains=query) |
+            Q(last_name__icontains=query)
+        )
+        
+        # Annotate results with a priority score.
+        # Users whose username STARTS WITH the query get a higher priority (1).
+        # Others who just contain it get a lower priority (2).
+        queryset = User.objects.filter(search_filter).annotate(
+            priority=Case(
+                When(username__istartswith=query, then=1),
+                default=2
+            )
+        ).distinct()
+
+        # Order by our new priority field first, then alphabetically by username.
+        return queryset.order_by('priority', 'username')
 
 # ==================================
 # Status Post Views
 # ==================================
 class StatusPostListCreateView(generics.ListCreateAPIView):
-    queryset = StatusPost.objects.select_related('author__userprofile').prefetch_related('likes', 'media').order_by('-created_at')
+    queryset = StatusPost.objects.select_related('author__userprofile').prefetch_related('likes', 'media', 'poll__options', 'poll__votes').order_by('-created_at')
     serializer_class = StatusPostSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     pagination_class = PageNumberPagination
@@ -123,7 +141,7 @@ class StatusPostListCreateView(generics.ListCreateAPIView):
         return {'request': self.request}
 
 class StatusPostRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = StatusPost.objects.select_related('author__userprofile').prefetch_related('likes', 'media').all()
+    queryset = StatusPost.objects.select_related('author__userprofile').prefetch_related('likes', 'media', 'poll__options', 'poll__votes').all()
     serializer_class = StatusPostSerializer
     permission_classes = [IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
     lookup_field = 'pk'
@@ -142,6 +160,49 @@ class LikeToggleAPIView(APIView):
         if not created:
             like.delete()
         return Response({"liked": created, "like_count": target_object.likes.count()}, status=status.HTTP_200_OK)
+    
+class PollVoteAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, poll_id, option_id, format=None):
+        poll = get_object_or_404(Poll, pk=poll_id)
+        option = get_object_or_404(PollOption, pk=option_id, poll=poll)
+        
+        # Atomically create or update the vote
+        with transaction.atomic():
+            vote, created = PollVote.objects.update_or_create(
+                user=request.user,
+                poll=poll,
+                defaults={'option': option}
+            )
+        
+        # We need to return the entire updated Post object so the frontend can refresh the state.
+        # This is better than just returning a success message.
+        post_instance = poll.post
+        context = {'request': request}
+        
+        # Re-serialize the parent post with the new vote data
+        serializer = StatusPostSerializer(instance=post_instance, context=context)
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    def delete(self, request, poll_id, option_id, format=None):
+        """
+        Handles vote retraction. The option_id from the URL is not needed
+        to identify the vote, but it's part of the URL structure.
+        """
+        poll = get_object_or_404(Poll, pk=poll_id)
+        
+        # Find and delete the vote for this user on this poll.
+        # This is safe and won't crash if the vote doesn't exist.
+        PollVote.objects.filter(user=request.user, poll=poll).delete()
+        
+        # Just like in post, return the full updated post object
+        # so the frontend can sync its state.
+        post_instance = poll.post
+        context = {'request': request}
+        serializer = StatusPostSerializer(instance=post_instance, context=context)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 # ==================================
 # Forum Views  <-- RESTORED
@@ -218,18 +279,28 @@ class GroupMembershipView(APIView):
 # ==================================
 # Comment Views
 # ==================================
+# This is the NEW code
 class CommentListCreateAPIView(generics.ListCreateAPIView):
     serializer_class = CommentSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     pagination_class = None
+    
     def get_queryset(self):
         content_type = get_object_or_404(ContentType, model=self.kwargs.get('content_type').lower())
         parent_object = get_object_or_404(content_type.model_class(), pk=self.kwargs.get('object_id'))
         return Comment.objects.filter(content_type=content_type, object_id=parent_object.id).select_related('author__userprofile').order_by('created_at')
+
+    def get_serializer_context(self):
+        """Pass the request and view context to the serializer."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        context['view'] = self
+        return context
+
     def perform_create(self, serializer):
-        content_type = get_object_or_404(ContentType, model=self.kwargs.get('content_type').lower())
-        object_id = self.kwargs.get('object_id')
-        serializer.save(author=self.request.user, content_type=content_type, object_id=object_id)
+        # All logic will now be handled in the serializer's .create() method.
+        # This simplification is key for the next steps.
+        serializer.save()
 
 class CommentRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Comment.objects.select_related('author__userprofile').all()
@@ -294,7 +365,7 @@ class FeedListView(generics.ListAPIView): # Inherit from ListAPIView for easier 
             # This is a very efficient way to get all related data for only the items on the current page
             posts = StatusPost.objects.filter(
                 id__in=[item.id for item in page]
-            ).select_related('author__userprofile').prefetch_related('media', 'likes')
+            ).select_related('author__userprofile').prefetch_related('media', 'likes', 'poll__options', 'poll__votes')
             
             # Since the posts are already ordered by ID from the filter, we re-sort them
             # based on the original created_at order from the paginated queryset.

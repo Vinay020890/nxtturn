@@ -11,6 +11,7 @@ interface PostAuthor {
   username: string;
   first_name: string;
   last_name: string;
+  picture: string | null;
 }
 
 // --- NEW: Interface for a single media item in a post gallery ---
@@ -18,6 +19,21 @@ export interface PostMedia {
   id: number;
   media_type: 'image' | 'video';
   file_url: string;
+}
+
+// --- NEW: Interfaces for Polls ---
+export interface PollOption {
+  id: number;
+  text: string;
+  vote_count: number;
+}
+
+export interface Poll {
+  id: number;
+  question: string;
+  options: PollOption[];
+  total_votes: number;
+  user_vote: number | null; // The ID of the option the user voted for
 }
 
 // ==========================================
@@ -30,20 +46,20 @@ export interface Post {
   created_at: string;
   updated_at: string;
   title: string | null;
-  content: string | null; // Content can now be null
-  
-  // The 'media' array replaces the old 'image' and 'video' fields
+  content: string | null;
   media: PostMedia[];
 
+  // =========================================================
+  // v v v ADD THIS LINE TO FIX THE ERROR v v v
+  // =========================================================
+  poll: Poll | null; 
+  // =========================================================
+  
   like_count: number;
   comment_count?: number;
   is_liked_by_user: boolean;
-
-  // Fields for liking/commenting
   content_type_id: number;
   object_id: number;
-
-  // Frontend-only state flags
   isLiking?: boolean;
   isDeleting?: boolean; 
   isUpdating?: boolean;
@@ -274,6 +290,73 @@ async function updatePost(postId: number, postType: string, formData: FormData):
     }
 }
 
+// In src/stores/feed.ts, inside useFeedStore...
+
+async function castVote(pollId: number, optionId: number): Promise<void> {
+  const postWithPoll = posts.value.find(p => p.poll?.id === pollId);
+  if (!postWithPoll || !postWithPoll.poll) return;
+
+  const poll = postWithPoll.poll;
+  const previousVoteId = poll.user_vote;
+  const isRetracting = previousVoteId === optionId;
+
+  // --- Complex Optimistic UI Update ---
+  // Store original state for potential rollback
+  const originalPollState = JSON.parse(JSON.stringify(poll));
+
+  // 1. If there was a previous vote, decrement its count.
+  if (previousVoteId !== null) {
+    const prevOption = poll.options.find(o => o.id === previousVoteId);
+    if (prevOption) prevOption.vote_count--;
+  }
+
+  // 2. If this is a NEW vote (not a retraction), increment the new option's count.
+  if (!isRetracting) {
+    const newOption = poll.options.find(o => o.id === optionId);
+    if (newOption) newOption.vote_count++;
+  }
+
+  // 3. Adjust total votes and the user's current vote status.
+  if (isRetracting) {
+    poll.total_votes--;
+    poll.user_vote = null; // User has retracted their vote
+  } else {
+    if (previousVoteId === null) {
+      poll.total_votes++; // Only increment total if it was their first vote
+    }
+    poll.user_vote = optionId; // Set the new vote
+  }
+  
+  try {
+    let response;
+    const apiUrl = `/polls/${pollId}/options/${optionId}/vote/`;
+    
+    if (isRetracting) {
+      // Send a DELETE request to retract the vote
+      response = await axiosInstance.delete<Post>(apiUrl);
+    } else {
+      // Send a POST request to cast or change the vote
+      response = await axiosInstance.post<Post>(apiUrl);
+    }
+
+    // Sync with the authoritative state from the server
+    const updatedPost = response.data;
+    const postIndex = posts.value.findIndex(p => p.id === updatedPost.id);
+    if (postIndex !== -1) {
+      posts.value[postIndex] = { ...posts.value[postIndex], ...updatedPost };
+    }
+
+  } catch (err: any) {
+    // On error, roll back to the original state
+    const postIndex = posts.value.findIndex(p => p.poll?.id === pollId);
+    if (postIndex !== -1) {
+        posts.value[postIndex].poll = originalPollState;
+    }
+    console.error("Failed to cast/retract vote:", err);
+    error.value = err.response?.data?.detail || "Failed to update vote.";
+  }
+}
+
   return {
     posts,
     isLoading,
@@ -291,5 +374,6 @@ async function updatePost(postId: number, postType: string, formData: FormData):
     incrementCommentCount, 
     deletePost,
     updatePost,
+    castVote,
   };
 });

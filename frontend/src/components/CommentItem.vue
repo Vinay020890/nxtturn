@@ -5,6 +5,7 @@ import { format } from 'date-fns';
 import type { Comment } from '@/stores/comment';
 import { useAuthStore } from '@/stores/auth';
 import { useCommentStore } from '@/stores/comment';
+import MentionAutocomplete from './MentionAutocomplete.vue';
 
 // Using compiler macros, so defineProps doesn't need to be imported
 const props = defineProps<{
@@ -38,7 +39,13 @@ const directReplies = computed(() => {
 function linkifyContent(text: string): string {
   if (!text) return '';
   const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])|(\bwww\.[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
-  return text.replace(urlRegex, url => `<a href="${url.startsWith('www.') ? 'http://' + url : url}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline">${url}</a>`);
+  const mentionRegex = /@(\w+)/g;
+  let linkedText = text.replace(urlRegex, url => `<a href="${url.startsWith('www.') ? 'http://' + url : url}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline">${url}</a>`);
+  linkedText = linkedText.replace(mentionRegex, (match, username) => {
+    const profileUrl = `/profile/${username}`;
+    return `<a href="${profileUrl}" class="font-semibold text-blue-600 hover:underline">${match}</a>`;
+  });
+  return linkedText;
 }
 
 function toggleEditMode(edit: boolean) {
@@ -100,58 +107,54 @@ async function handleToggleCommentLike() {
 
 <template>
   <div class="flex items-start gap-3 py-3 border-b border-gray-200 last:border-b-0">
-    <!-- Avatar -->
     <img 
       :src="getAvatarUrl(comment.author.picture, comment.author.first_name, comment.author.last_name)" 
       alt="comment author avatar" 
       class="w-8 h-8 rounded-full object-cover flex-shrink-0 bg-gray-200"
      >
-
     <div class="flex-grow">
-      <!-- Comment Body -->
       <div class="bg-gray-100 rounded-lg p-3">
         <div class="flex items-baseline justify-between">
           <span class="font-bold text-sm text-gray-800">{{ props.comment.author.username }}</span>
           <span v-if="!isEditing" class="text-xs text-gray-500">{{ format(new Date(props.comment.created_at), 'MMM d') }}</span>
         </div>
-
         <div v-if="!isEditing" class="text-sm text-gray-700 mt-1 whitespace-pre-wrap" v-html="linkifyContent(props.comment.content)"></div>
-        
-        <!-- Edit Form -->
         <form v-else @submit.prevent="saveEdit" class="mt-1">
-          <textarea v-model="editableContent" rows="2" class="w-full text-sm p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
+          <!-- CORRECTED EDIT FORM -->
+          <MentionAutocomplete
+            v-model="editableContent"
+            placeholder="Edit your comment..."
+            :rows="2"
+            class="text-sm"
+          />
           <div class="flex justify-end gap-2 mt-2">
             <button @click="toggleEditMode(false)" type="button" class="text-xs font-semibold text-gray-600 px-3 py-1 rounded-full hover:bg-gray-200">Cancel</button>
             <button type="submit" class="text-xs font-semibold text-white bg-blue-500 px-3 py-1 rounded-full hover:bg-blue-600">Save</button>
           </div>
         </form>
       </div>
-
-      <!-- Actions: Like, Reply, Edit, Delete -->
       <div v-if="!isEditing" class="flex items-center gap-4 mt-1 px-3 text-xs font-semibold text-gray-500">
-        <button @click="handleToggleCommentLike" class="hover:underline" :class="{'text-blue-600 font-bold': props.comment.is_liked_by_user}">
-          Like ({{ props.comment.like_count ?? 0 }})
-        </button>
+        <button @click="handleToggleCommentLike" class="hover:underline" :class="{'text-blue-600 font-bold': props.comment.is_liked_by_user}">Like ({{ props.comment.like_count ?? 0 }})</button>
         <button v-if="canReplyToThisComment" @click="toggleReplyForm" class="hover:underline">Reply</button>
         <button v-if="isCommentAuthor" @click="toggleEditMode(true)" class="hover:underline">Edit</button>
         <button v-if="isCommentAuthor" @click="deleteComment" class="hover:underline text-red-500">Delete</button>
       </div>
-
-      <!-- Reply Form -->
       <div v-if="showReplyForm" class="mt-2">
+        <!-- CORRECTED REPLY FORM -->
         <form @submit.prevent="submitReply">
-          <textarea v-model="replyContent" placeholder="Write a reply..." rows="2" class="w-full text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
+          <MentionAutocomplete
+            v-model="replyContent"
+            placeholder="Write a reply... Mention with @"
+            :rows="2"
+            class="text-sm"
+          />
           <div v-if="replyError" class="text-red-600 text-xs mt-1">{{ replyError }}</div>
           <div class="flex justify-end gap-2 mt-2">
             <button @click="toggleReplyForm" type="button" class="text-xs font-semibold text-gray-600 px-3 py-1 rounded-full hover:bg-gray-200">Cancel</button>
-            <button type="submit" :disabled="isSubmittingReply" class="text-xs font-semibold text-white bg-blue-500 px-3 py-1 rounded-full hover:bg-blue-600 disabled:bg-blue-300">
-              {{ isSubmittingReply ? 'Replying...' : 'Reply' }}
-            </button>
+            <button type="submit" :disabled="isSubmittingReply" class="text-xs font-semibold text-white bg-blue-500 px-3 py-1 rounded-full hover:bg-blue-600 disabled:bg-blue-300">{{ isSubmittingReply ? 'Replying...' : 'Reply' }}</button>
           </div>
         </form>
       </div>
-
-      <!-- Render Replies -->
       <div v-if="directReplies.length > 0" class="mt-3 pl-3 border-l-2 border-gray-200">
         <CommentItem
           v-for="reply in directReplies"
@@ -166,5 +169,3 @@ async function handleToggleCommentLike() {
     </div>
   </div>
 </template>
-
-<!-- NO <style scoped> block is needed -->
