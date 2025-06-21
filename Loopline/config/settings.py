@@ -23,19 +23,32 @@ env_path = BASE_DIR / '.env'
 load_dotenv(dotenv_path=env_path)
 # ---- END OF LOADING .env ----
 
+IS_PRODUCTION = os.getenv('DJANGO_ENV') == 'production'
+
+
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-# ---- 4. MODIFY HOW SECRET_KEY and DEBUG ARE SET ----
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-fallback-default-key-if-not-in-env') # Provide a fallback
+# ---- DYNAMIC SETTINGS FOR SECRET_KEY AND DEBUG ----
+SECRET_KEY = os.getenv('SECRET_KEY')
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', 'False').upper() == 'TRUE' # Reads from .env, defaults to False
-# ---- END OF MODIFICATION FOR SECRET_KEY AND DEBUG ----
+if IS_PRODUCTION:
+    DEBUG = False
+else:
+    DEBUG = True
+    if not SECRET_KEY:
+        # Use a dummy key for local development if not in .env
+        SECRET_KEY = 'a-dummy-secret-key-for-local-development-only'
+# ---- END OF DYNAMIC SETTINGS ----
 
-ALLOWED_HOSTS = ['192.168.31.35', 'localhost', '127.0.0.1']
+# Replace the old ALLOWED_HOSTS line with this block
+if IS_PRODUCTION:
+    # We will set RENDER_HOSTNAME in the Render dashboard later
+    ALLOWED_HOSTS = [os.getenv('RENDER_HOSTNAME')] 
+else:
+    ALLOWED_HOSTS = ['192.168.31.35', 'localhost', '127.0.0.1']
 
 
 # Application definition
@@ -71,6 +84,7 @@ ACCOUNT_EMAIL_VERIFICATION = 'none'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -79,6 +93,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'allauth.account.middleware.AccountMiddleware',
+    
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -153,6 +168,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # --- ADD MEDIA FILES CONFIGURATION ---
 MEDIA_URL = '/media/' # The base URL from which media files will be served
@@ -203,8 +219,13 @@ REST_AUTH = {
 }
 
 
-CORS_ALLOWED_ORIGINS = [
-    'http://localhost:5173', # Your Vite server URL
-    'http://127.0.0.1:5173', # Sometimes needed as well
-    'http://192.168.31.35:5173', # <--- ADD THIS LINE (access from your mobile)
-]
+# Replace the old CORS_ALLOWED_ORIGINS block with this
+if IS_PRODUCTION:
+    # We will set NETLIFY_APP_URL in the Netlify dashboard later
+    CORS_ALLOWED_ORIGINS = [os.getenv('NETLIFY_APP_URL')]
+else:
+    CORS_ALLOWED_ORIGINS = [
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://192.168.31.35:5173',
+    ]
