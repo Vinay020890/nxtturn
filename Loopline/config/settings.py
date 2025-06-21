@@ -234,13 +234,18 @@ REST_AUTH = {
 }
 
 
-# In settings.py, replace the CORS_ALLOWED_ORIGIN_REGEXES block with this
+# ==============================================================================
+# CORS (Cross-Origin Resource Sharing) SETTINGS
+# ==============================================================================
 
 if IS_PRODUCTION:
-    # This will read the NETLIFY_APP_URL variable we set on Render.
+    # For production, only allow requests from our live Netlify frontend.
+    # We also explicitly trust this origin for secure cookie handling in the future.
+    # The NETLIFY_APP_URL is set in the Render Environment Variables.
     CORS_ALLOWED_ORIGINS = [os.getenv('NETLIFY_APP_URL')]
+    CORS_TRUSTED_ORIGINS = [os.getenv('NETLIFY_APP_URL')]
 else:
-    # Your local development settings remain the same.
+    # For local development, allow requests from the Vite dev server.
     CORS_ALLOWED_ORIGINS = [
         'http://localhost:5173',
         'http://127.0.0.1:5173',
