@@ -8,7 +8,10 @@ https://docs.djangoproject.com/en/5.2/topics/settings/
 
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
+
+
 """
+import dj_database_url
 
 from pathlib import Path
 import os 
@@ -120,16 +123,28 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 # ---- 5. MODIFY DATABASES SETTING TO USE .env VARIABLES ----
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('DB_NAME', 'community_portal'), # Default to community_portal if not in .env
-        'USER': os.getenv('DB_USER'),                     # Must be in .env
-        'PASSWORD': os.getenv('DB_PASSWORD'),               # Must be in .env
-        'HOST': os.getenv('DB_HOST', 'localhost'),        # Default to localhost
-        'PORT': os.getenv('DB_PORT', '5432'),             # Default to 5432
+# In settings.py
+
+if IS_PRODUCTION:
+    # Use the DATABASE_URL from Render's environment for production
+    DATABASES = {
+        'default': dj_database_url.config(
+            conn_max_age=600,
+            ssl_require=True
+        )
     }
-}
+else:
+    # Your original local database settings for development
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.getenv('DB_NAME', 'community_portal'),
+            'USER': os.getenv('DB_USER'),
+            'PASSWORD': os.getenv('DB_PASSWORD'),
+            'HOST': os.getenv('DB_HOST', 'localhost'),
+            'PORT': os.getenv('DB_PORT', '5432'),
+        }
+    }
 # ---- END OF DATABASE MODIFICATION ----
 
 
