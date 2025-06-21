@@ -73,6 +73,7 @@ env/
 ENV/
 virtualenv/
 .venv/
+!.env.production
 
 # Editors
 .vscode/
