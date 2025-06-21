@@ -235,12 +235,16 @@ REST_AUTH = {
 
 
 # Replace the old CORS_ALLOWED_ORIGINS block with this
-if IS_PRODUCTION:
-    # We will set NETLIFY_APP_URL in the Netlify dashboard later
-    CORS_ALLOWED_ORIGINS = [os.getenv('NETLIFY_APP_URL')]
-else:
-    CORS_ALLOWED_ORIGINS = [
-        'http://localhost:5173',
-        'http://127.0.0.1:5173',
-        'http://192.168.31.35:5173',
-    ]
+# CORS Configuration
+CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS') == 'True'
+
+if not CORS_ALLOW_ALL_ORIGINS:
+    if IS_PRODUCTION:
+        # We will set NETLIFY_APP_URL in the Netlify dashboard later
+        CORS_ALLOWED_ORIGINS = [os.getenv('NETLIFY_APP_URL')]
+    else:
+        CORS_ALLOWED_ORIGINS = [
+            'http://localhost:5173',
+            'http://127.0.0.1:5173',
+            'http://192.168.31.35:5173',
+        ]
