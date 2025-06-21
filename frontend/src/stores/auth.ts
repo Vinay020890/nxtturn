@@ -19,7 +19,7 @@ export interface User {
 interface RegistrationData {
   email?: string;
   username?: string;
-  password1?: string;
+  password?: string; // Corrected from password1
   password2?: string;
 }
 
@@ -28,6 +28,7 @@ export const useAuthStore = defineStore('auth', () => {
   // --- State ---
   const authToken = ref<string | null>(localStorage.getItem('authToken') || null);
   const currentUser = ref<User | null>(null);
+  const isLoading = ref<boolean>(false); // <-- 1. ADD isLoading STATE
 
   // --- Getters ---
   const isAuthenticated = computed(() => !!authToken.value);
@@ -43,98 +44,77 @@ export const useAuthStore = defineStore('auth', () => {
     } else {
       localStorage.removeItem('authToken');
       delete axiosInstance.defaults.headers.common['Authorization'];
-      // Also clear user data when logging out
       currentUser.value = null;
     }
   }
 
-  // Simplified setUser function
   function setUser(user: User | null) {
     currentUser.value = user;
   }
 
-  // Corrected login action
+  // Corrected login action with loading state
   async function login(credentials: { username: string; password: any }) {
+    isLoading.value = true; // <-- 2a. SET isLoading to true
     try {
       const response = await axiosInstance.post('/auth/login/', credentials);
-
       if (response.data && response.data.key) {
-        // 1. Set the token from the login response
         setToken(response.data.key);
-
-        // 2. IMMEDIATELY fetch the full user profile using the new token
         await fetchUserProfile();
-
-        return true; // Indicate login success to the component
+        return true;
       } else {
         throw new Error("Login response did not contain an authentication key.");
       }
     } catch (error) {
-      // Clear everything on failure
       setToken(null);
       setUser(null);
       console.error('Store login action failed:', error);
-      throw error; // Re-throw for the component to handle
+      throw error;
+    } finally {
+      isLoading.value = false; // <-- 2b. ALWAYS set isLoading to false
     }
   }
 
-  // Logout action
   async function logout() {
     try {
       await axiosInstance.post('/auth/logout/');
     } catch (error: any) {
       console.error('Backend logout call failed (proceeding with client logout):', error);
     } finally {
-      // Ensure this always runs
       setToken(null);
       router.push('/login');
     }
   }
 
-  // Action to fetch user profile
   async function fetchUserProfile() {
-    if (!authToken.value) {
-      return;
-    }
+    if (!authToken.value) return;
     try {
       const response = await axiosInstance.get<User>('/auth/user/');
-      if (response.data) {
-        setUser(response.data);
-      } else {
-        setUser(null);
-      }
+      if (response.data) setUser(response.data);
+      else setUser(null);
     } catch (error: any) {
       console.error('Failed to fetch user profile:', error);
-      if (error.response && error.response.status === 401) {
-        // Automatically log out if token is bad
-        logout();
-      } else {
-        setUser(null);
-      }
+      if (error.response && error.response.status === 401) logout();
+      else setUser(null);
     }
   }
 
-  // Registration action
   async function register(registrationData: RegistrationData) {
-    try {
-      await axiosInstance.post('/auth/registration/', registrationData);
-    } catch (error) {
-      console.error("Backend registration failed!", error);
-      throw error; // Re-throw for the component to handle
-    }
+      // You can add loading state here too if you want
+      // isLoading.value = true;
+      try {
+        await axiosInstance.post('/auth/registration/', registrationData);
+      } catch (error) {
+        console.error("Backend registration failed!", error);
+        throw error;
+      } finally {
+        // isLoading.value = false;
+      }
   }
 
-  // Initialization action
   async function initializeAuth() {
     const tokenFromStorage = localStorage.getItem('authToken');
-
-    if (tokenFromStorage && !authToken.value) {
-      setToken(tokenFromStorage);
-    }
-
-    if (authToken.value && !currentUser.value) {
-      await fetchUserProfile();
-    }
+    if (tokenFromStorage && !authToken.value) setToken(tokenFromStorage);
+    if (authToken.value && !currentUser.value) await fetchUserProfile();
   }
 
   // --- Return state, getters, and actions ---
@@ -143,6 +123,7 @@ export const useAuthStore = defineStore('auth', () => {
     currentUser,
     isAuthenticated,
     userDisplay,
+    isLoading, // <-- 3. RETURN isLoading
     setToken,
     setUser,
     login,
