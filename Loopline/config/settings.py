@@ -75,6 +75,8 @@ INSTALLED_APPS = [
     'dj_rest_auth.registration',# Add this for registration views specifically    # Add this
     'corsheaders',
     'django_extensions', 
+    'cloudinary_storage', 
+    'cloudinary',       
 
     # Your Apps
     'community', # Or 'community.apps.CommunityConfig'
@@ -185,13 +187,22 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-# --- ADD MEDIA FILES CONFIGURATION ---
-MEDIA_URL = '/media/' # The base URL from which media files will be served
-MEDIA_ROOT = BASE_DIR / 'mediafiles' # The absolute filesystem path to the directory where media files will be stored
-# Ensure BASE_DIR is defined at the top of your settings.py: 
-# from pathlib import Path
-# BASE_DIR = Path(__file__).resolve().parent.parent
-# --- END MEDIA FILES CONFIGURATION ---
+# ==============================================================================
+# MEDIA FILES (User Uploads)
+# ==============================================================================
+
+if IS_PRODUCTION:
+    # Use Cloudinary for media storage in production
+    CLOUDINARY_STORAGE = {
+        'CLOUD_NAME': os.getenv('CLOUDINARY_CLOUD_NAME'),
+        'API_KEY': os.getenv('CLOUDINARY_API_KEY'),
+        'API_SECRET': os.getenv('CLOUDINARY_API_SECRET'),
+    }
+    DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+else:
+    # Use local filesystem for media storage in development
+    MEDIA_URL = '/media/'
+    MEDIA_ROOT = BASE_DIR / 'mediafiles'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
