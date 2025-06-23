@@ -15,15 +15,14 @@ from .models import (
 User = get_user_model() 
 
 class PostMediaSerializer(serializers.ModelSerializer):
-    file_url = serializers.SerializerMethodField()
+    # Change the 'file_url' to be a simple URLField that gets the URL directly.
+    # DRF and Cloudinary will handle generating the full URL automatically.
+    file_url = serializers.URLField(source='file.url', read_only=True)
+
     class Meta:
         model = PostMedia
+        # We only need to expose the final URL, not the raw file object.
         fields = ['id', 'media_type', 'file_url']
-    def get_file_url(self, obj):
-        request = self.context.get('request')
-        if request and obj.file:
-            return request.build_absolute_uri(obj.file.url)
-        return obj.file.url if obj.file else None
     
 class PollOptionSerializer(serializers.ModelSerializer):
     vote_count = serializers.SerializerMethodField()
@@ -76,27 +75,13 @@ class PollSerializer(serializers.ModelSerializer):
 # In community/serializers.py
 
 class UserSerializer(serializers.ModelSerializer):
-    # Add a new field to get the picture URL
-    picture = serializers.SerializerMethodField()
+    # Change the picture field to directly access the URL from the model's file field.
+    # The 'source' attribute points to the related field through the userprofile relation.
+    picture = serializers.URLField(source='userprofile.picture.url', read_only=True)
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'first_name', 'last_name', 'picture'] # Add 'picture' to fields
-
-    def get_picture(self, obj):
-        # 'obj' is the User instance.
-        # We try to get the related userprofile and its picture.
-        # This is safe and won't crash if a profile or picture doesn't exist.
-        try:
-            profile = obj.userprofile
-            if profile.picture:
-                request = self.context.get('request')
-                if request:
-                    return request.build_absolute_uri(profile.picture.url)
-                return profile.picture.url
-        except UserProfile.DoesNotExist:
-            return None
-        return None
+        fields = ['id', 'username', 'first_name', 'last_name', 'picture']
 
 # ... (Keep GenericRelatedObjectSerializer, NotificationSerializer, UserProfileSerializer, UserProfileUpdateSerializer as they are) ...
 class GenericRelatedObjectSerializer(serializers.Serializer):
