@@ -14,8 +14,9 @@ env_path = BASE_DIR / '.env'
 load_dotenv(dotenv_path=env_path)
 
 # --- Production Switch ---
-# Use the 'RENDER' environment variable which is guaranteed to be 'true' on Render.
-IS_PRODUCTION = os.getenv('RENDER') == 'true'
+# The 'DATABASE_URL' environment variable is ONLY set on Render.
+# This is the most reliable way to check if we are in production.
+IS_PRODUCTION = 'DATABASE_URL' in os.environ
 
 # --- Security Settings ---
 SECRET_KEY = os.getenv('SECRET_KEY')
@@ -64,7 +65,7 @@ ACCOUNT_EMAIL_VERIFICATION = 'none'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware', # Should be right after SecurityMiddleware
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
