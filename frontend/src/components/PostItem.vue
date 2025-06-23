@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { getAvatarUrl } from '@/utils/avatars';
+// --- MODIFIED IMPORTS ---
+// We now import both functions from our updated utility file
+import { getAvatarUrl, buildMediaUrl } from '@/utils/avatars';
+
+// All other imports remain the same
 import { ref, computed, watch, onUnmounted } from 'vue';
 import type { Post, PostMedia } from '@/stores/feed';
 import { useFeedStore } from '@/stores/feed';
@@ -11,6 +15,9 @@ import { storeToRefs } from 'pinia';
 import { useProfileStore } from '@/stores/profile';
 import PollDisplay from './PollDisplay.vue';
 import MentionAutocomplete from './MentionAutocomplete.vue';
+
+// --- NO OTHER CHANGES NEEDED IN THE <script setup> SECTION ---
+// All your existing props, stores, state, computed properties, and methods are correct.
 
 // --- Props, Stores, and Basic State ---
 const props = defineProps<{ post: Post }>();
@@ -153,6 +160,7 @@ async function handleCommentSubmit() {
   <article class="bg-white border border-gray-200 rounded-lg shadow-md mb-6">
     <header class="flex items-center justify-between p-4 border-b border-gray-200">
       <div class="flex items-center">
+        <!-- The getAvatarUrl function is already correct because we updated its source file -->
         <img :src="getAvatarUrl(post.author.picture, post.author.first_name, post.author.last_name)" alt="author avatar" class="w-10 h-10 rounded-full object-cover mr-3 bg-gray-200">
         <div>
           <router-link :to="{ name: 'profile', params: { username: post.author.username } }" class="font-bold text-gray-800 hover:underline">{{ post.author.username }}</router-link>
@@ -186,8 +194,10 @@ async function handleCommentSubmit() {
       <div v-if="post.media && post.media.length > 0" class="relative bg-gray-100">
         <div class="relative">
           <template v-if="activeMedia">
-            <video v-if="activeMedia.media_type === 'video'" controls class="w-full max-h-[70vh] object-contain" :key="activeMedia.id" :src="activeMedia.file_url"></video>
-            <img v-else :src="activeMedia.file_url" class="w-full max-h-[70vh] object-contain">
+            <!-- MODIFIED: Use buildMediaUrl for video -->
+            <video v-if="activeMedia.media_type === 'video'" controls class="w-full max-h-[70vh] object-contain" :key="activeMedia.id" :src="buildMediaUrl(activeMedia.file_url)"></video>
+            <!-- MODIFIED: Use buildMediaUrl for image -->
+            <img v-else :src="buildMediaUrl(activeMedia.file_url)" class="w-full max-h-[70vh] object-contain">
           </template>
         </div>
         <template v-if="hasMultipleMedia">
@@ -198,7 +208,8 @@ async function handleCommentSubmit() {
       <div v-if="hasMultipleMedia" class="p-2 flex flex-wrap gap-2 justify-center bg-gray-100">
         <div v-for="(mediaItem, index) in post.media" :key="mediaItem.id" @click="setActiveMedia(index)" class="w-16 h-16 rounded-md cursor-pointer border-2" :class="index === activeMediaIndex ? 'border-blue-500' : 'border-transparent'">
           <span v-if="mediaItem.media_type === 'video'" class="w-full h-full bg-gray-200 flex items-center justify-center text-2xl text-gray-500 rounded-md">▶</span>
-          <img v-else :src="mediaItem.file_url" class="w-full h-full object-cover rounded-md">
+          <!-- MODIFIED: Use buildMediaUrl for thumbnail image -->
+          <img v-else :src="buildMediaUrl(mediaItem.file_url)" class="w-full h-full object-cover rounded-md">
         </div>
       </div>
     </div>
@@ -210,7 +221,8 @@ async function handleCommentSubmit() {
         <div class="mt-2 flex flex-wrap gap-2">
           <div v-for="media in editableMedia" :key="`edit-${media.id}`" class="relative w-20 h-20">
             <span v-if="media.media_type === 'video'" class="w-full h-full bg-gray-200 flex items-center justify-center text-2xl text-gray-500 rounded-md">▶</span>
-            <img v-else :src="media.file_url" class="w-full h-full object-cover rounded-md">
+            <!-- MODIFIED: Use buildMediaUrl for edit mode image -->
+            <img v-else :src="buildMediaUrl(media.file_url)" class="w-full h-full object-cover rounded-md">
             <button @click="flagExistingMediaForRemoval(media.id)" type="button" class="absolute top-1 right-1 bg-gray-800 bg-opacity-50 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-500">×</button>
           </div>
           <div v-for="(file, index) in newImageFiles" :key="`new-img-${index}`" class="relative w-20 h-20">
@@ -249,7 +261,7 @@ async function handleCommentSubmit() {
         <p v-if="commentsForThisPost.length === 0" class="text-sm text-gray-500 py-4 text-center">No comments yet.</p>
       </div>
 
-      <!-- THIS IS THE FULLY CORRECTED TOP-LEVEL COMMENT FORM -->
+      <!-- The getAvatarUrl function is already correct because we updated its source file -->
       <form v-if="isAuthenticated" @submit.prevent="handleCommentSubmit" class="mt-4 flex items-start gap-3">
           <img :src="getAvatarUrl(authStore.currentUser?.picture, authStore.currentUser?.first_name, authStore.currentUser?.last_name)" alt="your avatar" class="w-8 h-8 rounded-full object-cover flex-shrink-0 bg-gray-200">
           <div class="flex-grow">
