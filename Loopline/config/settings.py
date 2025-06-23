@@ -26,7 +26,7 @@ env_path = BASE_DIR / '.env'
 load_dotenv(dotenv_path=env_path)
 # ---- END OF LOADING .env ----
 
-IS_PRODUCTION = True
+IS_PRODUCTION = os.getenv('RENDER') == 'true'
 
 
 
@@ -46,12 +46,11 @@ else:
         SECRET_KEY = 'a-dummy-secret-key-for-local-development-only'
 # ---- END OF DYNAMIC SETTINGS ----
 
-# This is the new block to add
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
-
-# Add the Render hostname to the list if the environment variable exists
-if os.getenv('RENDER_HOSTNAME'):
-    ALLOWED_HOSTS.append(os.getenv('RENDER_HOSTNAME'))
+# Replace the debug version of ALLOWED_HOSTS with this one
+if IS_PRODUCTION:
+    ALLOWED_HOSTS = [os.getenv('RENDER_HOSTNAME')] 
+else:
+    ALLOWED_HOSTS = ['192.168.31.35', 'localhost', '127.0.0.1']
 
 
 # Application definition
