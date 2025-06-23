@@ -74,14 +74,27 @@ class PollSerializer(serializers.ModelSerializer):
 
 # In community/serializers.py
 
+# community/serializers.py
+
 class UserSerializer(serializers.ModelSerializer):
-    # Change the picture field to directly access the URL from the model's file field.
-    # The 'source' attribute points to the related field through the userprofile relation.
-    picture = serializers.URLField(source='userprofile.picture.url', read_only=True)
+    picture = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = ['id', 'username', 'first_name', 'last_name', 'picture']
+
+    def get_picture(self, obj):
+        # This method safely gets the picture URL.
+        # It checks for the existence of the profile and the picture field.
+        try:
+            if obj.userprofile and obj.userprofile.picture and hasattr(obj.userprofile.picture, 'url'):
+                return obj.userprofile.picture.url
+        except UserProfile.DoesNotExist:
+            # This handles the case where a User was somehow created without a profile.
+            pass
+        
+        # Return None if no picture is found.
+        return None
 
 # ... (Keep GenericRelatedObjectSerializer, NotificationSerializer, UserProfileSerializer, UserProfileUpdateSerializer as they are) ...
 class GenericRelatedObjectSerializer(serializers.Serializer):

@@ -7,18 +7,18 @@ from django.contrib.contenttypes.models import ContentType
 from .models import UserProfile, Like, StatusPost, Notification, Comment
 
 # Get the currently active User model (best practice)
-User = settings.AUTH_USER_MODEL
 
-@receiver(post_save, sender=User)
+
+# community/signals.py
+
+@receiver(post_save, sender=settings.AUTH_USER_MODEL)
 def create_or_update_user_profile(sender, instance, created, **kwargs):
     """
     Uses get_or_create to ensure a UserProfile exists for every User.
     Creates one if it's missing (handles new users and existing users saved later).
     """
-    UserProfile.objects.get_or_create(user=instance)
-    # We don't need to do anything with the profile object returned here,
-    # just ensuring it exists is enough for this signal.
-    # print(f"Ensured profile exists for user: {instance.username}") # Optional debug print
+    if created:
+        UserProfile.objects.get_or_create(user=instance)
     
 # ---- ADD THE NEW SIGNAL HANDLER BELOW ----
 @receiver(post_save, sender=Like)
