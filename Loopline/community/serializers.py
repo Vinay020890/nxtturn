@@ -319,7 +319,7 @@ class FeedItemSerializer(serializers.Serializer):
     post_type = serializers.SerializerMethodField()
     title = serializers.SerializerMethodField()
     comment_count = serializers.SerializerMethodField()
-    media = serializers.SerializerMethodField()
+    media = PostMediaSerializer(many=True, read_only=True)
     poll = serializers.SerializerMethodField()
 
     def get_poll(self, obj):
@@ -330,10 +330,7 @@ class FeedItemSerializer(serializers.Serializer):
         return None
     
     # CORRECT INDENTATION: This is now a method of the class
-    def get_media(self, obj):
-        if hasattr(obj, 'media') and obj.media.exists():
-            return PostMediaSerializer(obj.media.all(), many=True, context=self.context).data
-        return []
+    
     
     # CORRECT INDENTATION: This is now a method of the class
     def get_post_type(self, obj):
