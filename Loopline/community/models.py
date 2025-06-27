@@ -38,7 +38,7 @@ class UserProfile(models.Model):
     portfolio_url = models.URLField(max_length=512, blank=True, null=True)
     skills = ArrayField(models.CharField(max_length=100), blank=True, null=True, default=list)
     interests = ArrayField(models.CharField(max_length=100), blank=True, null=True, default=list)
-    picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True)
+    picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True, max_length=255)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
@@ -104,7 +104,7 @@ class PostMedia(models.Model):
 
     post = models.ForeignKey(StatusPost, related_name='media', on_delete=models.CASCADE)
     media_type = models.CharField(max_length=10, choices=MEDIA_TYPE_CHOICES)
-    file = models.FileField(upload_to=get_post_media_path)
+    file = models.FileField(upload_to=get_post_media_path, max_length=255)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

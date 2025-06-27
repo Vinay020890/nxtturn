@@ -1,5 +1,5 @@
 import json
-from rest_framework import serializers
+from rest_framework import serializers, validators
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
@@ -95,6 +95,35 @@ class UserSerializer(serializers.ModelSerializer):
         
         # Return None if no picture is found.
         return None
+    
+# In community/serializers.py
+
+class CustomRegisterSerializer(serializers.Serializer):
+    username = serializers.CharField(
+        max_length=150,
+        validators=[validators.UniqueValidator(queryset=User.objects.all())]
+    )
+    email = serializers.EmailField(
+        required=True,
+        validators=[validators.UniqueValidator(queryset=User.objects.all())]
+    )
+    password1 = serializers.CharField(write_only=True, style={'input_type': 'password'})
+    password2 = serializers.CharField(write_only=True, style={'input_type': 'password'})
+
+    def validate(self, data):
+        if data['password1'] != data['password2']:
+            raise serializers.ValidationError({"password": "Passwords must match."})
+        return data
+
+    @transaction.atomic
+    def save(self, request):
+        user = User.objects.create_user(
+            username=self.validated_data['username'],
+            email=self.validated_data['email'],
+            password=self.validated_data['password1']
+        )
+        # The signal will automatically create the UserProfile
+        return user
 
 # ... (Keep GenericRelatedObjectSerializer, NotificationSerializer, UserProfileSerializer, UserProfileUpdateSerializer as they are) ...
 class GenericRelatedObjectSerializer(serializers.Serializer):
