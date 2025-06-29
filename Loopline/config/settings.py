@@ -1,6 +1,5 @@
-"""
-Django settings for config project.
-"""
+# The definitive settings.py for the NxtTurn project
+
 import dj_database_url
 from pathlib import Path
 import os
@@ -8,8 +7,6 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=BASE_DIR / '.env')
-
-
 
 # --- THE DEFINITIVE PRODUCTION SWITCH ---
 IS_PRODUCTION = 'DATABASE_URL' in os.environ
@@ -23,9 +20,11 @@ if not IS_PRODUCTION and not SECRET_KEY:
 # --- HOSTS CONFIGURATION ---
 ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 if IS_PRODUCTION:
-    ALLOWED_HOSTS.append(os.getenv('RENDER_HOSTNAME'))
+    render_hostname = os.getenv('RENDER_HOSTNAME')
+    if render_hostname:
+        ALLOWED_HOSTS.append(render_hostname)
 else:
-    ALLOWED_HOSTS.append('192.168.31.35')
+    ALLOWED_HOSTS.append('192.168.31.35') # Your local IP for mobile testing
 
 # --- APPLICATION DEFINITION ---
 INSTALLED_APPS = [
@@ -65,39 +64,27 @@ else:
 AUTH_PASSWORD_VALIDATORS = [{'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'}, {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'}, {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'}, {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'}]
 LANGUAGE_CODE, TIME_ZONE, USE_I18N, USE_TZ = 'en-us', 'UTC', True, True
 
-
-
-
-
-
-
-# --- PASTE THIS NEW BLOCK IN ITS PLACE ---
-
 # --- STATIC & MEDIA FILES (THE MODERN DJANGO 5.x WAY) ---
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-# MEDIA_URL and MEDIA_ROOT are still useful for local development if not using Cloudinary
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'mediafiles'
 
-# This variable gives you explicit control for local testing
+# This variable gives you explicit control for local testing with Cloudinary
 USE_CLOUDINARY_IN_DEVELOPMENT = os.getenv('USE_CLOUDINARY_IN_DEVELOPMENT', 'false').lower() == 'true'
 
-# The new STORAGES setting, which replaces DEFAULT_FILE_STORAGE
+# The new STORAGES setting, which replaces the deprecated DEFAULT_FILE_STORAGE
 if IS_PRODUCTION or USE_CLOUDINARY_IN_DEVELOPMENT:
-    # --- PRODUCTION / CLOUDINARY STORAGE SETTINGS ---
     STORAGES = {
         "default": {
             "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
         },
         "staticfiles": {
-            # Use WhiteNoise for production static files
             "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
         },
     }
 else:
-    # --- LOCAL DEVELOPMENT STORAGE SETTINGS ---
     STORAGES = {
         "default": {
             "BACKEND": "django.core.files.storage.FileSystemStorage",
@@ -114,22 +101,17 @@ CLOUDINARY_STORAGE = {
     'API_SECRET': os.getenv('CLOUDINARY_API_SECRET'),
 }
 
-# --- END OF NEW BLOCK ---
-
-# ... (keep all settings after this block) ...
-
 # --- OTHER SETTINGS ---
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 REST_FRAMEWORK = {'DEFAULT_AUTHENTICATION_CLASSES': ['rest_framework.authentication.TokenAuthentication'], 'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.IsAuthenticatedOrReadOnly'], 'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination', 'PAGE_SIZE': 10}
 REST_AUTH = {'USER_DETAILS_SERIALIZER': 'community.serializers.UserSerializer', 'REGISTER_SERIALIZER': 'community.serializers.CustomRegisterSerializer'}
 
-# --- CORS SETTINGS ---
+# --- CORS SETTINGS (PRODUCTION-SAFE) ---
 if IS_PRODUCTION:
-    netlify_app_url = os.getenv('NETLIFY_APP_URL')
-    CORS_ALLOWED_ORIGINS = [netlify_app_url] if netlify_app_url else []
-    CORS_TRUSTED_ORIGINS = [netlify_app_url] if netlify_app_url else []
+    # This safely handles the environment variable from Render
+    allowed_origins = os.getenv('NETLIFY_APP_URL', '').split(',')
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in allowed_origins if origin]
+    CORS_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
 else:
     CORS_ALLOWED_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://192.168.31.35:5173']
-
-
