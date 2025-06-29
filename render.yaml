@@ -1,10 +1,12 @@
 services:
   - type: web
-    name: nxtturn-backend-v4 # Use a new name to force a rebuild
+    name: nxtturn-backend-v5 # A new name for a clean build
     env: docker
     plan: free
-    rootDir: Loopline
-    dockerfilePath: ./Dockerfile # <-- ADD THIS LINE
+    
+    # This is the correct key for running migrations with Docker.
+    # It runs AFTER the build and BEFORE the new version is live.
+    releaseCommand: "python manage.py migrate"
     
     envVars:
       - key: DATABASE_URL
