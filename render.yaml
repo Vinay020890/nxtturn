@@ -1,14 +1,13 @@
 services:
   - type: web
-    name: nxtturn-backend
+    name: nxtturn-backend-v2  # <-- CHANGED: Give it a new, unique name
     env: python
+    plan: free                 # Define the plan type (important for free tier)
     rootDir: Loopline
     buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate"
     startCommand: "gunicorn config.wsgi:application"
-    plan: free # Or whichever plan you are on
     nativeEnvironment:
       system_packages:
         - name: libavif-dev
 
-# Note: Your environment variables from the "Environment" tab will still be applied.
-# This file just adds the extra system package instruction.
+        
