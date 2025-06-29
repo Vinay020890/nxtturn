@@ -1,13 +1,12 @@
 services:
   - type: web
-    name: nxtturn-backend-v2  # <-- CHANGED: Give it a new, unique name
+    name: nxtturn-backend-v2
     env: python
-    plan: free                 # Define the plan type (important for free tier)
+    plan: free
     rootDir: Loopline
-    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate"
+    buildCommand: |
+      pip install -r requirements.txt
+      apt-get update && apt-get install -y libavif-dev
+      python manage.py collectstatic --noinput
+      python manage.py migrate
     startCommand: "gunicorn config.wsgi:application"
-    nativeEnvironment:
-      system_packages:
-        - name: libavif-dev
-
-        
