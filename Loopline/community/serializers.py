@@ -210,6 +210,21 @@ class StatusPostSerializer(serializers.ModelSerializer):
             'comment_count', 'media', 'poll' # Added 'poll' here
         ]
 
+     # --- ADD THE NEW METHOD HERE ---
+    def validate_images(self, files):
+        """
+        Custom validation to check for unsupported image types like AVIF.
+        """
+        for f in files:
+            # Check the filename extension
+            if f.name.lower().endswith('.avif'):
+                raise serializers.ValidationError(
+                    f"Unsupported image format: '{f.name}'. Please use JPG, PNG, or WEBP."
+                )
+            # You can add more checks here if needed
+        return files
+    # --- END OF NEW METHOD ---
+
     def validate_poll_data(self, value):
         if not value:
             return None
