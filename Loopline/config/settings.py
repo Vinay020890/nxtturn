@@ -126,8 +126,10 @@ REST_AUTH = {'USER_DETAILS_SERIALIZER': 'community.serializers.UserSerializer', 
 
 # --- CORS SETTINGS ---
 if IS_PRODUCTION:
-    CORS_ALLOWED_ORIGINS = [os.getenv('NETLIFY_APP_URL')]
-    CORS_TRUSTED_ORIGINS = [os.getenv('NETLIFY_APP_URL')]
+    netlify_app_url = os.getenv('NETLIFY_APP_URL')
+    CORS_ALLOWED_ORIGINS = [netlify_app_url] if netlify_app_url else []
+    CORS_TRUSTED_ORIGINS = [netlify_app_url] if netlify_app_url else []
 else:
     CORS_ALLOWED_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://192.168.31.35:5173']
+
 
