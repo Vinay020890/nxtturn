@@ -4,25 +4,23 @@ FROM python:3.11-slim
 # Set the working directory in the container
 WORKDIR /app
 
-# Install system dependencies, including build tools and libavif
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     libavif-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the requirements file into the container
-COPY ./Loopline/requirements.txt .
-
-# Install any needed packages specified in requirements.txt
+# Copy requirements and install Python packages
+COPY ./requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the Django project code into the container
-COPY ./Loopline /app/
+# Copy the entire project code
+COPY . .
 
-# This command now ONLY collects static files.
+# Run collectstatic
 RUN python manage.py collectstatic --noinput
 
-# This is the command that starts the server.
-# It is now back inside the Dockerfile where it belongs for Docker builds.
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:10000"]
+# The CMD instruction will now run migrations first, then start the server.
+# This runs in the final container, so it will have the DATABASE_URL.
+CMD python manage.py migrate && gunicorn config.wsgi:application --bind 0.0.0.0:10000

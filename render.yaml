@@ -3,10 +3,7 @@ services:
     name: nxtturn-backend-v3
     env: docker
     plan: free
-    
-    # This is the correct key for running migrations with Docker.
-    # It runs AFTER the build and BEFORE the new version is live.
-    releaseCommand: "python manage.py migrate"
+    rootDir: Loopline  # <-- This is the crucial line we were missing
     
     envVars:
       - key: DATABASE_URL
