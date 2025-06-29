@@ -1,7 +1,7 @@
 services:
   - type: web
-    name: nxtturn-backend-v2
-    env: docker # <-- CHANGED: We are now using Docker
+    name: nxtturn-backend-v3 # <-- CHANGED: A new unique name
+    env: docker
     plan: free
     
     # This correctly links your existing database
