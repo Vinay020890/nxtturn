@@ -42,6 +42,20 @@ const handleFileChange = (event: Event, type: 'image' | 'video') => {
   const files = target.files;
   if (!files) return;
 
+  // --- NEW VALIDATION LOGIC ---
+  if (type === 'image') {
+    for (const file of Array.from(files)) {
+      const fileName = file.name.toLowerCase();
+      if (fileName.endsWith('.avif') || fileName.endsWith('.heic')) {
+        // Use the existing error display to give the user feedback
+        feedStore.createPostError = `Unsupported file format: '${file.name}'. Please use JPG, PNG, or WEBP.`;
+        target.value = ''; // Clear the input so the invalid file is not kept
+        return; // Stop the function here
+      }
+    }
+  }
+  // --- END OF NEW LOGIC ---
+
   const targetFilesRef = type === 'image' ? selectedImageFiles : selectedVideoFiles;
   const targetPreviewsRef = imagePreviewUrls;
 
