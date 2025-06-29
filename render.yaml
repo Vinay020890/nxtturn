@@ -1,21 +1,12 @@
 services:
   - type: web
     name: nxtturn-backend-v2
-    env: python
+    env: docker # <-- CHANGED: We are now using Docker
     plan: free
-    rootDir: Loopline
-    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate"
-    startCommand: "gunicorn config.wsgi:application"
     
-    # This block connects your existing database
+    # This correctly links your existing database
     envVars:
       - key: DATABASE_URL
         fromDatabase:
           name: nxtturn-db
           property: connectionString
-          
-    # This is the correct block for system packages.
-    # It must be indented under the '- type: web' line.
-    nativeEnvironment:
-      system_packages:
-        - name: libavif-dev
