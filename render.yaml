@@ -1,9 +1,10 @@
 services:
   - type: web
-    name: nxtturn-backend-v3
+    name: nxtturn-backend-v4 # Use a new name to force a rebuild
     env: docker
     plan: free
-    rootDir: Loopline  # <-- This is the crucial line we were missing
+    rootDir: Loopline
+    dockerfilePath: ./Dockerfile # <-- ADD THIS LINE
     
     envVars:
       - key: DATABASE_URL

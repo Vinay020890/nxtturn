@@ -11,16 +11,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libavif-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install Python packages
-COPY ./requirements.txt .
+# Copy requirements file from the current directory (which is Loopline)
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the entire project code
+# Copy the entire project code from the current directory
 COPY . .
 
 # Run collectstatic
 RUN python manage.py collectstatic --noinput
 
 # The CMD instruction will now run migrations first, then start the server.
-# This runs in the final container, so it will have the DATABASE_URL.
 CMD python manage.py migrate && gunicorn config.wsgi:application --bind 0.0.0.0:10000
