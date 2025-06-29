@@ -22,3 +22,7 @@ COPY ./Loopline /app/
 
 # This command now ONLY collects static files.
 RUN python manage.py collectstatic --noinput
+
+# This is the command that starts the server.
+# It is now back inside the Dockerfile where it belongs for Docker builds.
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:10000"]

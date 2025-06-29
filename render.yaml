@@ -4,10 +4,9 @@ services:
     env: docker
     plan: free
     
-    # The start command is now a multi-step script.
-    # It first runs migrate, then starts the server.
-    # Because this runs in the live container, it has the DATABASE_URL.
-    startCommand: "python manage.py migrate && gunicorn config.wsgi:application --bind 0.0.0.0:10000"
+    # This is the correct key for running migrations with Docker.
+    # It runs AFTER the build and BEFORE the new version is live.
+    releaseCommand: "python manage.py migrate"
     
     envVars:
       - key: DATABASE_URL
