@@ -4,7 +4,7 @@
 import { getAvatarUrl, buildMediaUrl } from '@/utils/avatars';
 
 // All other imports remain the same
-import { ref, computed, watch, onUnmounted } from 'vue';
+import { ref, computed, watch, onUnmounted, nextTick } from 'vue';
 import type { Post, PostMedia } from '@/stores/feed';
 import { useFeedStore } from '@/stores/feed';
 import { format } from 'date-fns';
@@ -43,10 +43,12 @@ const editableMedia = ref<PostMedia[]>([]);
 const newImageFiles = ref<File[]>([]);
 const newVideoFiles = ref<File[]>([]);
 const mediaToDeleteIds = ref<number[]>([]);
+const editTextAreaRef = ref<HTMLTextAreaElement | null>(null);
 
 // --- State for Options Dropdown Menu ---
 const showOptionsMenu = ref(false);
 const optionsMenuRef = ref<HTMLDivElement | null>(null);
+const postArticleRef = ref<HTMLElement | null>(null);
 
 // --- Computed Properties ---
 const isOwner = computed(() => isAuthenticated.value && currentUser.value?.id === props.post.author.id);
@@ -100,6 +102,14 @@ function toggleEditMode() {
     newImageFiles.value = [];
     newVideoFiles.value = [];
     mediaToDeleteIds.value = [];
+
+    // --- ADD THIS BLOCK ---
+    // Wait for Vue to update the DOM and show the textarea
+    nextTick(() => {
+      editTextAreaRef.value?.focus();
+    });
+    // --- END OF ADDITION ---
+
   }
 }
 function handleNewFiles(event: Event, type: 'image' | 'video') {
@@ -118,6 +128,11 @@ function removeNewFile(index: number, type: 'image' | 'video') {
   targetArray.value.splice(index, 1);
 }
 function getObjectURL(file: File): string { return URL.createObjectURL(file); }
+// In PostItem.vue
+
+// In PostItem.vue
+// Replace the entire function with this one.
+
 async function handleUpdatePost() {
   localEditError.value = null;
   feedStore.updatePostError = null;
@@ -126,17 +141,55 @@ async function handleUpdatePost() {
     localEditError.value = "A post cannot be empty. It must have text or at least one media file.";
     return;
   }
+
   const formData = new FormData();
-  if (editContent.value !== (props.post.content || '')) formData.append('content', editContent.value);
+  if (editContent.value !== (props.post.content || '')) {
+    formData.append('content', editContent.value);
+  }
   newImageFiles.value.forEach(file => formData.append('images', file));
   newVideoFiles.value.forEach(file => formData.append('videos', file));
-  if (mediaToDeleteIds.value.length > 0) formData.append('media_to_delete', JSON.stringify(mediaToDeleteIds.value));
+  if (mediaToDeleteIds.value.length > 0) {
+    formData.append('media_to_delete', JSON.stringify(mediaToDeleteIds.value));
+  }
+  
   let hasChanges = false;
-  for (const _ of formData.entries()) { hasChanges = true; break; }
-  if (!hasChanges) { toggleEditMode(); return; }
+  for (const _ of formData.entries()) {
+    hasChanges = true;
+    break;
+  }
+  if (!hasChanges) {
+    // If no changes, just blur and hide the form.
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    isEditing.value = false;
+    return;
+  }
+
   const success = await feedStore.updatePost(props.post.id, props.post.post_type, formData);
-  if (success) isEditing.value = false;
-  else localEditError.value = feedStore.updatePostError || 'Failed to update post.';
+  
+  if (success) {
+    // --- THE "KITCHEN SINK" FIX FOR STUBBORN CURSOR BUGS ---
+    
+    // 1. Unfocus whatever is currently active.
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    
+    // 2. Forcefully remove any text selection or cursor from the document.
+    // This is a powerful, low-level command that often fixes ghost cursors.
+    window.getSelection()?.removeAllRanges();
+
+    // 3. Move focus to a stable parent element as a final safeguard.
+    postArticleRef.value?.focus();
+
+    // --- END OF FIX ---
+    
+    // Now that focus and selection are cleared, hide the edit form.
+    isEditing.value = false;
+  } else {
+    localEditError.value = feedStore.updatePostError || 'Failed to update post.';
+  }
 }
 function linkifyContent(text: string | null | undefined): string {
   if (!text) return '';
@@ -157,7 +210,7 @@ async function handleCommentSubmit() {
 </script>
 
 <template>
-  <article class="bg-white border border-gray-200 rounded-lg shadow-md mb-6">
+  <article ref="postArticleRef" tabindex="-1" class="bg-white border border-gray-200 rounded-lg shadow-md mb-6 focus:outline-none">
     <header class="flex items-center justify-between p-4 border-b border-gray-200">
       <div class="flex items-center">
         <!-- The getAvatarUrl function is already correct because we updated its source file -->
@@ -217,7 +270,7 @@ async function handleCommentSubmit() {
     <div v-else class="p-4">
       <form @submit.prevent="handleUpdatePost" novalidate>
         <div v-if="localEditError" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md mb-4">{{ localEditError }}</div>
-        <MentionAutocomplete v-model="editContent" placeholder="Edit your post..." :rows="3" class="text-base"/>
+        <MentionAutocomplete ref="editTextAreaRef" v-model="editContent" placeholder="Edit your post..." :rows="3" class="text-base"/>
         <div class="mt-2 flex flex-wrap gap-2">
           <div v-for="media in editableMedia" :key="`edit-${media.id}`" class="relative w-20 h-20">
             <span v-if="media.media_type === 'video'" class="w-full h-full bg-gray-200 flex items-center justify-center text-2xl text-gray-500 rounded-md">▶</span>

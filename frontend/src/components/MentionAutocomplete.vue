@@ -15,6 +15,8 @@ const props = defineProps<{
 
 const emit = defineEmits(['update:modelValue']);
 
+defineExpose({ blur: () => textareaRef.value?.blur() });
+
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const showDropdown = ref(false);
 const isLoading = ref(false);
