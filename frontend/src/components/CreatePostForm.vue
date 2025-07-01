@@ -1,86 +1,114 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
 import { useFeedStore } from '@/stores/feed';
-import { useAuthStore } from '@/stores/auth'; // <-- NEW: Import auth store
+import { useAuthStore } from '@/stores/auth';
 import { storeToRefs } from 'pinia';
-import { getAvatarUrl } from '@/utils/avatars'; // <-- NEW: Import avatar utility
+import { getAvatarUrl } from '@/utils/avatars';
 import MentionAutocomplete from './MentionAutocomplete.vue';
 
 // --- Stores and State ---
 const feedStore = useFeedStore();
-const authStore = useAuthStore(); // <-- NEW: Initialize auth store
+const authStore = useAuthStore();
 const { isCreatingPost, createPostError } = storeToRefs(feedStore);
-const { currentUser } = storeToRefs(authStore); // <-- NEW: Get current user for avatar
+const { currentUser } = storeToRefs(authStore);
 
 // --- Form State ---
 const postContent = ref('');
 const selectedImageFiles = ref<File[]>([]);
-const selectedVideoFiles = ref<File[]>([]);
+const selectedVideoFiles = ref<File[]>([]); // We keep this for UI, but will block uploads
 const imagePreviewUrls = ref<string[]>([]);
 const showPollCreator = ref(false);
 const pollQuestion = ref('');
 const pollOptions = ref<string[]>(['', '']);
 
+// --- Validation Constants ---
+const MAX_FILE_SIZE_MB = 10;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+const SUPPORTED_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
 // --- Computed Properties ---
 const isSubmittable = computed(() => {
   const hasContent = postContent.value.trim() !== '';
-  const hasMedia = selectedImageFiles.value.length > 0 || selectedVideoFiles.value.length > 0;
+  // Note: We don't check selectedVideoFiles here as they will be blocked from being added.
+  const hasMedia = selectedImageFiles.value.length > 0;
   const isPollValid = showPollCreator.value && pollQuestion.value.trim() !== '' && pollOptions.value.length >= 2 && pollOptions.value.every(opt => opt.trim() !== '');
   return hasContent || hasMedia || isPollValid;
 });
 
 // --- Watchers ---
-watch([postContent, selectedImageFiles, selectedVideoFiles, pollQuestion, pollOptions], () => {
+watch([postContent, selectedImageFiles, pollQuestion, pollOptions], () => {
   if (createPostError.value) {
     feedStore.createPostError = null;
   }
 }, { deep: true });
 
-// --- Methods (remain the same) ---
+// --- Methods ---
+
+// --- NEW & IMPROVED handleFileChange ---
 const handleFileChange = (event: Event, type: 'image' | 'video') => {
   const target = event.target as HTMLInputElement;
   const files = target.files;
   if (!files) return;
 
-  // --- NEW VALIDATION LOGIC ---
+  // Clear any existing errors before validating new files
+  if (createPostError.value) {
+    feedStore.createPostError = null;
+  }
+
+  // VALIDATION FOR VIDEOS (Block them)
+  if (type === 'video') {
+    feedStore.createPostError = 'Video uploads are not supported at this time.';
+    target.value = ''; // Clear the input
+    return; // Stop processing immediately
+  }
+
+  // VALIDATION FOR IMAGES (Size and Type)
   if (type === 'image') {
     for (const file of Array.from(files)) {
-      const fileName = file.name.toLowerCase();
-      if (fileName.endsWith('.avif') || fileName.endsWith('.heic')) {
-        // Use the existing error display to give the user feedback
-        feedStore.createPostError = `Unsupported file format: '${file.name}'. Please use JPG, PNG, or WEBP.`;
-        target.value = ''; // Clear the input so the invalid file is not kept
-        return; // Stop the function here
+      // 1. Check file size
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        feedStore.createPostError = `File '${file.name}' is too large. Maximum size is ${MAX_FILE_SIZE_MB} MB.`;
+        target.value = ''; // Clear the input
+        return; // Stop processing all files if one is invalid
+      }
+      
+      // 2. Check file type (using MIME types is more reliable)
+      if (!SUPPORTED_IMAGE_MIME_TYPES.includes(file.type)) {
+        feedStore.createPostError = `Unsupported file format: '${file.name}'. Please use JPG, PNG, GIF, or WEBP.`;
+        target.value = ''; // Clear the input
+        return; // Stop processing all files if one is invalid
       }
     }
   }
-  // --- END OF NEW LOGIC ---
 
-  const targetFilesRef = type === 'image' ? selectedImageFiles : selectedVideoFiles;
+  // --- If all validations pass, add the files ---
+  // (This part is your original logic for adding valid files)
+  const targetFilesRef = selectedImageFiles;
   const targetPreviewsRef = imagePreviewUrls;
 
   for (const file of Array.from(files)) {
     targetFilesRef.value.push(file);
-    if (type === 'image') {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        if (e.target?.result) {
-          targetPreviewsRef.value.push(e.target.result as string);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      if (e.target?.result) {
+        targetPreviewsRef.value.push(e.target.result as string);
+      }
+    };
+    reader.readAsDataURL(file);
   }
   target.value = '';
 };
+// --- END OF NEW & IMPROVED METHOD ---
+
+
 const removeSelectedFile = (index: number, type: 'image' | 'video') => {
+  // Since videos are blocked, we only need to handle image removal
   if (type === 'image') {
     selectedImageFiles.value.splice(index, 1);
     imagePreviewUrls.value.splice(index, 1);
-  } else {
-    selectedVideoFiles.value.splice(index, 1);
   }
 };
+
 const clearForm = () => {
   postContent.value = '';
   selectedImageFiles.value = [];
@@ -90,6 +118,7 @@ const clearForm = () => {
   pollQuestion.value = '';
   pollOptions.value = ['', ''];
 };
+
 const handleSubmit = async () => {
   if (!isSubmittable.value) return;
   if (createPostError.value) feedStore.createPostError = null;
@@ -98,8 +127,8 @@ const handleSubmit = async () => {
   if (postContent.value.trim()) {
     formData.append('content', postContent.value.trim());
   }
+  // Only append images, as videos are now blocked by the validation
   selectedImageFiles.value.forEach(file => formData.append('images', file));
-  selectedVideoFiles.value.forEach(file => formData.append('videos', file));
   
   if (showPollCreator.value && pollQuestion.value.trim() && pollOptions.value.length >= 2) {
     const validOptions = pollOptions.value.map(o => o.trim()).filter(Boolean);
@@ -117,11 +146,13 @@ const handleSubmit = async () => {
     clearForm();
   }
 };
+
 const addPollOption = () => {
   if (pollOptions.value.length < 5) {
     pollOptions.value.push('');
   }
 };
+
 const removePollOption = (index: number) => {
   if (pollOptions.value.length > 2) {
     pollOptions.value.splice(index, 1);
