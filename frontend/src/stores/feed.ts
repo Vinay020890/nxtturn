@@ -14,14 +14,14 @@ interface PostAuthor {
   picture: string | null;
 }
 
-// --- NEW: Interface for a single media item in a post gallery ---
+// Interface for a single media item in a post gallery
 export interface PostMedia {
   id: number;
   media_type: 'image' | 'video';
   file_url: string;
 }
 
-// --- NEW: Interfaces for Polls ---
+// Interfaces for Polls
 export interface PollOption {
   id: number;
   text: string;
@@ -36,9 +36,7 @@ export interface Poll {
   user_vote: number | null; // The ID of the option the user voted for
 }
 
-// ==========================================
-// === UPDATED Post Interface Definition ===
-// ==========================================
+// The main Post interface definition
 export interface Post {
   id: number;
   post_type: string;
@@ -48,13 +46,7 @@ export interface Post {
   title: string | null;
   content: string | null;
   media: PostMedia[];
-
-  // =========================================================
-  // v v v ADD THIS LINE TO FIX THE ERROR v v v
-  // =========================================================
   poll: Poll | null; 
-  // =========================================================
-  
   like_count: number;
   comment_count?: number;
   is_liked_by_user: boolean;
@@ -64,7 +56,6 @@ export interface Post {
   isDeleting?: boolean; 
   isUpdating?: boolean;
 }
-// ==========================================
 
 // Define the structure of the paginated response from the API
 interface PaginatedFeedResponse {
@@ -131,9 +122,6 @@ export const useFeedStore = defineStore('feed', () => {
     }
   }
 
-  // ==========================================
-  // === UPDATED createPost Action ===
-  // ==========================================
   async function createPost(postData: FormData): Promise<Post | null> {
     isCreatingPost.value = true;
     createPostError.value = null;
@@ -145,217 +133,205 @@ export const useFeedStore = defineStore('feed', () => {
         return null;
       }
 
-      // Axios handles the 'multipart/form-data' Content-Type automatically for FormData
       const response = await axiosInstance.post<Post>('/posts/', postData);
-
-      // Add frontend flags to the newly created post
       const newPostResponseData = { ...response.data, isLiking: false, isDeleting: false };
       
-      // Add to the top of the feed
       posts.value.unshift(newPostResponseData);
 
       return newPostResponseData;
 
     } catch (err: any) {
       console.error("FeedStore: Error creating post:", err);
+
+      // --- NEW, ROBUST ERROR PARSING LOGIC ---
+      let errorMessage = 'An unexpected error occurred while creating the post.';
+      
       if (err.response && err.response.data) {
-          let specificErrorMessage = '';
-          if (typeof err.response.data === 'object' && err.response.data !== null) {
-              // Handle new 'images' and 'videos' error fields from the backend
-              const errorKeys = ['content', 'images', 'videos', 'non_field_errors', 'detail'];
-              errorKeys.forEach(key => {
-                if (err.response.data[key]) {
-                  specificErrorMessage += (Array.isArray(err.response.data[key]) ? err.response.data[key].join(' ') : err.response.data[key]) + ' ';
-                }
-              });
+        const errorData = err.response.data;
+        // Check for DRF's common error structures
+        if (typeof errorData === 'object' && errorData !== null) {
+          // Find the first error message available from common keys
+          const errorKeys = ['images', 'videos', 'content', 'poll_data', 'detail', 'non_field_errors'];
+          const firstErrorKey = errorKeys.find(key => errorData[key]);
+
+          if (firstErrorKey) {
+            const errorValue = errorData[firstErrorKey];
+            // If the error is an array of messages, take the first one. Otherwise, convert to string.
+            errorMessage = Array.isArray(errorValue) ? errorValue[0] : String(errorValue);
           }
-          
-          if (specificErrorMessage.trim()) {
-              createPostError.value = specificErrorMessage.trim();
-          } else if (typeof err.response.data === 'string') {
-              createPostError.value = err.response.data;
-          } else { 
-              createPostError.value = "Failed to create post. Invalid input or server error.";
-          }
+        } else if (typeof errorData === 'string' && errorData) {
+          // If the error response is just a plain string
+          errorMessage = errorData;
+        }
       } else if (err.message) {
-          createPostError.value = err.message;
-      } else {
-          createPostError.value = 'An unexpected error occurred while creating the post.';
+        // Fallback to the axios-level error message
+        errorMessage = err.message;
       }
+      
+      createPostError.value = errorMessage;
+      // --- END OF NEW LOGIC ---
+
       return null;
     } finally {
       isCreatingPost.value = false;
     }
   }
-  // ==========================================
 
   async function toggleLike(
     postId: number,
     postType: string,
     contentTypeId: number,
     objectId: number
-) {
-  const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
-  let localPostRef: Post | null = null;
-
-  if (postIndex !== -1) {
-    localPostRef = posts.value[postIndex];
-    if (localPostRef.isLiking) return;
-    localPostRef.isLiking = true;
-    const originalLikedStatus = localPostRef.is_liked_by_user;
-    const originalLikeCount = localPostRef.like_count;
-    
-    localPostRef.is_liked_by_user = !localPostRef.is_liked_by_user;
-    localPostRef.like_count += localPostRef.is_liked_by_user ? 1 : -1;
-    
-    try {
-      const apiUrl = `/content/${contentTypeId}/${objectId}/like/`;
-      const response = await axiosInstance.post<{ liked: boolean, like_count: number }>(apiUrl);
-      localPostRef.is_liked_by_user = response.data.liked;
-      localPostRef.like_count = response.data.like_count;
-    } catch (err: any) {
-      localPostRef.is_liked_by_user = originalLikedStatus;
-      localPostRef.like_count = originalLikeCount;
-      error.value = err.response?.data?.detail || err.message || 'Failed to toggle like.';
-      throw err;
-    } finally {
-      localPostRef.isLiking = false;
-    }
-  } else {
-    // If post not in feed, just call the API. Profile store will handle UI on profile page.
-    try {
-      const apiUrl = `/content/${contentTypeId}/${objectId}/like/`;
-      await axiosInstance.post(apiUrl);
-    } catch (err: any) {
-      console.error(`FeedStore: Error toggling like for non-local object ${objectId}:`, err);
-      throw err;
-    }
-  }
-}
-
-function incrementCommentCount(postId: number, postType: string) {
-  const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
-  if (postIndex !== -1) {
-    posts.value[postIndex].comment_count = (posts.value[postIndex].comment_count || 0) + 1;
-  }
-}
-
-async function deletePost(postId: number, postType: string): Promise<boolean> {
+  ) {
     const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
+    let localPostRef: Post | null = null;
+
     if (postIndex !== -1) {
-        posts.value[postIndex].isDeleting = true;
-    }
-
-    try {
-        if (postType.toLowerCase() !== 'statuspost') {
-            throw new Error(`Deletion for post_type '${postType}' is not supported here.`);
-        }
-        await axiosInstance.delete(`/posts/${postId}/`);
-        if (postIndex !== -1) {
-            posts.value.splice(postIndex, 1);
-        }
-        return true;
-    } catch (err: any) {
-        deletePostError.value = err.response?.data?.detail || err.message || 'Failed to delete post.';
-        if (postIndex !== -1 && posts.value[postIndex]) {
-            posts.value[postIndex].isDeleting = false;
-        }
-        return false;
-    }
-}
-
-async function updatePost(postId: number, postType: string, formData: FormData): Promise<boolean> {
-    const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
-    if (postIndex !== -1) {
-        posts.value[postIndex].isUpdating = true;
-    }
-
-    try {
-        if (postType.toLowerCase() !== 'statuspost') {
-            throw new Error(`Update for post_type '${postType}' is not supported here.`);
-        }
-        const response = await axiosInstance.patch<Post>(`/posts/${postId}/`, formData);
-        if (postIndex !== -1) {
-            posts.value[postIndex] = { ...posts.value[postIndex], ...response.data, isUpdating: false };
-        }
-        const profileStore = useProfileStore();
-        profileStore.updateUserPost(response.data);
-        return true;
-    } catch (err: any) {
-        updatePostError.value = err.response?.data?.detail || 'Failed to update post.';
-        if (postIndex !== -1 && posts.value[postIndex]) {
-            posts.value[postIndex].isUpdating = false;
-        }
-        return false;
-    }
-}
-
-// In src/stores/feed.ts, inside useFeedStore...
-
-async function castVote(pollId: number, optionId: number): Promise<void> {
-  const postWithPoll = posts.value.find(p => p.poll?.id === pollId);
-  if (!postWithPoll || !postWithPoll.poll) return;
-
-  const poll = postWithPoll.poll;
-  const previousVoteId = poll.user_vote;
-  const isRetracting = previousVoteId === optionId;
-
-  // --- Complex Optimistic UI Update ---
-  // Store original state for potential rollback
-  const originalPollState = JSON.parse(JSON.stringify(poll));
-
-  // 1. If there was a previous vote, decrement its count.
-  if (previousVoteId !== null) {
-    const prevOption = poll.options.find(o => o.id === previousVoteId);
-    if (prevOption) prevOption.vote_count--;
-  }
-
-  // 2. If this is a NEW vote (not a retraction), increment the new option's count.
-  if (!isRetracting) {
-    const newOption = poll.options.find(o => o.id === optionId);
-    if (newOption) newOption.vote_count++;
-  }
-
-  // 3. Adjust total votes and the user's current vote status.
-  if (isRetracting) {
-    poll.total_votes--;
-    poll.user_vote = null; // User has retracted their vote
-  } else {
-    if (previousVoteId === null) {
-      poll.total_votes++; // Only increment total if it was their first vote
-    }
-    poll.user_vote = optionId; // Set the new vote
-  }
-  
-  try {
-    let response;
-    const apiUrl = `/polls/${pollId}/options/${optionId}/vote/`;
-    
-    if (isRetracting) {
-      // Send a DELETE request to retract the vote
-      response = await axiosInstance.delete<Post>(apiUrl);
+      localPostRef = posts.value[postIndex];
+      if (localPostRef.isLiking) return;
+      localPostRef.isLiking = true;
+      const originalLikedStatus = localPostRef.is_liked_by_user;
+      const originalLikeCount = localPostRef.like_count;
+      
+      localPostRef.is_liked_by_user = !localPostRef.is_liked_by_user;
+      localPostRef.like_count += localPostRef.is_liked_by_user ? 1 : -1;
+      
+      try {
+        const apiUrl = `/content/${contentTypeId}/${objectId}/like/`;
+        const response = await axiosInstance.post<{ liked: boolean, like_count: number }>(apiUrl);
+        localPostRef.is_liked_by_user = response.data.liked;
+        localPostRef.like_count = response.data.like_count;
+      } catch (err: any) {
+        localPostRef.is_liked_by_user = originalLikedStatus;
+        localPostRef.like_count = originalLikeCount;
+        error.value = err.response?.data?.detail || err.message || 'Failed to toggle like.';
+        throw err;
+      } finally {
+        localPostRef.isLiking = false;
+      }
     } else {
-      // Send a POST request to cast or change the vote
-      response = await axiosInstance.post<Post>(apiUrl);
+      try {
+        const apiUrl = `/content/${contentTypeId}/${objectId}/like/`;
+        await axiosInstance.post(apiUrl);
+      } catch (err: any) {
+        console.error(`FeedStore: Error toggling like for non-local object ${objectId}:`, err);
+        throw err;
+      }
     }
-
-    // Sync with the authoritative state from the server
-    const updatedPost = response.data;
-    const postIndex = posts.value.findIndex(p => p.id === updatedPost.id);
-    if (postIndex !== -1) {
-      posts.value[postIndex] = { ...posts.value[postIndex], ...updatedPost };
-    }
-
-  } catch (err: any) {
-    // On error, roll back to the original state
-    const postIndex = posts.value.findIndex(p => p.poll?.id === pollId);
-    if (postIndex !== -1) {
-        posts.value[postIndex].poll = originalPollState;
-    }
-    console.error("Failed to cast/retract vote:", err);
-    error.value = err.response?.data?.detail || "Failed to update vote.";
   }
-}
+
+  function incrementCommentCount(postId: number, postType: string) {
+    const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
+    if (postIndex !== -1) {
+      posts.value[postIndex].comment_count = (posts.value[postIndex].comment_count || 0) + 1;
+    }
+  }
+
+  async function deletePost(postId: number, postType: string): Promise<boolean> {
+      const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
+      if (postIndex !== -1) {
+          posts.value[postIndex].isDeleting = true;
+      }
+
+      try {
+          if (postType.toLowerCase() !== 'statuspost') {
+              throw new Error(`Deletion for post_type '${postType}' is not supported here.`);
+          }
+          await axiosInstance.delete(`/posts/${postId}/`);
+          if (postIndex !== -1) {
+              posts.value.splice(postIndex, 1);
+          }
+          return true;
+      } catch (err: any) {
+          deletePostError.value = err.response?.data?.detail || err.message || 'Failed to delete post.';
+          if (postIndex !== -1 && posts.value[postIndex]) {
+              posts.value[postIndex].isDeleting = false;
+          }
+          return false;
+      }
+  }
+
+  async function updatePost(postId: number, postType: string, formData: FormData): Promise<boolean> {
+      const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
+      if (postIndex !== -1) {
+          posts.value[postIndex].isUpdating = true;
+      }
+
+      try {
+          if (postType.toLowerCase() !== 'statuspost') {
+              throw new Error(`Update for post_type '${postType}' is not supported here.`);
+          }
+          const response = await axiosInstance.patch<Post>(`/posts/${postId}/`, formData);
+          if (postIndex !== -1) {
+              posts.value[postIndex] = { ...posts.value[postIndex], ...response.data, isUpdating: false };
+          }
+          const profileStore = useProfileStore();
+          profileStore.updateUserPost(response.data);
+          return true;
+      } catch (err: any) {
+          updatePostError.value = err.response?.data?.detail || 'Failed to update post.';
+          if (postIndex !== -1 && posts.value[postIndex]) {
+              posts.value[postIndex].isUpdating = false;
+          }
+          return false;
+      }
+  }
+
+  async function castVote(pollId: number, optionId: number): Promise<void> {
+    const postWithPoll = posts.value.find(p => p.poll?.id === pollId);
+    if (!postWithPoll || !postWithPoll.poll) return;
+
+    const poll = postWithPoll.poll;
+    const previousVoteId = poll.user_vote;
+    const isRetracting = previousVoteId === optionId;
+
+    const originalPollState = JSON.parse(JSON.stringify(poll));
+
+    if (previousVoteId !== null) {
+      const prevOption = poll.options.find(o => o.id === previousVoteId);
+      if (prevOption) prevOption.vote_count--;
+    }
+
+    if (!isRetracting) {
+      const newOption = poll.options.find(o => o.id === optionId);
+      if (newOption) newOption.vote_count++;
+    }
+
+    if (isRetracting) {
+      poll.total_votes--;
+      poll.user_vote = null;
+    } else {
+      if (previousVoteId === null) {
+        poll.total_votes++;
+      }
+      poll.user_vote = optionId;
+    }
+    
+    try {
+      let response;
+      const apiUrl = `/polls/${pollId}/options/${optionId}/vote/`;
+      
+      if (isRetracting) {
+        response = await axiosInstance.delete<Post>(apiUrl);
+      } else {
+        response = await axiosInstance.post<Post>(apiUrl);
+      }
+
+      const updatedPost = response.data;
+      const postIndex = posts.value.findIndex(p => p.id === updatedPost.id);
+      if (postIndex !== -1) {
+        posts.value[postIndex] = { ...posts.value[postIndex], ...updatedPost };
+      }
+
+    } catch (err: any) {
+      const postIndex = posts.value.findIndex(p => p.poll?.id === pollId);
+      if (postIndex !== -1) {
+          posts.value[postIndex].poll = originalPollState;
+      }
+      console.error("Failed to cast/retract vote:", err);
+      error.value = err.response?.data?.detail || "Failed to update vote.";
+    }
+  }
 
   return {
     posts,

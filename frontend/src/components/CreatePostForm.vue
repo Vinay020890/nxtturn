@@ -15,28 +15,29 @@ const { currentUser } = storeToRefs(authStore);
 // --- Form State ---
 const postContent = ref('');
 const selectedImageFiles = ref<File[]>([]);
-const selectedVideoFiles = ref<File[]>([]); // We keep this for UI, but will block uploads
+const selectedVideoFiles = ref<File[]>([]);
 const imagePreviewUrls = ref<string[]>([]);
 const showPollCreator = ref(false);
 const pollQuestion = ref('');
 const pollOptions = ref<string[]>(['', '']);
 
 // --- Validation Constants ---
-const MAX_FILE_SIZE_MB = 10;
+const MAX_FILE_SIZE_MB = 200; 
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 const SUPPORTED_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+const SUPPORTED_VIDEO_MIME_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
+
 
 // --- Computed Properties ---
 const isSubmittable = computed(() => {
   const hasContent = postContent.value.trim() !== '';
-  // Note: We don't check selectedVideoFiles here as they will be blocked from being added.
-  const hasMedia = selectedImageFiles.value.length > 0;
+  const hasMedia = selectedImageFiles.value.length > 0 || selectedVideoFiles.value.length > 0;
   const isPollValid = showPollCreator.value && pollQuestion.value.trim() !== '' && pollOptions.value.length >= 2 && pollOptions.value.every(opt => opt.trim() !== '');
   return hasContent || hasMedia || isPollValid;
 });
 
 // --- Watchers ---
-watch([postContent, selectedImageFiles, pollQuestion, pollOptions], () => {
+watch([postContent, selectedImageFiles, selectedVideoFiles, pollQuestion, pollOptions], () => {
   if (createPostError.value) {
     feedStore.createPostError = null;
   }
@@ -44,68 +45,67 @@ watch([postContent, selectedImageFiles, pollQuestion, pollOptions], () => {
 
 // --- Methods ---
 
-// --- NEW & IMPROVED handleFileChange ---
+// --- The Final handleFileChange Function ---
 const handleFileChange = (event: Event, type: 'image' | 'video') => {
   const target = event.target as HTMLInputElement;
   const files = target.files;
   if (!files) return;
 
-  // Clear any existing errors before validating new files
   if (createPostError.value) {
     feedStore.createPostError = null;
   }
+  
+  const filesToProcess = Array.from(files);
+  
+  // --- FINAL LOGIC: Allow AVIF everywhere ---
+  const allowedImageTypes = [...SUPPORTED_IMAGE_MIME_TYPES, 'image/avif'];
 
-  // VALIDATION FOR VIDEOS (Block them)
-  if (type === 'video') {
-    feedStore.createPostError = 'Video uploads are not supported at this time.';
-    target.value = ''; // Clear the input
-    return; // Stop processing immediately
-  }
+  for (const file of filesToProcess) {
+    // Size check ONLY runs in production.
+    if (!import.meta.env.DEV && file.size > MAX_FILE_SIZE_BYTES) {
+      feedStore.createPostError = `File '${file.name}' is too large. Maximum size is ${MAX_FILE_SIZE_MB} MB.`;
+      target.value = '';
+      return;
+    }
 
-  // VALIDATION FOR IMAGES (Size and Type)
-  if (type === 'image') {
-    for (const file of Array.from(files)) {
-      // 1. Check file size
-      if (file.size > MAX_FILE_SIZE_BYTES) {
-        feedStore.createPostError = `File '${file.name}' is too large. Maximum size is ${MAX_FILE_SIZE_MB} MB.`;
-        target.value = ''; // Clear the input
-        return; // Stop processing all files if one is invalid
-      }
-      
-      // 2. Check file type (using MIME types is more reliable)
-      if (!SUPPORTED_IMAGE_MIME_TYPES.includes(file.type)) {
-        feedStore.createPostError = `Unsupported file format: '${file.name}'. Please use JPG, PNG, GIF, or WEBP.`;
-        target.value = ''; // Clear the input
-        return; // Stop processing all files if one is invalid
-      }
+    // Type-specific validation (runs in all environments)
+    if (type === 'image' && !allowedImageTypes.includes(file.type)) {
+      feedStore.createPostError = `Unsupported image format: '${file.name}'. Please use JPG, PNG, GIF, WEBP, or AVIF.`;
+      target.value = '';
+      return;
+    }
+    
+    if (type === 'video' && !SUPPORTED_VIDEO_MIME_TYPES.includes(file.type)) {
+      feedStore.createPostError = `Unsupported video format: '${file.name}'. Please use MP4, WebM, or MOV.`;
+      target.value = '';
+      return;
     }
   }
 
-  // --- If all validations pass, add the files ---
-  // (This part is your original logic for adding valid files)
-  const targetFilesRef = selectedImageFiles;
-  const targetPreviewsRef = imagePreviewUrls;
-
-  for (const file of Array.from(files)) {
-    targetFilesRef.value.push(file);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      if (e.target?.result) {
-        targetPreviewsRef.value.push(e.target.result as string);
-      }
-    };
-    reader.readAsDataURL(file);
+  // If validation passes, add files to the correct list
+  for (const file of filesToProcess) {
+    if (type === 'video') {
+      selectedVideoFiles.value.push(file);
+    } else {
+      selectedImageFiles.value.push(file);
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        if (e.target?.result) {
+          imagePreviewUrls.value.push(e.target.result as string);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
   }
   target.value = '';
 };
-// --- END OF NEW & IMPROVED METHOD ---
-
 
 const removeSelectedFile = (index: number, type: 'image' | 'video') => {
-  // Since videos are blocked, we only need to handle image removal
   if (type === 'image') {
     selectedImageFiles.value.splice(index, 1);
     imagePreviewUrls.value.splice(index, 1);
+  } else {
+    selectedVideoFiles.value.splice(index, 1);
   }
 };
 
@@ -117,6 +117,7 @@ const clearForm = () => {
   showPollCreator.value = false;
   pollQuestion.value = '';
   pollOptions.value = ['', ''];
+  feedStore.createPostError = null;
 };
 
 const handleSubmit = async () => {
@@ -127,8 +128,9 @@ const handleSubmit = async () => {
   if (postContent.value.trim()) {
     formData.append('content', postContent.value.trim());
   }
-  // Only append images, as videos are now blocked by the validation
+  
   selectedImageFiles.value.forEach(file => formData.append('images', file));
+  selectedVideoFiles.value.forEach(file => formData.append('videos', file));
   
   if (showPollCreator.value && pollQuestion.value.trim() && pollOptions.value.length >= 2) {
     const validOptions = pollOptions.value.map(o => o.trim()).filter(Boolean);
@@ -215,11 +217,11 @@ const removePollOption = (index: number) => {
         <div class="flex gap-4">
           <label for="postImageInput" class="text-gray-500 hover:text-blue-500 cursor-pointer transition p-2 rounded-full hover:bg-blue-100">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-            <input type="file" id="postImageInput" @change="handleFileChange($event, 'image')" multiple accept="image/*" class="hidden">
+            <input type="file" id="postImageInput" @change="handleFileChange($event, 'image')" multiple accept="image/jpeg,image/png,image/gif,image/webp,image/avif" class="hidden">
           </label>
           <label for="postVideoInput" class="text-gray-500 hover:text-blue-500 cursor-pointer transition p-2 rounded-full hover:bg-blue-100">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-            <input type="file" id="postVideoInput" @change="handleFileChange($event, 'video')" multiple accept="video/*" class="hidden">
+            <input type="file" id="postVideoInput" @change="handleFileChange($event, 'video')" multiple accept="video/mp4,video/webm,video/quicktime" class="hidden">
           </label>
           <button @click="showPollCreator = !showPollCreator" type="button" class="text-gray-500 hover:text-blue-500 cursor-pointer transition p-2 rounded-full hover:bg-blue-100" :class="{'text-blue-500 bg-blue-100': showPollCreator}">
              <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>

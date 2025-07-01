@@ -181,7 +181,7 @@ class StatusPostSerializer(serializers.ModelSerializer):
 
     # --- Fields for Media ---
     media = PostMediaSerializer(many=True, read_only=True)
-    images = serializers.ListField(child=serializers.ImageField(use_url=False), write_only=True, required=False)
+    images = serializers.ListField(child=serializers.FileField(use_url=False), write_only=True, required=False)
     videos = serializers.ListField(child=serializers.FileField(use_url=False), write_only=True, required=False)
     media_to_delete = serializers.CharField(write_only=True, required=False)
 
@@ -211,18 +211,18 @@ class StatusPostSerializer(serializers.ModelSerializer):
         ]
 
      # --- ADD THE NEW METHOD HERE ---
-    def validate_images(self, files):
-        """
-        Custom validation to check for unsupported image types like AVIF.
-        """
-        for f in files:
-            # Check the filename extension
-            if f.name.lower().endswith('.avif'):
-                raise serializers.ValidationError(
-                    f"Unsupported image format: '{f.name}'. Please use JPG, PNG, or WEBP."
-                )
-            # You can add more checks here if needed
-        return files
+    # def validate_images(self, files):
+    #    """
+    #    Custom validation to check for unsupported image types like AVIF.
+    #   """
+    #    for f in files:
+    #        # Check the filename extension
+    #        if f.name.lower().endswith('.avif'):
+    #            raise serializers.ValidationError(
+    #                f"Unsupported image format: '{f.name}'. Please use JPG, PNG, or WEBP."
+    #            )
+    #        # You can add more checks here if needed
+    #    return files
     # --- END OF NEW METHOD ---
 
     def validate_poll_data(self, value):
