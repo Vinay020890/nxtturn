@@ -43,7 +43,8 @@ const editableMedia = ref<PostMedia[]>([]);
 const newImageFiles = ref<File[]>([]);
 const newVideoFiles = ref<File[]>([]);
 const mediaToDeleteIds = ref<number[]>([]);
-const editTextAreaRef = ref<HTMLTextAreaElement | null>(null);
+// const editTextAreaRef = ref<HTMLTextAreaElement | null>(null);
+const editTextAreaRef = ref<{ blur: () => void; focus: () => void; } | null>(null);
 
 // --- State for Options Dropdown Menu ---
 const showOptionsMenu = ref(false);

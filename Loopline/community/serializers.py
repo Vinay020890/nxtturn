@@ -183,11 +183,29 @@ class StatusPostSerializer(serializers.ModelSerializer):
     media = PostMediaSerializer(many=True, read_only=True)
     images = serializers.ListField(child=serializers.FileField(use_url=False), write_only=True, required=False)
     videos = serializers.ListField(child=serializers.FileField(use_url=False), write_only=True, required=False)
-    media_to_delete = serializers.CharField(write_only=True, required=False)
+    media_to_delete = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     # --- NEW: Fields for Polls ---
     poll = PollSerializer(read_only=True, allow_null=True)
     poll_data = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
+
+    # --- 2. ADD THE NEW METHOD HERE ---
+    def validate_media_to_delete(self, value):
+        """
+        Custom validator to parse a JSON string of IDs from FormData
+        into a Python list of integers.
+        """
+        if not value:
+            return []
+        try:
+            ids = json.loads(value)
+            if not isinstance(ids, list):
+                raise serializers.ValidationError("media_to_delete must be a JSON-formatted array.")
+            return [int(id_val) for id_val in ids]
+        except (json.JSONDecodeError, ValueError, TypeError):
+            raise serializers.ValidationError("Invalid format. media_to_delete must be a JSON-formatted array of integers.")
+    # --- END OF NEW METHOD ---
 
     class Meta:
         model = StatusPost
@@ -253,7 +271,12 @@ class StatusPostSerializer(serializers.ModelSerializer):
         is_update = self.instance is not None
         
         # Determine current and incoming values
-        content = data.get('content', self.instance.content if is_update else '').strip()
+        # --- THIS IS THE FIX ---
+        # Get the content from the incoming data, or fall back to the existing instance's content.
+        # Crucially, if that is also None, fall back to an empty string '' BEFORE trying to strip().
+        content = (data.get('content', self.instance.content if is_update else None) or '').strip()
+        # --- END OF FIX ---
+        
         new_images = data.get('images', [])
         new_videos = data.get('videos', [])
         poll_data = data.get('poll_data')
