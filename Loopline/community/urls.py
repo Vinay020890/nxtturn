@@ -11,7 +11,8 @@ urlpatterns = [
     path('users/<str:username>/follow/', views.FollowToggleView.as_view(), name='follow-toggle'),
     path('users/<str:username>/following/', views.FollowingListView.as_view(), name='following-list'),
     path('users/<str:username>/followers/', views.FollowersListView.as_view(), name='followers-list'),
-    path('search/users/', views.UserSearchAPIView.as_view(), name='user-search'), # <-- ADDED THIS LINE
+    path('search/users/', views.UserSearchAPIView.as_view(), name='user-search'), 
+    path('search/content/', views.ContentSearchAPIView.as_view(), name='content-search'),
 
     # --- Status Posts ---
     path('posts/', views.StatusPostListCreateView.as_view(), name='statuspost-list-create'),

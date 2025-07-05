@@ -126,6 +126,43 @@ class UserSearchAPIView(generics.ListAPIView):
 
         # Order by our new priority field first, then alphabetically by username.
         return queryset.order_by('priority', 'username')
+    
+
+
+class ContentSearchAPIView(generics.ListAPIView):
+    """
+    API endpoint for searching StatusPost content.
+    Accepts a search query parameter 'q'.
+    """
+    serializer_class = StatusPostSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination # Use our existing pagination
+
+    def get_queryset(self):
+        """
+        Filter posts based on the 'q' query parameter.
+        """
+        query = self.request.query_params.get('q', None)
+
+        if not query or not query.strip():
+            # If no query is provided, return no results.
+            return StatusPost.objects.none()
+
+        # Perform a case-insensitive search on the content of the posts.
+        # This is a good starting point for content search.
+        queryset = StatusPost.objects.filter(
+            content__icontains=query
+        ).select_related(
+            'author__userprofile'
+        ).prefetch_related(
+            'media', 'likes', 'poll__options', 'poll__votes'
+        ).order_by('-created_at') # Order by most recent first
+
+        return queryset
+
+    def get_serializer_context(self):
+        # Pass request context to the serializer for calculating `is_liked_by_user`
+        return {'request': self.request}
 
 # ==================================
 # Status Post Views

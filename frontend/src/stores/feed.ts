@@ -5,7 +5,7 @@ import axiosInstance from '@/services/axiosInstance';
 import { useAuthStore } from './auth';
 import { useProfileStore } from './profile';
 
-// Define the expected shape of an Author object
+// --- Interfaces (Unchanged) ---
 interface PostAuthor {
   id: number;
   username: string;
@@ -13,30 +13,23 @@ interface PostAuthor {
   last_name: string;
   picture: string | null;
 }
-
-// Interface for a single media item in a post gallery
 export interface PostMedia {
   id: number;
   media_type: 'image' | 'video';
   file_url: string;
 }
-
-// Interfaces for Polls
 export interface PollOption {
   id: number;
   text: string;
   vote_count: number;
 }
-
 export interface Poll {
   id: number;
   question: string;
   options: PollOption[];
   total_votes: number;
-  user_vote: number | null; // The ID of the option the user voted for
+  user_vote: number | null;
 }
-
-// The main Post interface definition
 export interface Post {
   id: number;
   post_type: string;
@@ -56,8 +49,6 @@ export interface Post {
   isDeleting?: boolean; 
   isUpdating?: boolean;
 }
-
-// Define the structure of the paginated response from the API
 interface PaginatedFeedResponse {
   count: number;
   next: string | null;
@@ -65,7 +56,6 @@ interface PaginatedFeedResponse {
   results: Post[];
 }
 
-// Define the store using Setup Store syntax
 export const useFeedStore = defineStore('feed', () => {
   // --- State ---
   const posts = ref<Post[]>([]);
@@ -79,42 +69,61 @@ export const useFeedStore = defineStore('feed', () => {
   const deletePostError = ref<string | null>(null);
   const updatePostError = ref<string | null>(null);
 
+  // --- 1. NEW STATE for the single post view ---
+  const singlePost = ref<Post | null>(null);
+  const isLoadingSinglePost = ref(false);
+  const singlePostError = ref<string | null>(null);
+  // --- END OF NEW STATE ---
+
   const ITEMS_PER_PAGE = 10;
 
   // --- Actions ---
 
+  // --- 2. NEW ACTION to fetch a single post ---
+  async function fetchPostById(postId: number) {
+    isLoadingSinglePost.value = true;
+    singlePostError.value = null;
+    singlePost.value = null;
+
+    try {
+      // NOTE: We assume the endpoint for a single post is /posts/:id/
+      // This is a standard DRF detail view endpoint.
+      const response = await axiosInstance.get<Post>(`/posts/${postId}/`);
+      singlePost.value = response.data;
+    } catch (err: any) {
+      console.error(`FeedStore: Error fetching post ID ${postId}:`, err);
+      singlePostError.value = err.response?.data?.detail || `Post with ID ${postId} not found.`;
+    } finally {
+      isLoadingSinglePost.value = false;
+    }
+  }
+  // --- END OF NEW ACTION ---
+
   async function fetchFeed(page: number = 1) {
     if (isLoading.value) return;
-
     isLoading.value = true;
     error.value = null;
-
     if (page === 1) {
       posts.value = [];
     }
-
     try {
       const authStore = useAuthStore();
       if (!authStore.isAuthenticated) {
         isLoading.value = false;
         return;
       }
-
       const response = await axiosInstance.get<PaginatedFeedResponse>('/feed/', {
         params: { page }
       });
-
       const fetchedPosts = response.data.results.map(post => ({
           ...post,
           isLiking: false,
           isDeleting: false
       }));
-
       posts.value = fetchedPosts;
       currentPage.value = page;
       hasNextPage.value = response.data.next !== null;
       totalPages.value = response.data.count > 0 ? Math.ceil(response.data.count / ITEMS_PER_PAGE) : 1;
-
     } catch (err: any) {
       error.value = err.response?.data?.detail || err.message || 'Failed to fetch feed.';
     } finally {
@@ -125,58 +134,42 @@ export const useFeedStore = defineStore('feed', () => {
   async function createPost(postData: FormData): Promise<Post | null> {
     isCreatingPost.value = true;
     createPostError.value = null;
-
     try {
       const authStore = useAuthStore();
       if (!authStore.isAuthenticated) {
         createPostError.value = "User not authenticated. Please login to post.";
         return null;
       }
-
       const response = await axiosInstance.post<Post>('/posts/', postData);
       const newPostResponseData = { ...response.data, isLiking: false, isDeleting: false };
-      
       posts.value.unshift(newPostResponseData);
-
       return newPostResponseData;
-
     } catch (err: any) {
       console.error("FeedStore: Error creating post:", err);
-
-      // --- NEW, ROBUST ERROR PARSING LOGIC ---
       let errorMessage = 'An unexpected error occurred while creating the post.';
-      
       if (err.response && err.response.data) {
         const errorData = err.response.data;
-        // Check for DRF's common error structures
         if (typeof errorData === 'object' && errorData !== null) {
-          // Find the first error message available from common keys
           const errorKeys = ['images', 'videos', 'content', 'poll_data', 'detail', 'non_field_errors'];
           const firstErrorKey = errorKeys.find(key => errorData[key]);
-
           if (firstErrorKey) {
             const errorValue = errorData[firstErrorKey];
-            // If the error is an array of messages, take the first one. Otherwise, convert to string.
             errorMessage = Array.isArray(errorValue) ? errorValue[0] : String(errorValue);
           }
         } else if (typeof errorData === 'string' && errorData) {
-          // If the error response is just a plain string
           errorMessage = errorData;
         }
       } else if (err.message) {
-        // Fallback to the axios-level error message
         errorMessage = err.message;
       }
-      
       createPostError.value = errorMessage;
-      // --- END OF NEW LOGIC ---
-
       return null;
     } finally {
       isCreatingPost.value = false;
     }
   }
 
+  // --- Other actions (toggleLike, deletePost, etc.) are unchanged ---
   async function toggleLike(
     postId: number,
     postType: string,
@@ -185,9 +178,14 @@ export const useFeedStore = defineStore('feed', () => {
   ) {
     const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
     let localPostRef: Post | null = null;
-
     if (postIndex !== -1) {
       localPostRef = posts.value[postIndex];
+    } else if (singlePost.value && singlePost.value.id === postId) {
+      // Also check the singlePost ref
+      localPostRef = singlePost.value;
+    }
+
+    if (localPostRef) {
       if (localPostRef.isLiking) return;
       localPostRef.isLiking = true;
       const originalLikedStatus = localPostRef.is_liked_by_user;
@@ -219,20 +217,20 @@ export const useFeedStore = defineStore('feed', () => {
       }
     }
   }
-
   function incrementCommentCount(postId: number, postType: string) {
     const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
     if (postIndex !== -1) {
       posts.value[postIndex].comment_count = (posts.value[postIndex].comment_count || 0) + 1;
     }
+     if (singlePost.value && singlePost.value.id === postId) {
+      singlePost.value.comment_count = (singlePost.value.comment_count || 0) + 1;
+    }
   }
-
   async function deletePost(postId: number, postType: string): Promise<boolean> {
       const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
       if (postIndex !== -1) {
           posts.value[postIndex].isDeleting = true;
       }
-
       try {
           if (postType.toLowerCase() !== 'statuspost') {
               throw new Error(`Deletion for post_type '${postType}' is not supported here.`);
@@ -240,6 +238,9 @@ export const useFeedStore = defineStore('feed', () => {
           await axiosInstance.delete(`/posts/${postId}/`);
           if (postIndex !== -1) {
               posts.value.splice(postIndex, 1);
+          }
+           if (singlePost.value && singlePost.value.id === postId) {
+            singlePost.value = null; 
           }
           return true;
       } catch (err: any) {
@@ -250,20 +251,25 @@ export const useFeedStore = defineStore('feed', () => {
           return false;
       }
   }
-
   async function updatePost(postId: number, postType: string, formData: FormData): Promise<boolean> {
       const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
       if (postIndex !== -1) {
           posts.value[postIndex].isUpdating = true;
       }
-
+       if (singlePost.value && singlePost.value.id === postId) {
+        singlePost.value.isUpdating = true;
+      }
       try {
           if (postType.toLowerCase() !== 'statuspost') {
               throw new Error(`Update for post_type '${postType}' is not supported here.`);
           }
           const response = await axiosInstance.patch<Post>(`/posts/${postId}/`, formData);
+          const updatedData = { ...response.data, isUpdating: false };
           if (postIndex !== -1) {
-              posts.value[postIndex] = { ...posts.value[postIndex], ...response.data, isUpdating: false };
+              posts.value[postIndex] = { ...posts.value[postIndex], ...updatedData };
+          }
+          if (singlePost.value && singlePost.value.id === postId) {
+            singlePost.value = { ...singlePost.value, ...updatedData };
           }
           const profileStore = useProfileStore();
           profileStore.updateUserPost(response.data);
@@ -273,30 +279,27 @@ export const useFeedStore = defineStore('feed', () => {
           if (postIndex !== -1 && posts.value[postIndex]) {
               posts.value[postIndex].isUpdating = false;
           }
+          if (singlePost.value && singlePost.value.id === postId) {
+            singlePost.value.isUpdating = false;
+          }
           return false;
       }
   }
-
   async function castVote(pollId: number, optionId: number): Promise<void> {
-    const postWithPoll = posts.value.find(p => p.poll?.id === pollId);
+    const postWithPoll = posts.value.find(p => p.poll?.id === pollId) || (singlePost.value?.poll?.id === pollId ? singlePost.value : null);
     if (!postWithPoll || !postWithPoll.poll) return;
-
     const poll = postWithPoll.poll;
     const previousVoteId = poll.user_vote;
     const isRetracting = previousVoteId === optionId;
-
     const originalPollState = JSON.parse(JSON.stringify(poll));
-
     if (previousVoteId !== null) {
       const prevOption = poll.options.find(o => o.id === previousVoteId);
       if (prevOption) prevOption.vote_count--;
     }
-
     if (!isRetracting) {
       const newOption = poll.options.find(o => o.id === optionId);
       if (newOption) newOption.vote_count++;
     }
-
     if (isRetracting) {
       poll.total_votes--;
       poll.user_vote = null;
@@ -306,34 +309,38 @@ export const useFeedStore = defineStore('feed', () => {
       }
       poll.user_vote = optionId;
     }
-    
     try {
       let response;
       const apiUrl = `/polls/${pollId}/options/${optionId}/vote/`;
-      
       if (isRetracting) {
         response = await axiosInstance.delete<Post>(apiUrl);
       } else {
         response = await axiosInstance.post<Post>(apiUrl);
       }
-
       const updatedPost = response.data;
       const postIndex = posts.value.findIndex(p => p.id === updatedPost.id);
       if (postIndex !== -1) {
         posts.value[postIndex] = { ...posts.value[postIndex], ...updatedPost };
       }
-
-    } catch (err: any) {
-      const postIndex = posts.value.findIndex(p => p.poll?.id === pollId);
-      if (postIndex !== -1) {
-          posts.value[postIndex].poll = originalPollState;
+       if (singlePost.value && singlePost.value.id === updatedPost.id) {
+        singlePost.value = { ...singlePost.value, ...updatedPost };
       }
+    } catch (err: any) {
+       const postIndexToRevert = posts.value.findIndex(p => p.poll?.id === pollId);
+       if (postIndexToRevert !== -1) {
+           posts.value[postIndexToRevert].poll = originalPollState;
+       }
+       if (singlePost.value?.poll?.id === pollId) {
+         singlePost.value.poll = originalPollState;
+       }
       console.error("Failed to cast/retract vote:", err);
       error.value = err.response?.data?.detail || "Failed to update vote.";
     }
   }
 
+  // --- 3. UPDATE the return object ---
   return {
+    // Existing state and actions
     posts,
     isLoading,
     error,
@@ -351,5 +358,11 @@ export const useFeedStore = defineStore('feed', () => {
     deletePost,
     updatePost,
     castVote,
+
+    // New state and actions for the single post view
+    singlePost,
+    isLoadingSinglePost,
+    singlePostError,
+    fetchPostById,
   };
 });
