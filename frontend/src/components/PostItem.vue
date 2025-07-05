@@ -22,6 +22,7 @@ import eventBus from '@/services/eventBus';
 
 // --- Props, Stores, and Basic State ---
 const props = defineProps<{ post: Post }>();
+const emit = defineEmits(['report-content']);
 const feedStore = useFeedStore();
 const commentStore = useCommentStore();
 const authStore = useAuthStore();
@@ -68,6 +69,22 @@ const hasMultipleMedia = computed(() => (props.post.media?.length ?? 0) > 1);
 function toggleOptionsMenu() { showOptionsMenu.value = !showOptionsMenu.value; }
 function handleEditClick() { toggleEditMode(); showOptionsMenu.value = false; }
 function handleDeleteClick() { handleDeletePost(); showOptionsMenu.value = false; }
+
+function handleReportClick() {
+  emit('report-content', {
+    content_type: props.post.post_type,
+    object_id: props.post.object_id,
+    content_type_id: props.post.content_type_id
+  });
+  showOptionsMenu.value = false; // Close the menu after clicking
+}
+// Near your other handler methods like handleReportClick
+
+function reEmitReportEvent(payload: { content_type: string, content_type_id: number, object_id: number }) {
+  // Simply pass the payload from the child component up to the parent view
+  emit('report-content', payload);
+}
+
 const closeOnClickOutside = (event: MouseEvent) => { if (optionsMenuRef.value && !optionsMenuRef.value.contains(event.target as Node)) showOptionsMenu.value = false; };
 watch(showOptionsMenu, (isOpen) => {
   if (isOpen) document.addEventListener('click', closeOnClickOutside, true);
@@ -358,6 +375,25 @@ async function handleCommentSubmit() {
           </div>
         </div>
       </div>
+
+            <!-- ADD THIS ENTIRE NEW BLOCK FOR THE REPORT BUTTON -->
+      <div v-if="isAuthenticated && !isOwner" class="relative" ref="optionsMenuRef">
+        <button @click.stop="toggleOptionsMenu" class="p-2 rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
+        </button>
+        <div v-if="showOptionsMenu" class="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-10">
+          <div class="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
+            <button @click="handleReportClick" class="w-full text-left flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900" role="menuitem">
+              <svg class="w-5 h-5 mr-3 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6H8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
+              </svg>
+              <span>Report Post</span>
+            </button>
+          </div>
+        </div>
+      </div>
+      <!-- END OF NEW BLOCK -->
+
     </header>
 
     <div v-if="localDeleteError" class="m-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md">{{ localDeleteError }}</div>
@@ -521,7 +557,15 @@ async function handleCommentSubmit() {
       <div v-if="isLoadingComments">Loading...</div>
       <div v-else-if="commentError" class="text-red-600">Error: {{ commentError }}</div>
       <div v-else>
-        <CommentItem v-for="comment in commentsForThisPost" :key="comment.id" :comment="comment" :parentPostType="props.post.post_type" :parentObjectId="props.post.object_id" :parentPostActualId="props.post.id" />
+        <CommentItem 
+          v-for="comment in commentsForThisPost" 
+          :key="comment.id" 
+          :comment="comment" 
+          :parentPostType="props.post.post_type" 
+          :parentObjectId="props.post.object_id" 
+          :parentPostActualId="props.post.id"
+          @report-content="reEmitReportEvent" 
+        />
         <p v-if="commentsForThisPost.length === 0" class="text-sm text-gray-500 py-4 text-center">No comments yet.</p>
       </div>
 

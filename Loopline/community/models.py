@@ -308,6 +308,58 @@ class PollVote(models.Model):
 
     def __str__(self):
         return f"Vote by {self.user.username} on Poll ID {self.poll.id}"
+    
+# === PASTE THIS NEW MODEL AFTER PollVote AND BEFORE THE @receiver FUNCTIONS ===
+
+class Report(models.Model):
+    # --- Report Details ---
+    reporter = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='submitted_reports')
+
+    # The generic link to the content being reported.
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.PositiveIntegerField()
+    content_object = GenericForeignKey('content_type', 'object_id')
+
+    # The reason for the report.
+    REASON_CHOICES = [
+        ('SPAM', 'Spam or Misleading'),
+        ('HARASSMENT', 'Harassment or Bullying'),
+        ('HATE_SPEECH', 'Hate Speech'),
+        ('VIOLENCE', 'Violence or Graphic Content'),
+        ('OTHER', 'Other'),
+    ]
+    reason = models.CharField(max_length=20, choices=REASON_CHOICES)
+    details = models.TextField(blank=True, null=True, help_text="Provide more details if 'Other' is selected.")
+
+    # --- Moderation Status ---
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending Review'),
+        ('REVIEWED', 'Under Review'),
+        ('ACTION_TAKEN', 'Action Taken'),
+        ('DISMISSED', 'Dismissed'),
+    ]
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+
+    # Who handled the report and when.
+    moderator = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='moderated_reports'
+    )
+    moderated_at = models.DateTimeField(null=True, blank=True)
+    moderator_notes = models.TextField(blank=True, null=True, help_text="Notes for internal review.")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        # A user can only report a specific piece of content once.
+        unique_together = ('reporter', 'content_type', 'object_id')
+
+    def __str__(self):
+        return f"Report by {self.reporter.username} on {self.content_object} ({self.get_reason_display()})"
 
 @receiver(post_save, sender=User)
 def create_user_profile(sender, instance, created, **kwargs):

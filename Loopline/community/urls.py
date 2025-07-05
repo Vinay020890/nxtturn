@@ -20,6 +20,10 @@ urlpatterns = [
     # --- Liking ---
     path('content/<int:content_type_id>/<int:object_id>/like/', views.LikeToggleAPIView.as_view(), name='like-toggle'),
 
+    # --- ADD THIS NEW REPORTING URL ---
+    path('content/<int:ct_id>/<int:obj_id>/report/', views.ReportCreateAPIView.as_view(), name='content-report'),
+    # --- END OF NEW URL ---
+
     # --- Forums ---
     path('forums/', views.ForumCategoryListView.as_view(), name='forum-category-list'),
     path('forums/<int:category_id>/posts/', views.ForumPostListCreateView.as_view(), name='forum-post-list-create-by-category'),

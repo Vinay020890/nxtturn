@@ -16,6 +16,11 @@ const props = defineProps<{
   currentDepth?: number;
 }>();
 
+// --- 1. DEFINE THE EMIT ---
+const emit = defineEmits<{
+  (e: 'report-content', payload: { content_type: string, content_type_id: number, object_id: number }): void
+}>();
+
 const MAX_REPLY_DEPTH = 1;
 const effectiveDepth = computed(() => props.currentDepth ?? 0);
 
@@ -36,6 +41,18 @@ const directReplies = computed(() => {
   return (commentStore.commentsByPost[postKey] || []).filter(reply => reply.parent === props.comment.id);
 });
 
+// --- 2. CREATE THE HANDLER METHOD ---
+function handleReportClick() {
+  if (typeof props.comment.comment_content_type_id !== 'number') return;
+  
+  emit('report-content', {
+    content_type: 'comment', // Hardcoded as this component is always a comment
+    content_type_id: props.comment.comment_content_type_id,
+    object_id: props.comment.id
+  });
+}
+
+// --- All other existing functions remain the same ---
 function linkifyContent(text: string): string {
   if (!text) return '';
   const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])|(\bwww\.[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
@@ -120,7 +137,6 @@ async function handleToggleCommentLike() {
         </div>
         <div v-if="!isEditing" class="text-sm text-gray-700 mt-1 whitespace-pre-wrap" v-html="linkifyContent(props.comment.content)"></div>
         <form v-else @submit.prevent="saveEdit" class="mt-1">
-          <!-- CORRECTED EDIT FORM -->
           <MentionAutocomplete
             v-model="editableContent"
             placeholder="Edit your comment..."
@@ -133,14 +149,17 @@ async function handleToggleCommentLike() {
           </div>
         </form>
       </div>
+      <!-- 3. ADD THE REPORT BUTTON TO THE TEMPLATE -->
       <div v-if="!isEditing" class="flex items-center gap-4 mt-1 px-3 text-xs font-semibold text-gray-500">
         <button @click="handleToggleCommentLike" class="hover:underline" :class="{'text-blue-600 font-bold': props.comment.is_liked_by_user}">Like ({{ props.comment.like_count ?? 0 }})</button>
         <button v-if="canReplyToThisComment" @click="toggleReplyForm" class="hover:underline">Reply</button>
         <button v-if="isCommentAuthor" @click="toggleEditMode(true)" class="hover:underline">Edit</button>
         <button v-if="isCommentAuthor" @click="deleteComment" class="hover:underline text-red-500">Delete</button>
+        <!-- This is the new button -->
+        <button v-if="authStore.isAuthenticated && !isCommentAuthor" @click="handleReportClick" class="hover:underline">Report</button>
       </div>
+      <!-- END OF ADDITION -->
       <div v-if="showReplyForm" class="mt-2">
-        <!-- CORRECTED REPLY FORM -->
         <form @submit.prevent="submitReply">
           <MentionAutocomplete
             v-model="replyContent"
@@ -156,6 +175,7 @@ async function handleToggleCommentLike() {
         </form>
       </div>
       <div v-if="directReplies.length > 0" class="mt-3 pl-3 border-l-2 border-gray-200">
+        <!-- The re-emit logic will be added to PostItem, which renders this component -->
         <CommentItem
           v-for="reply in directReplies"
           :key="reply.id"

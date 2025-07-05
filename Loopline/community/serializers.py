@@ -9,7 +9,7 @@ from .utils import process_mentions
 # Updated model imports to include PostMedia
 from .models import (
     UserProfile, Follow, StatusPost, PostMedia, ForumCategory, Group, 
-    ForumPost, Comment, Like, Conversation, Message, Notification, Poll, PollOption
+    ForumPost, Comment, Like, Conversation, Message, Notification, Poll, PollOption, Report
 )
 
 User = get_user_model() 
@@ -130,6 +130,88 @@ class CustomRegisterSerializer(serializers.Serializer):
         )
         # The signal will automatically create the UserProfile
         return user
+    
+# === PASTE THIS NEW SERIALIZER AFTER CustomRegisterSerializer ===
+
+class ReportSerializer(serializers.ModelSerializer):
+    """
+    Serializer for creating and viewing content reports.
+    """
+    # Display the reporter's username for read operations, but don't require it for write.
+    reporter = serializers.StringRelatedField(read_only=True)
+
+    class Meta:
+        model = Report
+        # These are the fields we will show in the API response
+        fields = [
+            'id', 
+            'reporter', 
+            'reason', 
+            'details', 
+            'status', 
+            'created_at'
+        ]
+        # These fields are set by the server, not the client
+        read_only_fields = [
+            'id', 
+            'reporter', 
+            'status', 
+            'created_at'
+        ]
+
+    def validate(self, data):
+        """
+        Custom validation to check for duplicate reports and existence of the content object.
+        """
+        request = self.context.get('request')
+        view = self.context.get('view')
+        
+        ct_id = view.kwargs.get('ct_id')
+        obj_id = view.kwargs.get('obj_id')
+
+        # 1. Validate that the content object actually exists
+        try:
+            content_type = ContentType.objects.get_for_id(ct_id)
+            model_class = content_type.model_class()
+            # We just need to check if it exists, no need to fetch the whole object here
+            if not model_class.objects.filter(pk=obj_id).exists():
+                raise serializers.ValidationError("The content you are trying to report does not exist.")
+        except ContentType.DoesNotExist:
+            raise serializers.ValidationError("Invalid content type for report.")
+
+        # 2. Validate that the user hasn't already reported this exact item
+        if Report.objects.filter(
+            reporter=request.user, 
+            content_type=content_type, 
+            object_id=obj_id
+        ).exists():
+            raise serializers.ValidationError({"detail": "You have already reported this content."})
+
+        # 3. If reason is 'OTHER', details must be provided
+        if data.get('reason') == 'OTHER' and not data.get('details', '').strip():
+            raise serializers.ValidationError({"details": "Details are required when selecting 'Other' as the reason."})
+
+        return data
+
+    def create(self, validated_data):
+        """
+        Create a new Report instance, setting the reporter and content object
+        from the request context and URL kwargs.
+        """
+        request = self.context.get('request')
+        view = self.context.get('view')
+        
+        ct_id = view.kwargs.get('ct_id')
+        obj_id = view.kwargs.get('obj_id')
+        
+        content_type = ContentType.objects.get_for_id(ct_id)
+
+        # Set the server-side fields
+        validated_data['reporter'] = request.user
+        validated_data['content_type'] = content_type
+        validated_data['object_id'] = obj_id
+
+        return Report.objects.create(**validated_data)
 
 # ... (Keep GenericRelatedObjectSerializer, NotificationSerializer, UserProfileSerializer, UserProfileUpdateSerializer as they are) ...
 class GenericRelatedObjectSerializer(serializers.Serializer):

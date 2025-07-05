@@ -8,7 +8,7 @@ from django.http import Http404
 from django.db.models import Q, Count, Value, CharField, Case, When
 from django.db import transaction
 
-from rest_framework import generics, status, views, serializers
+from rest_framework import generics, status, views, serializers, permissions
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -16,13 +16,13 @@ from rest_framework.pagination import PageNumberPagination
 
 from .models import (
     UserProfile, Follow, StatusPost, ForumCategory, Group, ForumPost,
-    Comment, Like, Conversation, Message, Notification, Poll, PollOption, PollVote
+    Comment, Like, Conversation, Message, Notification, Poll, PollOption, PollVote, Report
 )
 from .serializers import (
     UserSerializer, UserProfileSerializer, UserProfileUpdateSerializer,
     StatusPostSerializer, ForumCategorySerializer, ForumPostSerializer,
     GroupSerializer, CommentSerializer, FeedItemSerializer, ConversationSerializer,
-    MessageSerializer, MessageCreateSerializer, NotificationSerializer 
+    MessageSerializer, MessageCreateSerializer, NotificationSerializer, ReportSerializer
 )
 from .permissions import IsOwnerOrReadOnly
 
@@ -160,6 +160,31 @@ class LikeToggleAPIView(APIView):
         if not created:
             like.delete()
         return Response({"liked": created, "like_count": target_object.likes.count()}, status=status.HTTP_200_OK)
+    
+# === PASTE THIS NEW VIEW AND SECTION INTO community/views.py ===
+
+# ==================================
+# Moderation Views
+# ==================================
+class ReportCreateAPIView(generics.CreateAPIView):
+    """
+    API endpoint for creating a new report on a piece of content.
+    The URL pattern must provide the content_type_id (ct_id) and object_id (obj_id).
+    
+    Example URL: /api/community/content/<ct_id>/<obj_id>/report/
+    """
+    queryset = Report.objects.all()
+    serializer_class = ReportSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_context(self):
+        """
+        Pass the request and view context to the serializer.
+        This is crucial for our custom validation logic.
+        """
+        context = super().get_serializer_context()
+        context['view'] = self
+        return context
     
 class PollVoteAPIView(APIView):
     permission_classes = [IsAuthenticated]
