@@ -3,6 +3,7 @@ import mitt from 'mitt';
 
 type Events = {
   'navigation-started': void;
+  'reset-feed-form': void;
 };
 
 const emitter = mitt<Events>();

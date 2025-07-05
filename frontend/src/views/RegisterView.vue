@@ -3,31 +3,41 @@ import { ref, computed } from 'vue';
 import { useAuthStore } from '@/stores/auth';
 import { useRouter } from 'vue-router';
 import type { AxiosError } from 'axios';
+import { storeToRefs } from 'pinia'; // <-- 1. IMPORT storeToRefs
 
 const authStore = useAuthStore();
 const router = useRouter();
   
+// --- State ---
+const { isLoading } = storeToRefs(authStore); // <-- 2. GET isLoading from the store
 const email = ref('');
 const username = ref('');
 const password = ref('');
 const password2 = ref('');
-const isLoading = ref(false);
+// const isLoading = ref(false); // <-- 3. REMOVE the local isLoading state
 const errorMessage = ref<string | null>(null);
 
+// --- Computed Properties ---
 const passwordsMismatch = computed(() => {
   return password.value && password2.value && password.value !== password2.value;
 });
 
+// The `isLoading` ref is now the one from the store, so this works automatically
 const isSubmitDisabled = computed(() => {
   return isLoading.value || passwordsMismatch.value;
 });
 
+// --- Methods ---
 const parseError = (error: unknown): string => {
   const axiosError = error as AxiosError<Record<string, string[]>>;
   if (axiosError.response?.data) {
-    return Object.entries(axiosError.response.data)
+    const errorMessages = Object.entries(axiosError.response.data)
       .map(([field, messages]) => `${field}: ${messages.join(', ')}`)
       .join('; ');
+    if (axiosError.response.data.non_field_errors) {
+        return axiosError.response.data.non_field_errors.join('; ');
+    }
+    return errorMessages;
   }
   return 'An unexpected error occurred during registration.';
 };
@@ -40,22 +50,20 @@ const handleRegister = async () => {
     return;
   }
 
-  isLoading.value = true;
+  // isLoading.value = true; // <-- 4. REMOVE this line, the store will handle it
   try {
-    // THIS IS THE CORRECTED PART
     await authStore.register({
       email: email.value,
       username: username.value,
-      password1: password.value, // Using password1 as required by the type
-      password2: password2.value, // Using password2 as required by the type
+      password: password.value,
+      password2: password2.value,
     });
     alert('Registration successful! Please log in.');
     router.push({ name: 'login' });
   } catch (error) {
      errorMessage.value = parseError(error);
-  } finally {
-    isLoading.value = false;
-  }
+  } 
+  // finally { isLoading.value = false; } // <-- 5. REMOVE the finally block, the store handles it
 };
 </script>
 
@@ -130,9 +138,10 @@ const handleRegister = async () => {
         <div>
           <button 
             type="submit"
-            :disabled="isSubmitDisabled"
+            :disabled="Boolean(isSubmitDisabled)"  
             class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-blue-300 disabled:cursor-not-allowed"
           >
+            <!-- This now automatically uses the isLoading from the store -->
             {{ isLoading ? 'Registering...' : 'Create Account' }}
           </button>
         </div>

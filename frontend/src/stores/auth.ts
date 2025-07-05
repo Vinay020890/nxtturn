@@ -100,14 +100,14 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function register(registrationData: RegistrationData) {
       // You can add loading state here too if you want
-      // isLoading.value = true;
+      isLoading.value = true;
       try {
         await axiosInstance.post('/auth/registration/', registrationData);
       } catch (error) {
         console.error("Backend registration failed!", error);
         throw error;
       } finally {
-        // isLoading.value = false;
+      isLoading.value = false;
       }
   }
 

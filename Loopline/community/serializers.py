@@ -98,6 +98,9 @@ class UserSerializer(serializers.ModelSerializer):
     
 # In community/serializers.py
 
+# In Loopline/community/serializers.py
+
+# Replace your entire CustomRegisterSerializer with this one.
 class CustomRegisterSerializer(serializers.Serializer):
     username = serializers.CharField(
         max_length=150,
@@ -107,11 +110,13 @@ class CustomRegisterSerializer(serializers.Serializer):
         required=True,
         validators=[validators.UniqueValidator(queryset=User.objects.all())]
     )
-    password1 = serializers.CharField(write_only=True, style={'input_type': 'password'})
+    # FIX 1: The field is now named 'password' to match the frontend
+    password = serializers.CharField(write_only=True, style={'input_type': 'password'})
     password2 = serializers.CharField(write_only=True, style={'input_type': 'password'})
 
     def validate(self, data):
-        if data['password1'] != data['password2']:
+        # FIX 2: The validation now compares 'password' and 'password2'
+        if data['password'] != data['password2']:
             raise serializers.ValidationError({"password": "Passwords must match."})
         return data
 
@@ -120,7 +125,8 @@ class CustomRegisterSerializer(serializers.Serializer):
         user = User.objects.create_user(
             username=self.validated_data['username'],
             email=self.validated_data['email'],
-            password=self.validated_data['password1']
+            # FIX 3: The user is created using the 'password' field
+            password=self.validated_data['password']
         )
         # The signal will automatically create the UserProfile
         return user
@@ -243,6 +249,12 @@ class StatusPostSerializer(serializers.ModelSerializer):
     #    return files
     # --- END OF NEW METHOD ---
 
+    # In community/serializers.py -> StatusPostSerializer
+# Replace your entire validate_poll_data method with this one.
+
+    # In community/serializers.py -> StatusPostSerializer
+# Replace your entire validate_poll_data method with this one.
+
     def validate_poll_data(self, value):
         if not value:
             return None
@@ -250,18 +262,34 @@ class StatusPostSerializer(serializers.ModelSerializer):
             data = json.loads(value)
             if not isinstance(data, dict):
                 raise serializers.ValidationError("Poll data must be a JSON object.")
-            if 'question' not in data or not data['question'].strip():
+            if 'question' not in data or not str(data['question']).strip():
                 raise serializers.ValidationError("Poll question cannot be empty.")
-            if 'options' not in data or not isinstance(data['options'], list):
-                raise serializers.ValidationError("Poll options must be a list.")
-            if len(data['options']) < 2:
-                raise serializers.ValidationError("A poll must have at least two options.")
+
+            # --- THIS IS THE NEW, SMARTER VALIDATION LOGIC ---
+            # It now handles BOTH 'create' and 'update' scenarios.
+
+            is_update_payload = 'options_to_update' in data or 'options_to_add' in data or 'options_to_delete' in data
             
-            options_text = [str(opt).strip() for opt in data['options']]
-            if any(not opt for opt in options_text):
-                raise serializers.ValidationError("Poll options cannot be empty.")
-            
-            data['options'] = options_text
+            if is_update_payload:
+                # This is an UPDATE. We don't need to validate as strictly.
+                # We just check that the keys exist and are lists if provided.
+                if 'options_to_update' in data and not isinstance(data['options_to_update'], list):
+                    raise serializers.ValidationError("options_to_update must be a list.")
+                if 'options_to_add' in data and not isinstance(data['options_to_add'], list):
+                    raise serializers.ValidationError("options_to_add must be a list.")
+                if 'options_to_delete' in data and not isinstance(data['options_to_delete'], list):
+                    raise serializers.ValidationError("options_to_delete must be a list.")
+            else:
+                # This is a CREATE. It must have the simple 'options' key.
+                if 'options' not in data or not isinstance(data['options'], list):
+                    raise serializers.ValidationError("Poll options must be a list.")
+                if len(data['options']) < 2:
+                    raise serializers.ValidationError("A poll must have at least two options.")
+                if any(not str(opt).strip() for opt in data['options']):
+                    raise serializers.ValidationError("Poll options cannot be empty.")
+            # --- END OF NEW LOGIC ---
+
+            # Return the parsed data, structure intact
             return data
         except json.JSONDecodeError:
             raise serializers.ValidationError("Invalid JSON format for poll data.")
@@ -276,20 +304,22 @@ class StatusPostSerializer(serializers.ModelSerializer):
         # Crucially, if that is also None, fall back to an empty string '' BEFORE trying to strip().
         content = (data.get('content', self.instance.content if is_update else None) or '').strip()
         # --- END OF FIX ---
-        
+
         new_images = data.get('images', [])
         new_videos = data.get('videos', [])
         poll_data = data.get('poll_data')
 
         if is_update:
-            media_to_delete_ids = data.get('media_to_delete', [])
+            # --- THIS IS THE FIX ---
+            # We add a check for poll_data, just like in the 'create' validation
+            media_to_delete_ids = self.validate_media_to_delete(data.get('media_to_delete'))
             surviving_media_count = self.instance.media.exclude(id__in=media_to_delete_ids).count()
             final_media_count = surviving_media_count + len(new_images) + len(new_videos)
             
-            # On update, a post can't become empty.
-            if not content and final_media_count == 0:
-                # Note: We aren't checking for polls on update, as poll editing is not supported yet.
-                raise serializers.ValidationError("A post cannot be empty. It must have text content or at least one media file.")
+            # The new, corrected rule:
+            if not content and final_media_count == 0 and not poll_data:
+                raise serializers.ValidationError("A post cannot be empty. It must have text content, media, or a poll.")
+            # --- END OF FIX ---
         else:
             # On create, the post must have something.
             if not content and not new_images and not new_videos and not poll_data:
@@ -332,30 +362,71 @@ class StatusPostSerializer(serializers.ModelSerializer):
             
         return post
 
+   
+
     @transaction.atomic
     def update(self, instance, validated_data):
-        # This is the full, original update method from your file.
-        # Poll editing is NOT implemented in this step.
+        # --- Standard Media Handling (Unchanged) ---
         images_data = validated_data.pop('images', [])
         videos_data = validated_data.pop('videos', [])
         media_to_delete_ids = validated_data.pop('media_to_delete', [])
         
+        # --- New, Advanced Poll Handling ---
+        poll_data = validated_data.pop('poll_data', None)
+        
+        # Update the main post instance with any text content
         instance = super().update(instance, validated_data)
 
+        # Handle media deletions and additions (Unchanged)
         if media_to_delete_ids:
             instance.media.filter(id__in=media_to_delete_ids).delete()
-
+        
         media_to_create = []
         for image_file in images_data:
             media_to_create.append(PostMedia(post=instance, media_type='image', file=image_file))
         for video_file in videos_data:
             media_to_create.append(PostMedia(post=instance, media_type='video', file=video_file))
-        
         if media_to_create:
             PostMedia.objects.bulk_create(media_to_create)
+
+        # --- THIS IS THE NEW, ADVANCED POLL LOGIC ---
+        if poll_data and hasattr(instance, 'poll'):
+            poll = instance.poll
+            
+            # 1. Update the Poll Question
+            poll.question = poll_data.get('question', poll.question)
+            poll.save()
+            
+            # 2. Delete Options
+            # The frontend will send a list of IDs for options to be deleted.
+            options_to_delete_ids = poll_data.get('options_to_delete', [])
+            if options_to_delete_ids:
+                # We also delete the associated votes to keep the database clean.
+                PollOption.objects.filter(id__in=options_to_delete_ids, poll=poll).delete()
+            
+            # 3. Update Existing Options
+            # The frontend will send a list of option objects that have an 'id'.
+            options_to_update = poll_data.get('options_to_update', [])
+            for option_data in options_to_update:
+                option_id = option_data.get('id')
+                option_text = option_data.get('text')
+                if option_id and option_text is not None:
+                    PollOption.objects.filter(id=option_id, poll=poll).update(text=option_text)
+            
+            # 4. Add New Options
+            # The frontend will send a list of option objects that DO NOT have an 'id'.
+            options_to_add = poll_data.get('options_to_add', [])
+            if options_to_add:
+                new_poll_options = [
+                    PollOption(poll=poll, text=option_data.get('text'))
+                    for option_data in options_to_add if option_data.get('text')
+                ]
+                if new_poll_options:
+                    PollOption.objects.bulk_create(new_poll_options)
+        # --- END OF NEW POLL LOGIC ---
             
         instance.save()
-        return instance
+        return self.Meta.model.objects.get(pk=instance.pk)
 
     def get_like_count(self, obj):
         return obj.likes.count() if hasattr(obj, 'likes') else 0

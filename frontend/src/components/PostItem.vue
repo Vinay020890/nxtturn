@@ -4,7 +4,7 @@
 import { getAvatarUrl, buildMediaUrl } from '@/utils/avatars';
 
 // All other imports remain the same
-import { ref, computed, watch, onUnmounted, nextTick } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import type { Post, PostMedia } from '@/stores/feed';
 import { useFeedStore } from '@/stores/feed';
 import { format } from 'date-fns';
@@ -15,6 +15,7 @@ import { storeToRefs } from 'pinia';
 import { useProfileStore } from '@/stores/profile';
 import PollDisplay from './PollDisplay.vue';
 import MentionAutocomplete from './MentionAutocomplete.vue';
+import eventBus from '@/services/eventBus';
 
 // --- NO OTHER CHANGES NEEDED IN THE <script setup> SECTION ---
 // All your existing props, stores, state, computed properties, and methods are correct.
@@ -45,6 +46,9 @@ const newVideoFiles = ref<File[]>([]);
 const mediaToDeleteIds = ref<number[]>([]);
 // const editTextAreaRef = ref<HTMLTextAreaElement | null>(null);
 const editTextAreaRef = ref<{ blur: () => void; focus: () => void; } | null>(null);
+const editPollQuestion = ref('');
+const editPollOptions = ref<{ id: number | null, text: string }[]>([]);
+const deletedOptionIds = ref<number[]>([]);
 
 // --- State for Options Dropdown Menu ---
 const showOptionsMenu = ref(false);
@@ -69,7 +73,18 @@ watch(showOptionsMenu, (isOpen) => {
   if (isOpen) document.addEventListener('click', closeOnClickOutside, true);
   else document.removeEventListener('click', closeOnClickOutside, true);
 });
-onUnmounted(() => { document.removeEventListener('click', closeOnClickOutside, true); });
+const handleNavigation = () => {
+  if (isEditing.value) {
+    isEditing.value = false;
+  }
+};
+onMounted(() => {
+  eventBus.on('navigation-started', handleNavigation);
+});
+onUnmounted(() => { 
+  document.removeEventListener('click', closeOnClickOutside, true); 
+  eventBus.off('navigation-started', handleNavigation);
+});
 
 function toggleCommentDisplay() {
   showComments.value = !showComments.value;
@@ -94,25 +109,75 @@ async function handleDeletePost() {
 function nextMedia() { activeMediaIndex.value = (activeMediaIndex.value + 1) % props.post.media.length; }
 function prevMedia() { activeMediaIndex.value = (activeMediaIndex.value - 1 + props.post.media.length) % props.post.media.length; }
 function setActiveMedia(index: number) { activeMediaIndex.value = index; }
+// In src/components/PostItem.vue
+// Replace your old toggleEditMode function with this one.
+
 function toggleEditMode() {
   isEditing.value = !isEditing.value;
-  localEditError.value = null;
+  localEditError.value = null; // Reset errors when entering/leaving edit mode
+
   if (isEditing.value) {
-    editContent.value = props.post.content || '';
-    editableMedia.value = [...props.post.media];
+    // ---- THIS IS THE CORE LOGIC ----
+    // We check if the post has a .poll property.
+    if (props.post.poll) {
+      // If it's a POLL, we populate the poll-specific editing variables.
+      editPollQuestion.value = props.post.poll.question;
+      // We make a copy of the options to edit them safely.
+      editPollOptions.value = props.post.poll.options.map(opt => ({ id: opt.id, text: opt.text }));
+      deletedOptionIds.value = [];
+      
+      // We also clear the variables for the *other* form to avoid confusion.
+      editContent.value = '';
+      editableMedia.value = [];
+
+    } else {
+      // If it's a NORMAL post, we do what it did before.
+      editContent.value = props.post.content || '';
+      editableMedia.value = [...props.post.media];
+
+      // We also clear the variables for the poll form.
+      editPollQuestion.value = '';
+      editPollOptions.value = [];
+    }
+    // ---- END OF CORE LOGIC ----
+    
+    // These should be reset every time we start any type of edit.
     newImageFiles.value = [];
     newVideoFiles.value = [];
     mediaToDeleteIds.value = [];
 
-    // --- ADD THIS BLOCK ---
-    // Wait for Vue to update the DOM and show the textarea
+    // This part correctly focuses the text area after the UI updates.
     nextTick(() => {
-      editTextAreaRef.value?.focus();
+      // Note: This will only work if the textarea is visible. 
+      // For polls, it won't be, which is fine. It just won't do anything.
+      editTextAreaRef.value?.focus(); 
     });
-    // --- END OF ADDITION ---
-
   }
 }
+
+function addPollOptionToEdit() {
+  if (editPollOptions.value.length < 5) { // Assuming a max of 5 options
+    // Add a new option with a null ID, marking it as new
+    editPollOptions.value.push({ id: null, text: '' });
+  }
+}
+
+function removePollOptionFromEdit(index: number) {
+  if (editPollOptions.value.length <= 2) { // Must have at least 2 options
+    return;
+  }
+  
+  const optionToRemove = editPollOptions.value[index];
+
+  // If the option has a real ID, it's an existing one that needs to be deleted from the database.
+  if (optionToRemove.id !== null) {
+    deletedOptionIds.value.push(optionToRemove.id);
+  }
+
+  // Remove the option from the list that's displayed in the UI.
+  editPollOptions.value.splice(index, 1);
+}
+
 function handleNewFiles(event: Event, type: 'image' | 'video') {
   const files = (event.target as HTMLInputElement).files;
   if (!files) return;
@@ -192,6 +257,53 @@ async function handleUpdatePost() {
     localEditError.value = feedStore.updatePostError || 'Failed to update post.';
   }
 }
+
+// In src/components/PostItem.vue -> inside the <script setup> block
+// Replace your placeholder handleUpdatePoll function with this one.
+
+async function handleUpdatePoll() {
+  localEditError.value = null;
+  feedStore.updatePostError = null;
+
+  // --- 1. Basic Validation ---
+  if (!editPollQuestion.value.trim()) {
+    localEditError.value = "Poll question cannot be empty.";
+    return;
+  }
+  if (editPollOptions.value.some(opt => !opt.text.trim())) {
+    localEditError.value = "Poll options cannot be empty.";
+    return;
+  }
+
+  // --- NEW DATA PREPARATION LOGIC ---
+  const pollPayload = {
+    question: editPollQuestion.value,
+    options_to_update: editPollOptions.value.filter(opt => opt.id !== null), // Options that have an ID
+    options_to_add: editPollOptions.value.filter(opt => opt.id === null),    // Options with no ID are new
+    options_to_delete: deletedOptionIds.value                               // The list of IDs we tracked
+  };
+  // --- END OF NEW LOGIC ---
+
+  // --- 3. Create FormData and Append ---
+  const formData = new FormData();
+  // We must send the complex poll object as a JSON string.
+  formData.append('poll_data', JSON.stringify(pollPayload));
+
+  // --- 4. Call the Universal Update Action ---
+  // We use the same updatePost action from our store.
+  const success = await feedStore.updatePost(props.post.id, props.post.post_type, formData);
+
+  // --- 5. Handle the Result ---
+  if (success) {
+    // If the update was successful, close the edit form.
+    isEditing.value = false;
+  } else {
+    // If it failed, show the error message from the store.
+    localEditError.value = feedStore.updatePostError || 'Failed to update poll.';
+  }
+}
+
+
 function linkifyContent(text: string | null | undefined): string {
   if (!text) return '';
   const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])|(\bwww\.[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
@@ -227,10 +339,18 @@ async function handleCommentSubmit() {
         </button>
         <div v-if="showOptionsMenu" class="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-10">
           <div class="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
-            <button @click="handleEditClick" :disabled="post.isDeleting" class="w-full text-left flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900" role="menuitem">
+            <!-- In PostItem.vue template, find your "Edit Post" button and replace it with this -->
+
+            <button 
+              @click="handleEditClick" 
+              :disabled="post.isDeleting"
+              class="w-full text-left flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed" 
+              role="menuitem"
+            >
               <svg class="w-5 h-5 mr-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z"></path></svg>
               <span>{{ isEditing ? 'Cancel Edit' : 'Edit Post' }}</span>
             </button>
+
             <button @click="handleDeleteClick" :disabled="post.isDeleting || isEditing" class="w-full text-left flex items-center px-4 py-2 text-sm text-red-700 hover:bg-red-50 hover:text-red-900" role="menuitem">
               <svg class="w-5 h-5 mr-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
               <span>{{ post.isDeleting ? 'Deleting...' : 'Delete Post' }}</span>
@@ -268,22 +388,41 @@ async function handleCommentSubmit() {
       </div>
     </div>
     
+    
+
+    <!-- ==================================================================== -->
+    <!-- == FIND THE <div v-else class="p-4"> AND REPLACE IT WITH THIS ENTIRE BLOCK == -->
+    <!-- ==================================================================== -->
     <div v-else class="p-4">
-      <form @submit.prevent="handleUpdatePost" novalidate>
+
+      <!-- =============================== -->
+      <!-- == FORM FOR NORMAL (NON-POLL) POSTS == -->
+      <!-- =============================== -->
+      <form v-if="!post.poll" @submit.prevent="handleUpdatePost" novalidate>
         <div v-if="localEditError" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md mb-4">{{ localEditError }}</div>
+        
         <MentionAutocomplete ref="editTextAreaRef" v-model="editContent" placeholder="Edit your post..." :rows="3" class="text-base"/>
+        
         <div class="mt-2 flex flex-wrap gap-2">
+          <!-- Existing Media Previews -->
           <div v-for="media in editableMedia" :key="`edit-${media.id}`" class="relative w-20 h-20">
             <span v-if="media.media_type === 'video'" class="w-full h-full bg-gray-200 flex items-center justify-center text-2xl text-gray-500 rounded-md">▶</span>
-            <!-- MODIFIED: Use buildMediaUrl for edit mode image -->
             <img v-else :src="buildMediaUrl(media.file_url)" class="w-full h-full object-cover rounded-md">
             <button @click="flagExistingMediaForRemoval(media.id)" type="button" class="absolute top-1 right-1 bg-gray-800 bg-opacity-50 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-500">×</button>
           </div>
+          <!-- New Image Previews -->
           <div v-for="(file, index) in newImageFiles" :key="`new-img-${index}`" class="relative w-20 h-20">
             <img :src="getObjectURL(file)" class="w-full h-full object-cover rounded-md">
             <button @click="removeNewFile(index, 'image')" type="button" class="absolute top-1 right-1 bg-gray-800 bg-opacity-50 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-500">×</button>
           </div>
+          <!-- New Video Previews -->
+          <div v-for="(file, index) in newVideoFiles" :key="`new-vid-${index}`" class="relative w-20 h-20 bg-gray-200 rounded-md flex flex-col items-center justify-center text-center p-1">
+              <span class="text-3xl">🎬</span>
+              <span class="text-xs text-gray-600 truncate w-full">{{ file.name }}</span>
+              <button @click="removeNewFile(index, 'video')" type="button" class="absolute top-1 right-1 bg-gray-800 bg-opacity-50 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-500">×</button>
+          </div>
         </div>
+
         <div class="mt-4 flex justify-between items-center">
           <div class="flex gap-4">
             <label for="add-images-edit" class="text-gray-500 hover:text-blue-500 cursor-pointer"><svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg></label>
@@ -294,7 +433,78 @@ async function handleCommentSubmit() {
           <button type="submit" :disabled="post.isUpdating" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-full">Save Changes</button>
         </div>
       </form>
+
+      <!-- =============================== -->
+      <!-- == FORM FOR POLL POSTS == -->
+      <!-- In your <template> for PostItem.vue -->
+
+      <!-- This is your existing poll edit form. We will only add to it. -->
+      <form v-else @submit.prevent="handleUpdatePoll" novalidate>
+          <div v-if="localEditError" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md mb-4">{{ localEditError }}</div>
+          
+          <div class="p-4 border border-gray-200 rounded-md bg-gray-50">
+            <input 
+              type="text" 
+              v-model="editPollQuestion" 
+              placeholder="Poll Question"
+              class="w-full p-2 border border-gray-300 rounded-md mb-3" 
+              maxlength="255"
+            >
+            
+            <div v-for="(option, index) in editPollOptions" :key="option.id || `new-${index}`" class="flex items-center gap-2 mb-2">
+              <input 
+                type="text" 
+                v-model="option.text" 
+                :placeholder="`Option ${index + 1}`"
+                class="flex-grow p-2 border border-gray-300 rounded-md" 
+                maxlength="100"
+              >
+              
+              <!-- --- 1. ADD THIS DELETE BUTTON --- -->
+              <button 
+                @click.prevent="removePollOptionFromEdit(index)" 
+                :disabled="editPollOptions.length <= 2" 
+                class="text-gray-400 hover:text-red-500 disabled:opacity-50 flex-shrink-0"
+                type="button"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              </button>
+              <!-- --- END OF DELETE BUTTON --- -->
+
+            </div>
+
+            <!-- --- 2. ADD THIS "ADD OPTION" BUTTON --- -->
+            <button 
+              @click.prevent="addPollOptionToEdit" 
+              :disabled="editPollOptions.length >= 5" 
+              class="text-sm text-blue-500 hover:text-blue-700 disabled:opacity-50 mt-1"
+              type="button"
+            >
+              Add Option
+            </button>
+            <!-- --- END OF "ADD OPTION" BUTTON --- -->
+
+          </div>
+
+          <!-- The Save Changes button below is unchanged -->
+          <div class="mt-4 flex justify-end">
+            <button 
+              type="submit" 
+              :disabled="post.isUpdating" 
+              class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-full disabled:bg-blue-300"
+            >
+              {{ post.isUpdating ? 'Saving...' : 'Save Changes' }}
+            </button>
+          </div>
+      </form>
+      <!-- =============================== -->
+      
+      <div v-if="localEditError" class="text-red-600 mt-2">{{ localEditError }}</div>
+
     </div>
+    <!-- ==================================================================== -->
+    <!-- == END OF REPLACEMENT BLOCK == -->
+    <!-- ==================================================================== -->
     
     <footer v-if="!isEditing" class="p-4 border-t border-gray-200 flex items-center gap-6 text-gray-500">
       <button @click="toggleLike" class="flex items-center gap-2 hover:text-red-500 transition-colors" :class="{'text-red-500 font-bold': post.is_liked_by_user}" :disabled="post.isLiking">

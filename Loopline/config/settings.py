@@ -1,4 +1,5 @@
 # The definitive settings.py for the NxtTurn project
+# Version: Cloudinary Removed
 
 import dj_database_url
 from pathlib import Path
@@ -24,7 +25,8 @@ if IS_PRODUCTION:
     if render_hostname:
         ALLOWED_HOSTS.append(render_hostname)
 else:
-    ALLOWED_HOSTS.append('192.168.31.35') # Your local IP for mobile testing
+    # This setting allows others on your local network to access the app
+    ALLOWED_HOSTS.append('192.168.31.35') 
 
 # --- APPLICATION DEFINITION ---
 INSTALLED_APPS = [
@@ -33,7 +35,7 @@ INSTALLED_APPS = [
     'django.contrib.sites', 'rest_framework', 'rest_framework.authtoken',
     'dj_rest_auth', 'allauth', 'allauth.account', 'allauth.socialaccount',
     'dj_rest_auth.registration', 'corsheaders', 'django_extensions',
-    'cloudinary_storage', 'cloudinary', 'community.apps.CommunityConfig',
+    'community.apps.CommunityConfig',
 ]
 SITE_ID = 1
 ACCOUNT_EMAIL_VERIFICATION = 'none'
@@ -64,41 +66,24 @@ else:
 AUTH_PASSWORD_VALIDATORS = [{'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'}, {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'}, {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'}, {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'}]
 LANGUAGE_CODE, TIME_ZONE, USE_I18N, USE_TZ = 'en-us', 'UTC', True, True
 
-# --- STATIC & MEDIA FILES (THE MODERN DJANGO 5.x WAY) ---
+# --- STATIC & MEDIA FILES (STANDARD LOCAL HANDLING) ---
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+# Media files (user-uploaded content)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'mediafiles'
 
-# This variable gives you explicit control for local testing with Cloudinary
-USE_CLOUDINARY_IN_DEVELOPMENT = os.getenv('USE_CLOUDINARY_IN_DEVELOPMENT', 'false').lower() == 'true'
-
-# The new STORAGES setting, which replaces the deprecated DEFAULT_FILE_STORAGE
-if IS_PRODUCTION or USE_CLOUDINARY_IN_DEVELOPMENT:
-    STORAGES = {
-        "default": {
-            "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
-        },
-        "staticfiles": {
-            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
-        },
-    }
-else:
-    STORAGES = {
-        "default": {
-            "BACKEND": "django.core.files.storage.FileSystemStorage",
-        },
-        "staticfiles": {
-            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
-        },
-    }
-
-# This dictionary is still required to provide credentials to cloudinary_storage
-CLOUDINARY_STORAGE = {
-    'CLOUD_NAME': os.getenv('CLOUDINARY_CLOUD_NAME'),
-    'API_KEY': os.getenv('CLOUDINARY_API_KEY'),
-    'API_SECRET': os.getenv('CLOUDINARY_API_SECRET'),
+# Storage settings
+STORAGES = {
+    # Default storage engine for media files (e.g., ImageField, FileField)
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    # Storage engine for static files (CSS, JS)
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage" if IS_PRODUCTION else "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
 }
 
 # --- OTHER SETTINGS ---

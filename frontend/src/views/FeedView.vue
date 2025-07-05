@@ -1,214 +1,90 @@
+// C:\Users\Vinay\Project\frontend\src\views\FeedView.vue
+
 <script setup lang="ts">
 import { useAuthStore } from '@/stores/auth';
-import { onMounted } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import { useFeedStore } from '@/stores/feed';
 import CreatePostForm from '@/components/CreatePostForm.vue';
-import { format } from 'date-fns';
 import PostItem from '@/components/PostItem.vue';
+import eventBus from '@/services/eventBus';
 
 const authStore = useAuthStore();
 const feedStore = useFeedStore();
 
-// Fetch feed data when the component is mounted
+// This ref will act as our manual key.
+const createPostFormKey = ref(0); 
+
+// This function will be called by the event bus.
+// Incrementing the key tells Vue to destroy the old component and create a new one.
+function forceFormReset() {
+  console.log("Resetting form via event bus...");
+  createPostFormKey.value++;
+}
+
 onMounted(() => {
   console.log("FeedView: Component mounted, fetching feed...");
-  feedStore.fetchFeed(); // Call the action to fetch page 1
+  feedStore.fetchFeed();
+  // Listen for the event from the header
+  eventBus.on('reset-feed-form', forceFormReset);
 });
 
-// Method to fetch the previous page
+// It's crucial to clean up the listener when the component is destroyed
+onUnmounted(() => {
+  eventBus.off('reset-feed-form', forceFormReset);
+});
+
 function fetchPreviousPage() {
-  // Check if we are not on the first page
   if (feedStore.currentPage > 1) {
-    // If not, call the store's fetchFeed action with the previous page number
-    console.log("FeedView: Fetching previous page..."); // Log click
     feedStore.fetchFeed(feedStore.currentPage - 1);
-  } else {
-    console.log("FeedView: Already on first page."); // Log if disabled logic fails
   }
 }
 
-// Method to fetch the next page
 function fetchNextPage() {
-  // Check if the store indicates there is a next page
   if (feedStore.hasNextPage) {
-    // If yes, call the store's fetchFeed action with the next page number
-    console.log("FeedView: Fetching next page..."); // Log click
     feedStore.fetchFeed(feedStore.currentPage + 1);
-  } else {
-     console.log("FeedView: Already on last page."); // Log if disabled logic fails
   }
 }
-
 </script>
 
 <template>
-  <div class="feed-view">
-    <!-- Changed h1 to display welcome message -->
-    <h1>Welcome, {{ authStore.userDisplay }}!</h1>
-    <!-- Added h2 for original title -->
-    <h2>Your Feed</h2>
+  <div class="max-w-4xl mx-auto p-4">
+    <h1 class="text-2xl font-bold text-gray-800">Welcome, {{ authStore.userDisplay }}!</h1>
+    <h2 class="text-xl text-gray-600 mt-1 mb-6">Your Feed</h2>
 
-    <CreatePostForm />
+    <!-- The key is now bound to our manual ref, which is updated by the event bus -->
+    <CreatePostForm :key="createPostFormKey" />
 
-    <!-- Loading State -->
-    <div v-if="feedStore.isLoading && feedStore.posts.length === 0" class="loading">
+    <div v-if="feedStore.isLoading && feedStore.posts.length === 0" class="text-center p-8 text-gray-500">
       Loading feed...
     </div>
 
-    <!-- Error State -->
-    <div v-if="feedStore.error" class="error-message">
+    <div v-if="feedStore.error" class="bg-red-100 border border-red-300 text-red-700 px-4 py-3 rounded-md text-center p-8" role="alert">
       Error loading feed: {{ feedStore.error }}
     </div>
 
-    <!-- Posts List -->
-    <div v-if="!feedStore.isLoading || feedStore.posts.length > 0" class="posts-list">
+    <div v-if="!feedStore.isLoading || feedStore.posts.length > 0" class="mt-4 flex flex-col gap-6">
       <PostItem v-for="post in feedStore.posts" :key="post.id" :post="post" />
-
-      <!-- Message if feed is empty -->
-      <div v-if="!feedStore.isLoading && feedStore.posts.length === 0 && !feedStore.error" class="empty-feed">
+      <div v-if="!feedStore.isLoading && feedStore.posts.length === 0 && !feedStore.error" class="text-center p-8 text-gray-500">
         Your feed is empty. Follow some users or create a post!
       </div>
-    </div> <!-- End of posts-list -->
-
-    <!-- Pagination Controls -->
-    <div class="pagination-controls">
-        <button :disabled="feedStore.currentPage <= 1" @click="fetchPreviousPage">Previous</button>
-        <span>Page {{ feedStore.currentPage }} of {{ feedStore.totalPages }}</span>
-        <button :disabled="!feedStore.hasNextPage" @click="fetchNextPage">Next</button>
     </div>
 
-  </div> <!-- End of feed-view -->
+    <div class="mt-8 text-center">
+        <button 
+          :disabled="feedStore.currentPage <= 1" 
+          @click="fetchPreviousPage"
+          class="py-2 px-4 mx-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Previous
+        </button>
+        <span class="mx-4 text-gray-600">Page {{ feedStore.currentPage }} of {{ feedStore.totalPages }}</span>
+        <button 
+          :disabled="!feedStore.hasNextPage" 
+          @click="fetchNextPage"
+          class="py-2 px-4 mx-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Next
+        </button>
+    </div>
+  </div>
 </template>
-
-<style scoped>
-.feed-view {
-  max-width: 800px; /* Adjust as needed */
-  margin: 1rem auto;
-  padding: 1rem;
-}
-
-.loading,
-.error-message,
-.empty-feed {
-  text-align: center;
-  padding: 2rem;
-  color: #666;
-}
-
-.error-message {
-  color: #dc3545; /* Red */
-  background-color: #f8d7da;
-  border: 1px solid #f5c6cb;
-  border-radius: 4px;
-}
-
-.posts-list {
-  margin-top: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem; /* Space between posts */
-}
-
-.post-item {
-  border: 1px solid #eee;
-  border-radius: 8px;
-  padding: 1rem 1.5rem;
-  background-color: #fff;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-}
-
-.post-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.75rem;
-  color: #555;
-  font-size: 0.9em;
-}
-
-.author-username {
-  font-weight: bold;
-  color: #333;
-}
-
-.timestamp {
-  color: #888;
-}
-
-.post-content {
-  margin-bottom: 1rem;
-  line-height: 1.6;
-  /* Handle long words/links */
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-  color: #333;
-}
-
-.post-footer {
-    font-size: 0.85em;
-    color: #777;
-    border-top: 1px solid #f0f0f0;
-    padding-top: 0.75rem;
-    margin-top: 1rem;
-}
-
-.post-footer span {
-    margin-right: 1rem;
-}
-
-.pagination-controls {
-    margin-top: 2rem;
-    text-align: center;
-}
-
-.pagination-controls button {
-    padding: 0.5rem 1rem;
-    margin: 0 0.5rem;
-    cursor: pointer;
-    /* Add basic button styling as needed */
-    background-color: #eee;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-}
-
-.pagination-controls button:disabled { /* Style for disabled state */
-    cursor: not-allowed;
-    opacity: 0.6;
-    background-color: #f8f8f8;
-}
- .pagination-controls button:not(:disabled):hover { /* Hover for enabled */
-    background-color: #ddd;
- }
-
- .pagination-controls span { /* Style for the page text */
-     margin: 0 1rem;
-     color: #555;
- }
-
- /* Add these styles */
-.like-button {
-  background-color: transparent;
-  border: 1px solid #ccc;
-  padding: 0.2rem 0.6rem;
-  border-radius: 4px;
-  cursor: pointer;
-  margin-right: 1rem;
-  color: #337ab7; /* Default blue-ish */
-  transition: background-color 0.2s ease, color 0.2s ease;
-}
-
-.like-button:hover {
-  background-color: #f0f0f0;
-}
-
-.like-button.liked { /* Style when liked */
-  background-color: #007bff; /* Blue background */
-  color: white;
-  border-color: #0056b3;
-}
-
-.like-button.liked:hover {
-    background-color: #0056b3;
-}
-/* Add more styles later */
-</style>

@@ -1,18 +1,33 @@
+// C:\Users\Vinay\Project\frontend\src\App.vue
+
 <script setup lang="ts">
 import { onMounted, onUnmounted, watch, ref } from 'vue';
-import { RouterView, useRouter, RouterLink } from 'vue-router';
+import { RouterView, useRouter, RouterLink, useRoute } from 'vue-router'; // <-- MODIFIED: Added useRoute
 import { useAuthStore } from '@/stores/auth';
 import { useNotificationStore } from '@/stores/notification';
 import { debounce } from 'lodash-es';
 import axiosInstance from '@/services/axiosInstance';
 import type { User } from '@/stores/auth';
 import { getAvatarUrl } from '@/utils/avatars';
+import eventBus from './services/eventBus';
 
 const authStore = useAuthStore();
 const notificationStore = useNotificationStore();
 const router = useRouter();
+const route = useRoute(); // <-- ADDED: Initialize route
 
-// --- NEW: State & Logic for Search Autocomplete ---
+// --- NEW: Click handler for the logo ---
+function handleLogoClick(event: MouseEvent) {
+  // If we are already on the home page ('/'),
+  // prevent the default navigation and emit our custom event.
+  if (route.path === '/') {
+    event.preventDefault(); // Stop the RouterLink from navigating
+    eventBus.emit('reset-feed-form');
+  }
+  // Otherwise, the RouterLink will navigate as normal.
+}
+
+// --- Search Autocomplete Logic (Unchanged) ---
 const searchQuery = ref('');
 const showSearchDropdown = ref(false);
 const searchLoading = ref(false);
@@ -24,7 +39,6 @@ const handleFullSearchSubmit = () => {
   showSearchDropdown.value = false;
   if (searchQuery.value.trim()) {
     router.push({ name: 'search', query: { q: searchQuery.value.trim() } });
-    // Don't clear searchQuery here so it stays in the box after navigation
   }
 };
 
@@ -60,7 +74,7 @@ const handleSearchInput = () => {
 
 const selectUserAndNavigate = (user: User) => {
   showSearchDropdown.value = false;
-  searchQuery.value = ''; // Clear search bar after selecting a user
+  searchQuery.value = ''; 
   router.push({ name: 'profile', params: { username: user.username } });
 };
 
@@ -96,7 +110,7 @@ watch(showSearchDropdown, (isOpen) => {
 });
 onUnmounted(() => document.removeEventListener('click', closeSearchDropdownOnClickOutside));
 
-// --- Existing Auth & Notification Logic ---
+// --- Auth & Notification Logic (Unchanged) ---
 onMounted(async () => {
   await authStore.initializeAuth();
   if (authStore.isAuthenticated) notificationStore.fetchUnreadCount();
@@ -117,12 +131,13 @@ const handleLogout = async () => { await authStore.logout(); };
       <div class="flex items-center justify-between h-16">
         
         <div class="flex-shrink-0">
-          <RouterLink to="/" class="text-2xl font-bold tracking-tight transition-transform duration-300 hover:scale-105 inline-block">
+          <!-- MODIFIED: @click now calls our new function -->
+          <RouterLink to="/" @click="handleLogoClick" class="text-2xl font-bold tracking-tight transition-transform duration-300 hover:scale-105 inline-block">
             <span class="bg-gradient-to-r from-blue-600 to-purple-500 bg-clip-text text-transparent">NxtTurn</span>
           </RouterLink>
         </div>
 
-        <!-- Center Section: Search Bar with Autocomplete -->
+        <!-- Center Section: Search Bar (Unchanged) -->
         <div class="flex-grow flex justify-center px-4" ref="searchContainerRef">
           <div class="relative w-full max-w-lg">
             <form @submit.prevent="handleFullSearchSubmit" v-if="authStore.isAuthenticated">
@@ -140,7 +155,6 @@ const handleLogout = async () => { await authStore.logout(); };
               </div>
             </form>
             
-            <!-- Search Suggestions Dropdown -->
             <div
               v-if="showSearchDropdown && searchQuery"
               class="absolute top-full mt-2 w-full rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-30"
@@ -169,7 +183,7 @@ const handleLogout = async () => { await authStore.logout(); };
           </div>
         </div>
 
-        <!-- Right Section: User Actions -->
+        <!-- Right Section: User Actions (Unchanged) -->
         <div class="flex items-center gap-4 flex-shrink-0">
           <template v-if="authStore.isAuthenticated">
             <RouterLink 
