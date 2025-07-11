@@ -6,6 +6,10 @@ import { storeToRefs } from 'pinia';
 import { getAvatarUrl } from '@/utils/avatars';
 import MentionAutocomplete from './MentionAutocomplete.vue';
 
+const props = defineProps<{
+  groupId?: number; // This makes the component aware of the group context
+}>();
+
 // --- Stores and State ---
 const feedStore = useFeedStore();
 const authStore = useAuthStore();
@@ -137,6 +141,10 @@ const handleSubmit = async () => {
   if (createPostError.value) feedStore.createPostError = null;
 
   const formData = new FormData();
+
+  if (props.groupId) {
+    formData.append('group_id', props.groupId.toString());
+  }
 
   if (showPollCreator.value) {
     const validOptions = pollOptions.value.map(o => o.trim()).filter(Boolean);

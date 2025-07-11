@@ -3,34 +3,40 @@ import { onMounted, onUnmounted, watch, ref, computed } from 'vue';
 import { RouterView, useRouter, RouterLink, useRoute } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useNotificationStore } from '@/stores/notification';
-import { useSearchStore } from '@/stores/search'; // <-- 1. IMPORT the search store
-import { storeToRefs } from 'pinia'; // <-- IMPORT storeToRefs
+import { useSearchStore } from '@/stores/search';
+import { storeToRefs } from 'pinia';
 import { debounce } from 'lodash-es';
 import { getAvatarUrl } from '@/utils/avatars';
 import type { User } from '@/stores/auth';
-import type { Post } from '@/stores/feed'; // <-- Import Post type
+import type { Post } from '@/stores/feed';
 import eventBus from './services/eventBus';
+
+// --- NEW IMPORT: The Sidebar component ---
+import Sidebar from '@/components/Sidebar.vue';
 
 // --- Store Initializations ---
 const authStore = useAuthStore();
 const notificationStore = useNotificationStore();
-const searchStore = useSearchStore(); // <-- Initialize search store
+const searchStore = useSearchStore();
 const router = useRouter();
 const route = useRoute();
 
 // --- Get State from Stores ---
-// We now get both user and post results from the store
 const { userResults, postResults, isLoadingUsers, isLoadingPosts } = storeToRefs(searchStore);
 
 // --- Local Component State ---
 const searchQuery = ref('');
 const showSearchDropdown = ref(false);
 const searchContainerRef = ref<HTMLDivElement | null>(null);
-// We no longer need activeIndex for keyboard navigation in this simplified version
 
 // --- Computed property to check if there are any results ---
 const hasAnyResults = computed(() => userResults.value.length > 0 || postResults.value.length > 0);
 const isSearching = computed(() => isLoadingUsers.value || isLoadingPosts.value);
+
+// --- Computed property for sidebar visibility ---
+const showSidebar = computed(() => {
+  return authStore.isAuthenticated && !route.meta.requiresGuest;
+});
 
 // --- Logo Click Handler (Unchanged) ---
 function handleLogoClick(event: MouseEvent) {
@@ -40,10 +46,9 @@ function handleLogoClick(event: MouseEvent) {
   }
 }
 
-// --- NEW, UNIFIED SEARCH LOGIC ---
+// --- Unified Search Logic (Unchanged) ---
 const handleFullSearchSubmit = () => {
   if (searchQuery.value.trim()) {
-    // We navigate away, so close the dropdown.
     showSearchDropdown.value = false;
     router.push({ name: 'search', query: { q: searchQuery.value.trim() } });
   }
@@ -54,7 +59,6 @@ const debouncedSearch = debounce(async (query: string) => {
     searchStore.clearSearch();
     return;
   }
-  // Use the master search action from the store
   await searchStore.performSearch(query);
 }, 300);
 
@@ -68,18 +72,16 @@ const handleSearchInput = () => {
   }
 };
 
-// --- Dropdown Navigation & Selection ---
+// --- Dropdown Navigation & Selection (Unchanged) ---
 const selectUserAndNavigate = (user: User) => {
   showSearchDropdown.value = false;
   searchQuery.value = ''; 
   router.push({ name: 'profile', params: { username: user.username } });
 };
 
-
 const selectPostAndNavigate = (post: Post) => {
   showSearchDropdown.value = false;
   searchQuery.value = '';
-  // This now navigates to our new 'single-post' route
   router.push({ name: 'single-post', params: { postId: post.id } });
 };
 
@@ -94,6 +96,7 @@ watch(showSearchDropdown, (isOpen) => {
   else document.removeEventListener('click', closeSearchDropdownOnClickOutside);
 });
 onUnmounted(() => document.removeEventListener('click', closeSearchDropdownOnClickOutside));
+
 
 // --- Existing Auth & Notification Logic (Unchanged) ---
 onMounted(async () => {
@@ -121,7 +124,7 @@ const handleLogout = async () => { await authStore.logout(); };
           </RouterLink>
         </div>
 
-        <!-- Center Section: Search Bar (Template is updated) -->
+        <!-- Center Section: Search Bar -->
         <div class="flex-grow flex justify-center px-4" ref="searchContainerRef">
           <div class="relative w-full max-w-lg">
             <form @submit.prevent="handleFullSearchSubmit" v-if="authStore.isAuthenticated">
@@ -138,7 +141,7 @@ const handleLogout = async () => { await authStore.logout(); };
               </div>
             </form>
             
-            <!-- NEW: Updated Search Suggestions Dropdown -->
+            <!-- Search Suggestions Dropdown -->
             <div
               v-if="showSearchDropdown && searchQuery"
               class="absolute top-full mt-2 w-full rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-30"
@@ -181,9 +184,17 @@ const handleLogout = async () => { await authStore.logout(); };
           </div>
         </div>
 
-        <!-- Right Section: User Actions (Unchanged) -->
+        <!-- Right Section: User Actions (Groups link will be removed from here) -->
         <div class="flex items-center gap-4 flex-shrink-0">
           <template v-if="authStore.isAuthenticated">
+            <!-- REMOVED: Groups link will now be in the sidebar -->
+            <!-- <RouterLink
+              :to="{ name: 'group-list' }"
+              class="text-sm font-medium text-gray-600 hover:text-blue-500 transition-colors"
+            >
+              Groups
+            </RouterLink> -->
+
             <RouterLink 
               v-if="authStore.currentUser?.username"
               :to="{ name: 'profile', params: { username: authStore.currentUser.username } }" 
@@ -213,7 +224,28 @@ const handleLogout = async () => { await authStore.logout(); };
     </nav>
   </header>
 
-  <main class="py-6">
-    <RouterView />
-  </main>
+  <!-- NEW: Main content area with conditional sidebar -->
+  <div class="flex">
+    <!-- Sidebar -->
+    <aside v-if="showSidebar" class="w-64 bg-white shadow-md pt-6 px-4 flex-shrink-0">
+      <!-- We will place our Sidebar component here -->
+      <!-- For now, a placeholder div -->
+      <div class="space-y-4">
+        <h3 class="text-lg font-semibold text-gray-800">Navigation</h3>
+        <ul>
+          <li>
+            <RouterLink :to="{ name: 'group-list' }" class="block px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-colors">
+              Groups
+            </RouterLink>
+          </li>
+          <!-- Future links like Saved Pages will go here -->
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-grow py-6 px-4">
+      <RouterView />
+    </main>
+  </div>
 </template>

@@ -7,6 +7,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.http import Http404
 from django.db.models import Q, Count, Value, CharField, Case, When
 from django.db import transaction
+from django.utils import timezone # Import timezone for admin actions (if not already there)
 
 from rest_framework import generics, status, views, serializers, permissions
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAuthenticatedOrReadOnly
@@ -24,7 +25,11 @@ from .serializers import (
     GroupSerializer, CommentSerializer, FeedItemSerializer, ConversationSerializer,
     MessageSerializer, MessageCreateSerializer, NotificationSerializer, ReportSerializer
 )
-from .permissions import IsOwnerOrReadOnly
+from .permissions import IsOwnerOrReadOnly, IsGroupMember
+
+
+
+
 
 User = get_user_model()
 
@@ -167,13 +172,37 @@ class ContentSearchAPIView(generics.ListAPIView):
 # ==================================
 # Status Post Views
 # ==================================
+# In C:\Users\Vinay\Project\Loopline\community\views.py
+
+# --- REPLACEMENT StatusPostListCreateView ---
 class StatusPostListCreateView(generics.ListCreateAPIView):
-    queryset = StatusPost.objects.select_related('author__userprofile').prefetch_related('likes', 'media', 'poll__options', 'poll__votes').order_by('-created_at')
+    queryset = StatusPost.objects.select_related('author__userprofile', 'group__creator').prefetch_related('likes', 'media', 'poll__options', 'poll__votes').order_by('-created_at')
     serializer_class = StatusPostSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
     pagination_class = PageNumberPagination
+
+    def get_permissions(self):
+        """
+        This method now correctly checks for 'group_id' from the frontend
+        to apply the IsGroupMember permission.
+        """
+        if self.request.method == 'POST':
+            # The frontend sends the group's ID under the key 'group_id'.
+            if 'group_id' in self.request.data and self.request.data['group_id']:
+                return [IsAuthenticated(), IsGroupMember()]
+            else:
+                return [IsAuthenticated()]
+        return [AllowAny()] 
+
     def perform_create(self, serializer):
-        serializer.save(author=self.request.user)
+        """
+        This method is called by DRF after the serializer is validated.
+        Our serializer setup correctly takes 'group_id' from the request
+        and puts the corresponding Group object into validated_data['group'].
+        We then explicitly save it with the post.
+        """
+        group = serializer.validated_data.get('group', None)
+        serializer.save(author=self.request.user, group=group)
+    
     def get_serializer_context(self):
         return {'request': self.request}
 
@@ -311,11 +340,48 @@ class ForumPostRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
 # ==================================
 # Group Views  <-- RESTORED
 # ==================================
-class GroupListView(generics.ListAPIView):
-    queryset = Group.objects.prefetch_related('creator__userprofile', 'members').all()
+class GroupListView(generics.ListCreateAPIView):
     serializer_class = GroupSerializer
-    permission_classes = [AllowAny]
-    pagination_class = PageNumberPagination
+    permission_classes = [IsAuthenticatedOrReadOnly]
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        # This queryset with select_related is crucial for performance and for our fix.
+        return Group.objects.select_related('creator__userprofile').prefetch_related('members').all()
+
+    def perform_create(self, serializer):
+        # This part is correct: save the group and add the creator as a member.
+        group = serializer.save(creator=self.request.user)
+        group.members.add(self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        """
+        THIS IS THE FIX.
+        We override the default 'create' behavior to ensure the response
+        payload is serialized with the full GroupSerializer, not the limited
+        one used for validating input.
+        """
+        # Step 1: Validate incoming data (uses the appropriate serializer based on get_serializer_class).
+        # For a POST, this will be your internal GroupCreateSerializer if you keep it,
+        # or just GroupSerializer if you simplify. We'll use the default DRF behavior.
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # Step 2: Use perform_create to save the object and add the member.
+        self.perform_create(serializer)
+
+        # Step 3: Re-fetch the newly created instance from the database using our optimized queryset.
+        # This guarantees that the 'creator' and 'creator.userprofile' are loaded.
+        new_group_instance = self.get_queryset().get(pk=serializer.instance.pk)
+        
+        # Step 4: Serialize the *full* instance for the response using the main GroupSerializer.
+        # We explicitly use GroupSerializer here to ensure it has all fields.
+        response_serializer = GroupSerializer(new_group_instance, context=self.get_serializer_context())
+        
+        # Step 5: Return the standard 201 CREATED response with the rich data.
+        headers = self.get_success_headers(response_serializer.data)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
 
 class GroupRetrieveAPIView(generics.RetrieveAPIView):
     queryset = Group.objects.prefetch_related('members__userprofile', 'creator__userprofile').all()
@@ -337,6 +403,56 @@ class GroupMembershipView(APIView):
             return Response({"detail": "You are not a member."}, status=status.HTTP_400_BAD_REQUEST)
         group.members.remove(request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
+    
+
+# === PASTE THIS NEW VIEW INTO community/views.py ===
+# (e.g., in the "Group Views" section)
+
+# In C:\Users\Vinay\Project\Loopline\community\views.py
+
+# --- REPLACEMENT GroupPostListView ---
+# In C:\Users\Vinay\Project\Loopline\community\views.py
+
+class GroupPostListView(generics.ListAPIView):
+    """
+    API endpoint for listing all StatusPosts that belong to a specific group.
+    """
+    serializer_class = StatusPostSerializer
+    permission_classes = [AllowAny]
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        """
+        This queryset is correct. It filters by group and pre-fetches related data.
+        """
+        group_id = self.kwargs.get('group_id')
+        return StatusPost.objects.filter(
+            group__id=group_id
+        ).select_related(
+            'author__userprofile', 
+            'group'
+        ).prefetch_related(
+            'media', 'likes', 'poll__options', 'poll__votes'
+        ).order_by('-created_at')
+
+    # --- THIS IS THE FIX ---
+    # We add a custom 'list' method to explicitly control and apply pagination.
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        page = self.paginate_queryset(queryset)
+        
+        if page is not None:
+            # If a page exists, serialize that page's data.
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        # Fallback if pagination is somehow disabled or not applicable.
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+    # --- END OF FIX ---
+
+    def get_serializer_context(self):
+        return {'request': self.request}
 
 # ==================================
 # Comment Views
@@ -378,68 +494,32 @@ class CommentRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView)
 # ==================================
 # Feed View (High-Performance Version)
 # ==================================
-class FeedListView(generics.ListAPIView): # Inherit from ListAPIView for easier pagination
-    serializer_class = FeedItemSerializer
+class FeedListView(generics.ListAPIView):
+    # Change 1: Use StatusPostSerializer directly. We've proven it works and
+    # provides all the necessary data, including the nested group object.
+    serializer_class = StatusPostSerializer
     permission_classes = [IsAuthenticated]
-    pagination_class = PageNumberPagination # Use your standard paginator
+    pagination_class = PageNumberPagination
 
     def get_queryset(self):
         user = self.request.user
-
-        # 1. Get IDs for followed users
         following_user_ids = list(user.following.values_list('following_id', flat=True))
-        user_ids_for_status_posts = following_user_ids + [user.id]
+        user_ids_for_feed = following_user_ids + [user.id]
 
-        # 2. Prepare the base queryset for StatusPosts
-        # We add a custom 'model_type' field to identify the object later
-        status_posts_qs = StatusPost.objects.filter(
-            author_id__in=user_ids_for_status_posts
-        ).annotate(
-            model_type=Value('statuspost', output_field=CharField())
-        )
+        # Change 2: The queryset now pre-fetches everything needed.
+        # This makes the view simpler and more efficient.
+        return StatusPost.objects.filter(
+            author_id__in=user_ids_for_feed
+        ).select_related(
+            'author__userprofile', 
+            'group'  # The crucial part for our context display
+        ).prefetch_related(
+            'media', 'likes', 'poll__options', 'poll__votes'
+        ).order_by('-created_at')
 
-        # 3. In the future, you will prepare the ForumPosts queryset here
-        # forum_posts_qs = ForumPost.objects.filter(...).annotate(...)
-
-        # 4. For now, our "combined" query is just the status posts.
-        # But we use the pattern that will allow for UNIONs later.
-        # The .values() call selects only the fields needed for sorting and identification.
-        # The final .order_by() is applied at the database level.
-        
-        # NOTE: Since we only have one queryset, a direct .order_by() is sufficient.
-        # The UNION logic will be added when you have more post types.
-        # For now, we will just order the main queryset to keep it simple but correct.
-        
-        # Let's keep the logic simple for now while using the ListAPIView structure.
-        # The advanced UNION is best when you actually have two or more querysets to combine.
-        # This version is a good compromise: it's clean, uses ListAPIView, and is easy to expand.
-        
-        return status_posts_qs.order_by('-created_at')
-
-    def list(self, request, *args, **kwargs):
-        # This method is called by ListAPIView to get the final response.
-        # We use it to ensure the full objects are serialized with all their data.
-        queryset = self.get_queryset()
-        page = self.paginate_queryset(queryset)
-        
-        # We prefetch related data here for maximum efficiency on the paginated results
-        if page is not None:
-            # This is a very efficient way to get all related data for only the items on the current page
-            posts = StatusPost.objects.filter(
-                id__in=[item.id for item in page]
-            ).select_related('author__userprofile').prefetch_related('media', 'likes', 'poll__options', 'poll__votes')
-            
-            # Since the posts are already ordered by ID from the filter, we re-sort them
-            # based on the original created_at order from the paginated queryset.
-            post_map = {post.id: post for post in posts}
-            sorted_posts = [post_map[item.id] for item in page if item.id in post_map]
-
-            serializer = self.get_serializer(sorted_posts, many=True)
-            return self.get_paginated_response(serializer.data)
-
-        # Fallback for non-paginated response (if pagination is disabled)
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+    def get_serializer_context(self):
+        # This is still needed for 'is_liked_by_user'
+        return {'request': self.request}
 
 # ==================================
 # Private Messaging Views

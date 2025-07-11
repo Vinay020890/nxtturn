@@ -259,6 +259,12 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
 # --- HEAVILY REFACTORED StatusPostSerializer with UPDATE logic ---
 # --- REPLACEMENT StatusPostSerializer with Polls and Fixes ---
 class StatusPostSerializer(serializers.ModelSerializer):
+
+    class SimpleGroupSerializer(serializers.ModelSerializer):
+        class Meta:
+            model = Group
+            fields = ['id', 'name']
+    
     author = UserSerializer(read_only=True)
     is_liked_by_user = serializers.SerializerMethodField()
     like_count = serializers.SerializerMethodField()
@@ -266,6 +272,14 @@ class StatusPostSerializer(serializers.ModelSerializer):
     object_id = serializers.SerializerMethodField()
     post_type = serializers.SerializerMethodField()   
     comment_count = serializers.SerializerMethodField()
+    group = SimpleGroupSerializer(read_only=True, allow_null=True)
+    group_id = serializers.PrimaryKeyRelatedField(
+        queryset=Group.objects.all(),
+        source='group',
+        write_only=True,
+        required=False,
+        allow_null=True
+    )
 
     # --- Fields for Media ---
     media = PostMediaSerializer(many=True, read_only=True)
@@ -298,7 +312,7 @@ class StatusPostSerializer(serializers.ModelSerializer):
     class Meta:
         model = StatusPost
         fields = [
-            'id', 'author', 'content', 'created_at', 'updated_at',
+            'id', 'author', 'content', 'created_at', 'updated_at', 'group', 'group_id',
             'like_count', 'is_liked_by_user', 'content_type_id', 'object_id', 
             'post_type', 'comment_count',
             # Media fields
@@ -313,7 +327,7 @@ class StatusPostSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'id', 'author', 'created_at', 'updated_at', 'like_count',
             'is_liked_by_user', 'content_type_id', 'object_id', 'post_type',
-            'comment_count', 'media', 'poll' # Added 'poll' here
+            'comment_count', 'media', 'poll', 'group' # Added 'poll' here
         ]
 
      # --- ADD THE NEW METHOD HERE ---
@@ -616,13 +630,34 @@ class ForumPostSerializer(serializers.ModelSerializer):
         fields = ['id', 'author', 'category', 'group', 'category_name', 'group_name', 'title', 'content', 'created_at', 'updated_at']
         read_only_fields = ['author', 'created_at', 'updated_at', 'category_name', 'group_name']
 
+# In community/serializers.py
+
+
 class GroupSerializer(serializers.ModelSerializer):
     creator = UserSerializer(read_only=True)
     member_count = serializers.IntegerField(source='members.count', read_only=True)
+    
+    
+    is_member = serializers.SerializerMethodField()
+    
+
     class Meta:
         model = Group
-        fields = ['id', 'name', 'description', 'creator', 'member_count', 'members', 'created_at']
-        read_only_fields = ['creator', 'member_count', 'created_at']
+        # --- FIELDS LIST: Updated to include 'is_member' and explicitly exclude 'members' ---
+        # We usually don't need the full 'members' list on every fetch, just the count and is_member.
+        fields = ['id', 'name', 'description', 'creator', 'member_count', 'is_member', 'created_at', 'privacy_level']
+        # 'members' is implicitly read-only if not in 'fields' but we explicitly omit for clarity.
+        read_only_fields = ['creator', 'member_count', 'created_at', 'privacy_level'] # 'is_member' is a SerializerMethodField, so it's read-only by default
+
+    # --- ADD THIS NEW METHOD (logic for is_member) ---
+    def get_is_member(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            # Check if the requesting user is one of the group's members
+            # Use obj.members.filter() for efficiency when the members M2M isn't preloaded
+            return obj.members.filter(pk=request.user.pk).exists()
+        return False
+    # --- END OF NEW METHOD ---
 
 # --- Replace your existing CommentSerializer with this one ---
 class CommentSerializer(serializers.ModelSerializer):

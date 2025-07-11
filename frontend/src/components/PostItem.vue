@@ -21,7 +21,7 @@ import eventBus from '@/services/eventBus';
 // All your existing props, stores, state, computed properties, and methods are correct.
 
 // --- Props, Stores, and Basic State ---
-const props = defineProps<{ post: Post }>();
+const props = defineProps<{ post: Post; hideGroupContext?: boolean; }>();
 const emit = defineEmits(['report-content']);
 const feedStore = useFeedStore();
 const commentStore = useCommentStore();
@@ -345,10 +345,25 @@ async function handleCommentSubmit() {
       <div class="flex items-center">
         <!-- The getAvatarUrl function is already correct because we updated its source file -->
         <img :src="getAvatarUrl(post.author.picture, post.author.first_name, post.author.last_name)" alt="author avatar" class="w-10 h-10 rounded-full object-cover mr-3 bg-gray-200">
+            <!-- REPLACEMENT START -->
         <div>
-          <router-link :to="{ name: 'profile', params: { username: post.author.username } }" class="font-bold text-gray-800 hover:underline">{{ post.author.username }}</router-link>
+          <div class="flex items-center gap-1">
+            <router-link :to="{ name: 'profile', params: { username: post.author.username } }" class="font-bold text-gray-800 hover:underline">{{ post.author.username }}</router-link>
+            
+            <!-- This is the new part: It only shows if post.group exists -->
+            <template v-if="post.group && !hideGroupContext">
+              <span class="text-gray-500 text-sm">▶</span>
+              <router-link 
+                :to="{ name: 'group-detail-page', params: { id: post.group.id } }" 
+                class="font-bold text-gray-800 hover:underline"
+              >
+                {{ post.group.name }}
+              </router-link>
+            </template>
+          </div>
           <p class="text-sm text-gray-500">{{ format(new Date(post.created_at), 'Pp') }}</p>
         </div>
+        <!-- REPLACEMENT END -->
       </div>
       <div v-if="isOwner" class="relative" ref="optionsMenuRef">
         <button @click.stop="toggleOptionsMenu" class="p-2 rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">

@@ -34,7 +34,8 @@ urlpatterns = [
     path('groups/', views.GroupListView.as_view(), name='group-list'),
     path('groups/<int:pk>/', views.GroupRetrieveAPIView.as_view(), name='group-detail'),
     path('groups/<int:group_id>/membership/', views.GroupMembershipView.as_view(), name='group-membership'),
-    path('groups/<int:group_id>/posts/', views.ForumPostListCreateView.as_view(), name='group-post-list-create-by-group'),
+    # path('groups/<int:group_id>/posts/', views.ForumPostListCreateView.as_view(), name='group-post-list-create-by-group'),
+    path('groups/<int:group_id>/status-posts/', views.GroupPostListView.as_view(), name='group-statuspost-list'),
 
     # --- Comments ---
     path('comments/<str:content_type>/<int:object_id>/', views.CommentListCreateAPIView.as_view(), name='comment-list-create'),

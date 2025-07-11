@@ -14,7 +14,7 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      name: 'feed', // <-- NOTE: The name for your feed is 'feed', not 'home'
+      name: 'feed',
       component: () => import('@/views/FeedView.vue'),
       meta: { requiresAuth: true }
     },
@@ -48,22 +48,31 @@ const router = createRouter({
       component: () => import('@/views/SearchPage.vue'),
       meta: { requiresAuth: true }
     },
-    // --- ADD THIS NEW ROUTE OBJECT ---
     {
       path: '/posts/:postId',
       name: 'single-post',
       component: () => import('@/views/SinglePostView.vue'),
       meta: { requiresAuth: true }
     },
-    // --- END OF NEW ROUTE ---
+    // --- CORRECTED: ADD BOTH GROUP ROUTES HERE ---
+    {
+      path: '/groups', // This is the route for listing all groups
+      name: 'group-list',
+      component: () => import('@/views/GroupListAllView.vue'), // Points to our new list component
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/groups/:id', // This is the route for a single group's detail page
+      name: 'group-detail-page',
+      component: () => import('@/views/GroupDetailView.vue'),
+      meta: { requiresAuth: true }
+    },
+    // --- END OF GROUP ROUTES ---
   ],
 });
 
 router.beforeEach((to, from, next) => {
   const authStore = useAuthStore();
-  // Initialize the store to ensure isAuthenticated is correctly loaded from localStorage
-  // This is a common pattern to call initializeAuth here, but let's assume App.vue handles it.
-  
   const requiresAuth = to.meta.requiresAuth;
   const requiresGuest = to.meta.requiresGuest;
   const isAuthenticated = authStore.isAuthenticated;
@@ -71,7 +80,6 @@ router.beforeEach((to, from, next) => {
   if (requiresAuth && !isAuthenticated) {
     next({ name: 'login' });
   } else if (requiresGuest && isAuthenticated) {
-    // Your existing logic correctly redirects logged-in users from login/register to the feed.
     next({ name: 'feed' });
   } else {
     next();

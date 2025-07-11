@@ -66,6 +66,9 @@ class Follow(models.Model):
 class StatusPost(models.Model):
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='status_posts')
     content = models.TextField(blank=True, null=True) # Now optional, validation moves to serializer
+
+    group = models.ForeignKey('Group', on_delete=models.CASCADE, related_name='status_posts', null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     likes = GenericRelation('Like', related_query_name='statuspost_likes')
@@ -132,13 +135,26 @@ class Group(models.Model):
     members = models.ManyToManyField(User, related_name='joined_groups', blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # --- NEW FIELD: privacy_level ---
+    PRIVACY_CHOICES = [
+        ('public', 'Public - Anyone can view content and join directly'),
+        ('private', 'Private - Only members can view content, requires approval to join'),
+    ]
+    privacy_level = models.CharField(
+        max_length=10,
+        choices=PRIVACY_CHOICES,
+        default='public', # Default to public unless specified otherwise
+        help_text="Defines who can view content and how users can join."
+    )
+    # --- END NEW FIELD ---
+
     def __str__(self):
         return self.name
 
 class ForumPost(models.Model):
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='forum_posts')
     category = models.ForeignKey(ForumCategory, on_delete=models.SET_NULL, blank=True, null=True, related_name='posts')
-    group = models.ForeignKey(Group, on_delete=models.CASCADE, blank=True, null=True, related_name='posts')
+    group = models.ForeignKey(Group, on_delete=models.CASCADE, blank=True, null=True, related_name='forum_posts')
     title = models.CharField(max_length=255)
     content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
