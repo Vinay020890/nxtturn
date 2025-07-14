@@ -1,7 +1,7 @@
 <!-- C:\Users\Vinay\Project\frontend\src\components\CreateGroupFormModal.vue -->
 
 <script setup lang="ts">
-import { ref, watch, defineProps, defineEmits, computed } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { useGroupStore } from '@/stores/group';
 import { useAuthStore } from '@/stores/auth';
 // --- THIS IS THE FIX (Part 1 of 3) ---
