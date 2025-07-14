@@ -19,6 +19,7 @@ export interface NotificationRelatedObject {
   id: number
   display_text: string // From obj.__str__()
   // url?: string; // Optional: If your backend serializer adds a direct link
+  object_id?: number
 }
 
 // Interface for a single Notification

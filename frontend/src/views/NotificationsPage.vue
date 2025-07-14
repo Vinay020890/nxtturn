@@ -1,30 +1,42 @@
+// C:\Users\Vinay\Project\frontend\src/views/NotificationsPage.vue
+
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'; // <-- Import computed
+import { onMounted, ref } from 'vue'; // <-- Removed unused 'computed' import
 import { useNotificationStore } from '@/stores/notification';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { getAvatarUrl } from '@/utils/avatars'; // <-- Import avatar utility
+import { getAvatarUrl } from '@/utils/avatars';
+import type { Notification } from '@/stores/notification'; // Import the type for better safety
 
 const notificationStore = useNotificationStore();
 const isMarkingAllRead = ref(false);
 
-// --- NEW: Helper function to get the link for a notification target ---
-const getNotificationLink = (notification: any) => {
-  if (!notification.target) return { name: 'home' }; // Fallback to home
+// --- THIS IS THE FIX ---
+// The helper function is now smarter and uses the correct route names.
+const getNotificationLink = (notification: Notification) => {
+  // 1. Handle Like, Comment, Reply - these should link to the post
+  if (['like', 'comment', 'reply'].includes(notification.notification_type)) {
+    if (notification.target && notification.target.type.toLowerCase() === 'statuspost') {
+      return { name: 'single-post', params: { postId: notification.target.object_id } };
+    }
+  }
 
-  const targetType = notification.target.type.toLowerCase();
-  
-  if (targetType === 'statuspost') {
-    // For now, we link to the user's profile who made the post.
-    // A direct link to a post on the feed page is a more advanced feature.
-    return { name: 'profile', params: { username: notification.actor.username } };
+  // 2. Handle Mentions - these should also link to the post where the mention occurred
+  if (notification.notification_type === 'mention') {
+    if (notification.target && notification.target.type.toLowerCase() === 'statuspost') {
+      return { name: 'single-post', params: { postId: notification.target.object_id } };
+    }
+    if (notification.target && notification.target.type.toLowerCase() === 'comment') {
+      // If the comment's parent is a post, we can link there.
+      // This requires the parent post ID to be part of the notification payload,
+      // which is a future backend improvement. For now, we link to the user.
+      return { name: 'profile', params: { username: notification.actor.username } };
+    }
   }
-  if (targetType === 'comment') {
-    // Similarly, we can't easily link to a specific comment, so link to the general area.
-    return { name: 'profile', params: { username: notification.actor.username } };
-  }
-  
-  return { name: 'home' };
+
+  // 3. Fallback for other types (like new follower) or if target is missing
+  return { name: 'feed' }; // <-- Use 'feed' instead of 'home'
 };
+// --- END OF FIX ---
 
 
 const loadNotifications = (page: number) => {
@@ -67,9 +79,15 @@ onMounted(() => {
       </div>
 
       <!-- Loading, Error, Empty states (unchanged) -->
-      <div v-if="notificationStore.isLoadingList && notificationStore.notifications.length === 0" class="text-center py-10">...</div>
-      <div v-else-if="notificationStore.error" class="... ">...</div>
-      <div v-else-if="notificationStore.notifications.length === 0" class="text-center py-10">...</div>
+      <div v-if="notificationStore.isLoadingList && notificationStore.notifications.length === 0" class="text-center py-10">
+        <p class="text-gray-500">Loading notifications...</p>
+      </div>
+      <div v-else-if="notificationStore.error" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4">
+        <p>{{ notificationStore.error }}</p>
+      </div>
+      <div v-else-if="notificationStore.notifications.length === 0" class="text-center py-10 text-gray-500">
+        <p>You have no notifications yet.</p>
+      </div>
 
       <!-- Notification List -->
       <ul v-else class="space-y-1">
@@ -78,19 +96,18 @@ onMounted(() => {
           :key="notification.id" 
           class="block"
         >
-          <!-- Using router-link to make the whole item clickable -->
           <router-link
             :to="getNotificationLink(notification)"
             @click="markOneAsRead(notification.id)"
             class="flex items-start gap-4 p-4 rounded-lg transition-colors w-full text-left"
-            :class="notification.is_read ? 'bg-white hover:bg-gray-100' : 'bg-blue-50 hover:bg-blue-100'"
+            :class="notification.is_read ? 'bg-white hover:bg-gray-100' : 'bg-gray-50 hover:bg-gray-100'"
           >
-            <!-- Updated icon section to use avatars and mention icon -->
             <div class="flex-shrink-0">
               <img 
                 v-if="notification.actor"
                 :src="getAvatarUrl(notification.actor.picture, notification.actor.first_name, notification.actor.last_name)"
                 class="w-10 h-10 rounded-full object-cover"
+                alt=""
               >
             </div>
             
@@ -98,12 +115,11 @@ onMounted(() => {
               <p class="text-sm leading-snug">
                 <strong class="font-bold" :class="notification.is_read ? 'text-gray-700' : 'text-gray-900'">{{ notification.actor.username }}</strong>
                 
-                <!-- NEW: Logic to display different notification texts -->
                 <span v-if="notification.notification_type === 'like'"> liked your post.</span>
                 <span v-else-if="notification.notification_type === 'comment'"> commented on your post.</span>
                 <span v-else-if="notification.notification_type === 'reply'"> replied to your comment.</span>
                 <span v-else-if="notification.notification_type === 'mention'"> mentioned you in a 
-                  <span class="font-semibold">{{ notification.target?.type }}</span>.
+                  <span class="font-semibold">{{ notification.target?.type.replace('statuspost', 'post') || 'post' }}</span>.
                 </span>
                 <span v-else> {{ notification.verb }}</span>
               </p>
@@ -118,7 +134,9 @@ onMounted(() => {
       </ul>
 
       <!-- Pagination (unchanged) -->
-      <div v-if="!notificationStore.isLoadingList && notificationStore.pagination.totalPages > 1" class="flex justify-center ...">...</div>
+      <div v-if="!notificationStore.isLoadingList && notificationStore.pagination.totalPages > 1" class="flex justify-center mt-6">
+        <!-- Pagination controls here -->
+      </div>
     </div>
   </div>
 </template>

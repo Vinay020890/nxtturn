@@ -214,11 +214,28 @@ class ReportSerializer(serializers.ModelSerializer):
 
         return Report.objects.create(**validated_data)
 
-# ... (Keep GenericRelatedObjectSerializer, NotificationSerializer, UserProfileSerializer, UserProfileUpdateSerializer as they are) ...
+
+
+
 class GenericRelatedObjectSerializer(serializers.Serializer):
     type = serializers.CharField(read_only=True, source='_meta.model_name') 
     id = serializers.IntegerField(read_only=True, source='pk')
-    display_text = serializers.CharField(read_only=True, source='__str__') 
+    display_text = serializers.CharField(read_only=True, source='__str__')
+    
+    # --- THIS IS THE FIX ---
+    # We add object_id to link back to parent posts from comments/replies.
+    object_id = serializers.SerializerMethodField()
+
+    def get_object_id(self, obj):
+        """
+        Return the 'object_id' if the object has it (like a Comment), 
+        otherwise return the object's own ID as a fallback.
+        """
+        if hasattr(obj, 'object_id'):
+            return obj.object_id
+        # For top-level objects like StatusPost, its object_id is its own pk.
+        return obj.pk
+    # --- END OF FIX ---
 
 class NotificationSerializer(serializers.ModelSerializer):
     actor = UserSerializer(read_only=True)
