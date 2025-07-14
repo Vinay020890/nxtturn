@@ -1,24 +1,22 @@
+// C:\Users\Vinay\Project\frontend\src\views\SavedPostsView.vue
+
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'; // 'watch' is no longer needed
+// ---- [CHANGE 1] ---- Import onBeforeRouteLeave, remove onUnmounted
+import { ref, onMounted } from 'vue';
+import { onBeforeRouteLeave } from 'vue-router';
+// --------------------
 import { useFeedStore } from '@/stores/feed';
 import PostItem from '@/components/PostItem.vue';
 
-// Stores
 const feedStore = useFeedStore();
 
-// State for reporting (keeping them for future potential re-introduction of ReportModal if desired)
+// Reporting state can remain for future use if needed
 const showReportModal = ref(false);
 const reportPayload = ref({ content_type: '', object_id: 0, content_type_id: 0 });
 
-// Methods
 function prepareReportModal(payload: { content_type: string, object_id: number, content_type_id: number }) {
   reportPayload.value = payload;
   showReportModal.value = true;
-}
-
-function handleReportSuccess() {
-  showReportModal.value = false;
-  // Optionally, show a toast notification or some other feedback
 }
 
 async function fetchMoreSavedPosts() {
@@ -27,18 +25,19 @@ async function fetchMoreSavedPosts() {
 
 // Lifecycle Hooks
 onMounted(() => {
-  // Clear any existing posts and fetch the first page of saved posts
-  feedStore.savedPosts.splice(0); // Ensure the list is empty before fetching
+  // ---- [CHANGE 2] ---- The manual splice is no longer needed
+  // feedStore.savedPosts.splice(0); 
+  // --------------------
   feedStore.fetchSavedPosts();
 });
 
-onUnmounted(() => {
-  // Clear the saved posts data when leaving the view
-  feedStore.$reset(); // Resets all feed store state including savedPosts
+// ---- [CHANGE 3] ---- Replace onUnmounted with onBeforeRouteLeave
+onBeforeRouteLeave((to, from) => {
+  // Call the new, targeted reset action
+  feedStore.resetSavedPostsState();
+  console.log('Leaving saved posts view, state cleaned up.');
 });
-
-// Removed: Intersection Observer related state (observerTarget, observer) and its setup/watch logic
-// No need for 'watch' import as it's not used here anymore.
+// --------------------
 </script>
 
 <template>
@@ -66,8 +65,6 @@ onUnmounted(() => {
         @report-content="prepareReportModal"
       />
       
-      <!-- "Load More" button for pagination -->
-      <!-- MODIFIED: Container uses flex and justify-end for right alignment -->
       <div v-if="feedStore.savedPostsNextPageUrl" class="flex justify-end py-4">
         <button 
           @click="fetchMoreSavedPosts" 
@@ -80,6 +77,6 @@ onUnmounted(() => {
 
     </div>
 
-    <!-- Report Modal is not included here -->
+    <!-- Report Modal can be added here in the future if needed -->
   </div>
 </template>

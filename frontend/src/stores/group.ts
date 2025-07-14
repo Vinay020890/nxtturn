@@ -1,4 +1,4 @@
-// C:\Users\Vinay\Project\frontend\src\stores\group.ts
+// C:\Users\Vinay\Project\frontend\src/stores/group.ts
 
 import { ref } from 'vue';
 import { defineStore } from 'pinia';
@@ -50,7 +50,7 @@ export const useGroupStore = defineStore('group', () => {
   const allGroups = ref<Group[]>([]);
   const isLoadingAllGroups = ref(false);
   const allGroupsError = ref<string | null>(null);
-  const allGroupsCurrentPage = ref(1);
+  const allGroupsNextPageUrl = ref<string | null>(null);
   const allGroupsHasNextPage = ref(false);
   
   const isCreatingGroup = ref(false);
@@ -69,11 +69,30 @@ export const useGroupStore = defineStore('group', () => {
     allGroups.value = [];
     isLoadingAllGroups.value = false;
     allGroupsError.value = null;
-    allGroupsCurrentPage.value = 1;
+    allGroupsNextPageUrl.value = null;
     allGroupsHasNextPage.value = false;
 
     isCreatingGroup.value = false;
     createGroupError.value = null;
+  }
+
+  // --- Targeted Reset Functions ---
+  function resetGroupFeedState() {
+    currentGroup.value = null;
+    groupPosts.value = [];
+    groupPostsNextCursor.value = null;
+    isLoadingGroupPosts.value = false;
+    groupError.value = null;
+    console.log('Individual group feed state has been reset.');
+  }
+
+  function resetAllGroupsState() {
+    allGroups.value = [];
+    allGroupsNextPageUrl.value = null;
+    allGroupsHasNextPage.value = false;
+    isLoadingAllGroups.value = false;
+    allGroupsError.value = null;
+    console.log('"All Groups" discovery state has been reset.');
   }
 
   // --- Actions ---
@@ -81,7 +100,7 @@ export const useGroupStore = defineStore('group', () => {
   async function fetchGroupDetails(groupId: number) {
     isLoadingGroup.value = true;
     groupError.value = null;
-    clearGroupPosts();
+    resetGroupFeedState(); 
 
     try {
       const response = await axiosInstance.get<Group>(`/groups/${groupId}/`);
@@ -131,24 +150,21 @@ export const useGroupStore = defineStore('group', () => {
     }
   }
 
-  function clearGroupPosts() {
-    groupPosts.value = [];
-    groupPostsNextCursor.value = null;
-  }
-
-  async function fetchGroups(page: number = 1) {
+  async function fetchGroups(url: string | null = null) {
+    if (isLoadingAllGroups.value) return;
     isLoadingAllGroups.value = true;
     allGroupsError.value = null;
     try {
-      const response = await axiosInstance.get<PaginatedGroupResponse>('/groups/', {
-        params: { page }
-      });
-      if (page === 1) {
+      const apiUrl = url || '/groups/';
+      const response = await axiosInstance.get<PaginatedGroupResponse>(apiUrl);
+      
+      if (!url) {
         allGroups.value = response.data.results;
       } else {
         allGroups.value.push(...response.data.results);
       }
-      allGroupsCurrentPage.value = page;
+      
+      allGroupsNextPageUrl.value = response.data.next;
       allGroupsHasNextPage.value = response.data.next !== null;
     } catch (err: any) {
       console.error("Error fetching groups:", err);
@@ -159,8 +175,8 @@ export const useGroupStore = defineStore('group', () => {
   }
 
   async function fetchNextPageOfGroups() {
-    if (allGroupsHasNextPage.value && !isLoadingAllGroups.value) {
-      await fetchGroups(allGroupsCurrentPage.value + 1);
+    if (allGroupsNextPageUrl.value && !isLoadingAllGroups.value) {
+      await fetchGroups(allGroupsNextPageUrl.value);
     }
   }
 
@@ -262,12 +278,6 @@ export const useGroupStore = defineStore('group', () => {
       isJoiningLeaving.value = false;
     }
   }
-
-  function clearCurrentGroup() {
-    currentGroup.value = null;
-    groupError.value = null;
-    clearGroupPosts();
-  }
   
   return {
     // State
@@ -279,15 +289,11 @@ export const useGroupStore = defineStore('group', () => {
     joinLeaveError,
     isLoadingGroupPosts,
     groupPostsNextCursor,
-
     allGroups,
     isLoadingAllGroups,
     allGroupsError,
     allGroupsHasNextPage,
-    // === NEW: Expose allGroupsCurrentPage ===
-    allGroupsCurrentPage,
-    // =========================================
-
+    allGroupsNextPageUrl,
     isCreatingGroup,
     createGroupError,
 
@@ -300,8 +306,11 @@ export const useGroupStore = defineStore('group', () => {
     createGroup,
     joinGroup,
     leaveGroup,
-    clearCurrentGroup,
     addPostToGroupFeed,
     $reset,
+
+    // Exported Reset Functions
+    resetGroupFeedState,
+    resetAllGroupsState,
   };
 });

@@ -1,6 +1,11 @@
+// C:\Users\Vinay\Project\frontend\src\views\FeedView.vue
+
 <script setup lang="ts">
 import { useAuthStore } from '@/stores/auth';
-import { onMounted, onUnmounted, ref } from 'vue';
+// ---- [CHANGE 1] ---- Import onBeforeRouteLeave and remove onUnmounted from vue
+import { onMounted, ref } from 'vue';
+import { onBeforeRouteLeave } from 'vue-router';
+// --------------------
 import { useFeedStore } from '@/stores/feed';
 import { useModerationStore } from '@/stores/moderation';
 import { storeToRefs } from 'pinia';
@@ -11,7 +16,7 @@ import ReportFormModal from '@/components/ReportFormModal.vue';
 import eventBus from '@/services/eventBus';
 
 const authStore = useAuthStore();
-const feedStore = useFeedStore(); // Now useFeedStore contains mainFeedPosts, etc.
+const feedStore = useFeedStore();
 const moderationStore = useModerationStore();
 
 const { submissionError } = storeToRefs(moderationStore);
@@ -57,36 +62,34 @@ async function handleReportSubmit(payload: { reason: string; details: string }) 
 onMounted(async () => {
   eventBus.on('reset-feed-form', forceFormReset);
   
-  // Initialize the main feed - fetch first page using the new cursor pagination logic
-  // fetchFeed() without arguments will hit '/feed/' and populate mainFeedPosts
   await feedStore.fetchFeed();
 
-  // Setup Intersection Observer for infinite scroll
   observer = new IntersectionObserver((entries) => {
-    // Condition now checks mainFeedNextCursor and isLoadingMainFeed
     if (entries[0].isIntersecting && feedStore.mainFeedNextCursor && !feedStore.isLoadingMainFeed) {
-      // Call the new fetchNextPageOfMainFeed action
       feedStore.fetchNextPageOfMainFeed();
     }
   }, {
-    rootMargin: '200px', // Start loading when 200px away
+    rootMargin: '200px',
   });
 
-  // If the trigger element exists, start observing it.
   if (loadMoreTrigger.value) {
     observer.observe(loadMoreTrigger.value);
   }
 });
 
-onUnmounted(() => {
+// ---- [CHANGE 2] ---- Replace onUnmounted with onBeforeRouteLeave and call the correct reset function
+onBeforeRouteLeave((to, from) => {
   eventBus.off('reset-feed-form', forceFormReset);
-  // Disconnect observer to prevent memory leaks
+  
   if (observer) {
     observer.disconnect();
   }
-  // Reset feed store state when leaving the component
-  feedStore.$reset();
+
+  // Use the new targeted reset function instead of the aggressive $reset()
+  feedStore.resetMainFeedState();
+  console.log('Leaving main feed view, state and observer cleaned up.');
 });
+// --------------------
 </script>
 
 <template>
@@ -122,7 +125,6 @@ onUnmounted(() => {
     </div>
 
     <!-- Infinite Scroll Trigger & Loading Indicator -->
-    <!-- Only show trigger if there's a next page (cursor) -->
     <div v-if="feedStore.mainFeedNextCursor" ref="loadMoreTrigger" class="h-10"></div>
     <div v-if="feedStore.isLoadingMainFeed && feedStore.mainFeedPosts.length > 0" class="text-center p-4 text-gray-500">
       Loading more posts...

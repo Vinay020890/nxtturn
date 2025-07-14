@@ -1,7 +1,10 @@
 <!-- C:\Users\Vinay\Project\frontend\src\views\GroupListAllView.vue -->
 
 <script setup lang="ts">
+// ---- [CHANGE 1] ---- Add onBeforeRouteLeave
 import { onMounted, ref } from 'vue';
+import { onBeforeRouteLeave } from 'vue-router';
+// --------------------
 import { useGroupStore } from '@/stores/group';
 import { storeToRefs } from 'pinia';
 import { useRouter } from 'vue-router';
@@ -11,17 +14,27 @@ import type { Group } from '@/stores/group';
 const groupStore = useGroupStore();
 const router = useRouter();
 
+// The store now uses allGroupsNextPageUrl, but allGroupsHasNextPage is still useful for the button
 const { allGroups, isLoadingAllGroups, allGroupsError, allGroupsHasNextPage } = storeToRefs(groupStore);
 
 const isCreateGroupModalOpen = ref(false);
 
 onMounted(() => {
-  // Use the pagination-aware fetch action
-  // Ensure allGroups is cleared before fetching the first page, just like other feeds for clean load
-  groupStore.allGroups.splice(0); // Clear array before initial fetch
-  groupStore.allGroupsCurrentPage = 1; // Reset page number
-  groupStore.fetchGroups(1);
+  // ---- [CHANGE 2] ---- Remove manual state clearing. The leave guard handles this now.
+  // groupStore.allGroups.splice(0);
+  // groupStore.allGroupsCurrentPage = 1;
+  // --------------------
+  
+  // fetchGroups without an argument will fetch the first page.
+  groupStore.fetchGroups();
 });
+
+// ---- [CHANGE 3] ---- Add the onBeforeRouteLeave guard for cleanup
+onBeforeRouteLeave((to, from) => {
+  groupStore.resetAllGroupsState();
+  console.log('Leaving "All Groups" view, state cleaned up.');
+});
+// --------------------
 
 function openCreateGroupModal() {
   isCreateGroupModalOpen.value = true;
@@ -32,8 +45,8 @@ function handleGroupCreated(newGroup: Group) {
   router.push({ name: 'group-detail-page', params: { id: newGroup.id } });
 }
 
-// The handler for the button click
 function loadMoreGroups() {
+  // This action now uses the stored next page URL internally
   groupStore.fetchNextPageOfGroups();
 }
 </script>
@@ -93,7 +106,6 @@ function loadMoreGroups() {
     </div>
 
     <!-- "Load More" button for pagination -->
-    <!-- MODIFIED: Container uses flex and justify-end for right alignment -->
     <div v-if="allGroupsHasNextPage" class="flex justify-end mt-8">
       <button
         @click="loadMoreGroups"

@@ -112,6 +112,23 @@ export const useFeedStore = defineStore('feed', () => {
   }
   // ==========================================
 
+  // --- Targeted Reset Functions ---
+  function resetMainFeedState() {
+    mainFeedPosts.value = [];
+    mainFeedNextCursor.value = null;
+    isLoadingMainFeed.value = false;
+    mainFeedError.value = null;
+    console.log('Main feed state has been reset.');
+  }
+
+  function resetSavedPostsState() {
+    savedPosts.value = [];
+    savedPostsNextPageUrl.value = null;
+    isLoadingSavedPosts.value = false;
+    savedPostsError.value = null;
+    console.log('Saved posts state has been reset.');
+  }
+
   // --- Actions ---
 
   async function fetchFeed(url: string | null = null) {
@@ -370,7 +387,6 @@ export const useFeedStore = defineStore('feed', () => {
           const updatedData = { ...response.data, isUpdating: false };
 
           const updateInList = (list: Post[]) => {
-              // FIXED: Correctly use updatedData.id instead of an undefined 'post.id'
               const index = list.findIndex(p => p.id === updatedData.id && p.post_type === updatedData.post_type);
               if (index !== -1) {
                   list[index] = { ...list[index], ...updatedData };
@@ -501,9 +517,7 @@ export const useFeedStore = defineStore('feed', () => {
 
       if (updatedPost.is_saved) {
         if (!postToUpdateInSaved) {
-          // As per recommendation, for Saved Posts, we're using "Load More" button.
-          // For now, new saved posts will appear on the next full fetch (e.g. when user navigates to saved posts page).
-          // If you want instant add here, you'd need to consider ordering.
+          // New saved posts will appear on the next full fetch of the saved posts page.
         }
       } else {
         savedPosts.value = savedPosts.value.filter(p => p.id !== updatedPost.id);
@@ -555,5 +569,9 @@ export const useFeedStore = defineStore('feed', () => {
     toggleSavePost,
 
     $reset,
+
+    // Exported Reset Functions
+    resetMainFeedState,
+    resetSavedPostsState,
   };
 });

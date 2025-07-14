@@ -1,8 +1,9 @@
 // C:\Users\Vinay\Project\frontend\src\views\GroupDetailView.vue
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch, computed, ref } from 'vue';
-import { useRoute } from 'vue-router';
+import { onMounted, watch, computed, ref } from 'vue';
+// ---- [CHANGE 1] ---- Import onBeforeRouteLeave, remove onUnmounted
+import { useRoute, onBeforeRouteLeave } from 'vue-router'; 
 import { useGroupStore } from '@/stores/group';
 import { useAuthStore } from '@/stores/auth';
 import { storeToRefs } from 'pinia';
@@ -15,73 +16,70 @@ const authStore = useAuthStore();
 
 const { 
   currentGroup, 
-  groupPosts, // This now holds cursor-paginated posts
+  groupPosts,
   isLoadingGroup, 
   groupError,
   isJoiningLeaving,
   joinLeaveError,
   isLoadingGroupPosts,
-  groupPostsNextCursor // NEW: Replaces groupPostsHasNextPage
+  groupPostsNextCursor
 } = storeToRefs(groupStore);
 
 const { isAuthenticated, currentUser } = storeToRefs(authStore);
 
 const loadMoreGroupPostsTrigger = ref<HTMLElement | null>(null);
-let observer: IntersectionObserver | null = null; // Declare observer
+let observer: IntersectionObserver | null = null;
 
 const showJoinLeaveButton = computed(() => isAuthenticated.value && currentGroup.value);
 const isGroupCreator = computed(() => isAuthenticated.value && currentGroup.value && currentUser.value?.id === currentGroup.value.creator.id);
 
-// === NEW: Function to set up the Intersection Observer ===
 function setupObserver() {
-  // Disconnect any existing observer first to prevent issues with re-observing
   if (observer) {
     observer.disconnect();
-    observer = null; // Clear the old observer
+    observer = null;
   }
 
   observer = new IntersectionObserver((entries) => {
-    // Trigger fetch if the target is intersecting AND there is a next cursor AND not currently loading
     if (entries[0].isIntersecting && groupPostsNextCursor.value && !isLoadingGroupPosts.value) {
       groupStore.fetchNextPageOfGroupPosts();
     }
   }, { rootMargin: '200px' });
 
-  // Start observing if the target element exists
   if (loadMoreGroupPostsTrigger.value) {
     observer.observe(loadMoreGroupPostsTrigger.value);
   }
 }
-// ==========================================================
 
 onMounted(async () => {
-  // Initial fetch of group details and first page of posts
   await groupStore.fetchGroupDetails(Number(route.params.id));
-  setupObserver(); // Setup observer after initial data fetch
+  setupObserver();
 });
 
-onUnmounted(() => {
-  groupStore.clearCurrentGroup(); // Clears group details and posts
-  // Disconnect observer on component unmount
+// ---- [CHANGE 2] ---- Replace onUnmounted with onBeforeRouteLeave
+onBeforeRouteLeave((to, from) => {
+  // Call our new, robust reset action from the store
+  groupStore.resetGroupFeedState();
+  
+  // Also clean up the observer here
   if (observer) {
     observer.disconnect();
   }
+  console.log('Leaving group detail view, state and observer cleaned up.');
 });
+// --------------------
 
-// Watch for changes in route.params.id to re-fetch group data and reset observer
 watch(() => route.params.id, async (newId, oldId) => {
-  if (newId && newId !== oldId) { // Only run if ID actually changes and not on initial load
-    await groupStore.fetchGroupDetails(Number(newId)); // This also clears previous posts
-    setupObserver(); // Re-setup observer for the new group's content
+  if (newId && newId !== oldId) {
+    await groupStore.fetchGroupDetails(Number(newId));
+    setupObserver();
   }
-}, { immediate: false }); // No immediate: true because onMounted handles initial load
+}, { immediate: false });
 
-// Handlers for Join/Leave are unchanged.
 async function handleJoinGroup() {
   if (!currentGroup.value) return;
   const success = await groupStore.joinGroup(currentGroup.value.id);
   if (success) {
-    alert(`You have successfully joined ${currentGroup.value.name}!`);
+    // Optional: Use a more subtle notification system in the future
   } else {
     alert(`Failed to join group: ${joinLeaveError.value || 'Unknown error'}`);
   }
@@ -91,7 +89,7 @@ async function handleLeaveGroup() {
   if (!currentGroup.value) return;
   const success = await groupStore.leaveGroup(currentGroup.value.id);
   if (success) {
-    alert(`You have successfully left ${currentGroup.value.name}.`);
+    // Optional: Use a more subtle notification system in the future
   } else {
     alert(`Failed to leave group: ${joinLeaveError.value || 'Unknown error'}`);
   }
@@ -181,7 +179,6 @@ async function handleLeaveGroup() {
         </div>
         
         <!-- Infinite Scroll Trigger & Loading Indicator -->
-        <!-- Only show the trigger if there's a next cursor to load more posts -->
         <div v-if="groupPostsNextCursor" ref="loadMoreGroupPostsTrigger" class="h-10"></div>
         <div v-if="isLoadingGroupPosts && groupPosts.length > 0" class="text-center p-4 text-gray-500">
           Loading more posts...
