@@ -652,28 +652,22 @@ class ForumPostSerializer(serializers.ModelSerializer):
 class GroupSerializer(serializers.ModelSerializer):
     creator = UserSerializer(read_only=True)
     member_count = serializers.IntegerField(source='members.count', read_only=True)
-    
-    
     is_member = serializers.SerializerMethodField()
-    
 
     class Meta:
         model = Group
-        # --- FIELDS LIST: Updated to include 'is_member' and explicitly exclude 'members' ---
-        # We usually don't need the full 'members' list on every fetch, just the count and is_member.
         fields = ['id', 'name', 'description', 'creator', 'member_count', 'is_member', 'created_at', 'privacy_level']
-        # 'members' is implicitly read-only if not in 'fields' but we explicitly omit for clarity.
-        read_only_fields = ['creator', 'member_count', 'created_at', 'privacy_level'] # 'is_member' is a SerializerMethodField, so it's read-only by default
+        
+        # --- THIS IS THE FIX ---
+        # We remove 'privacy_level' from this list to make it writable.
+        read_only_fields = ['creator', 'member_count', 'created_at']
+        # --- END OF FIX ---
 
-    # --- ADD THIS NEW METHOD (logic for is_member) ---
     def get_is_member(self, obj):
         request = self.context.get('request')
         if request and request.user.is_authenticated:
-            # Check if the requesting user is one of the group's members
-            # Use obj.members.filter() for efficiency when the members M2M isn't preloaded
             return obj.members.filter(pk=request.user.pk).exists()
         return False
-    # --- END OF NEW METHOD ---
 
 # --- Replace your existing CommentSerializer with this one ---
 class CommentSerializer(serializers.ModelSerializer):
