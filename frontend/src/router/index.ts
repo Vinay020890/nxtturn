@@ -34,7 +34,7 @@ const router = createRouter({
       path: '/profile/:username',
       name: 'profile',
       component: () => import('@/views/ProfileView.vue'),
-      meta: { requiresAuth: false } 
+      meta: { requiresAuth: false }
     },
     {
       path: '/notifications',
@@ -54,20 +54,28 @@ const router = createRouter({
       component: () => import('@/views/SinglePostView.vue'),
       meta: { requiresAuth: true }
     },
-    // --- CORRECTED: ADD BOTH GROUP ROUTES HERE ---
     {
-      path: '/groups', // This is the route for listing all groups
+      path: '/groups',
       name: 'group-list',
-      component: () => import('@/views/GroupListAllView.vue'), // Points to our new list component
+      component: () => import('@/views/GroupListAllView.vue'),
       meta: { requiresAuth: true }
     },
     {
-      path: '/groups/:id', // This is the route for a single group's detail page
+      path: '/groups/:id',
       name: 'group-detail-page',
       component: () => import('@/views/GroupDetailView.vue'),
       meta: { requiresAuth: true }
     },
-    // --- END OF GROUP ROUTES ---
+    // ====================================================================
+    // === NEW ROUTE FOR SAVED POSTS ===
+    // ====================================================================
+    {
+      path: '/saved-posts',
+      name: 'saved-posts',
+      component: () => import('@/views/SavedPostsView.vue'), // This is the new component we'll create later
+      meta: { requiresAuth: true }
+    },
+    // ====================================================================
   ],
 });
 

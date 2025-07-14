@@ -11,13 +11,15 @@ import type { Group } from '@/stores/group';
 const groupStore = useGroupStore();
 const router = useRouter();
 
-// THIS IS THE FIX: Use the correct state property name 'allGroupsHasNextPage'
 const { allGroups, isLoadingAllGroups, allGroupsError, allGroupsHasNextPage } = storeToRefs(groupStore);
 
 const isCreateGroupModalOpen = ref(false);
 
 onMounted(() => {
   // Use the pagination-aware fetch action
+  // Ensure allGroups is cleared before fetching the first page, just like other feeds for clean load
+  groupStore.allGroups.splice(0); // Clear array before initial fetch
+  groupStore.allGroupsCurrentPage = 1; // Reset page number
   groupStore.fetchGroups(1);
 });
 
@@ -90,12 +92,13 @@ function loadMoreGroups() {
       <p>No groups found. Be the first to create one!</p>
     </div>
 
-    <!-- --- THE FIX: Use the correct variable in v-if --- -->
-    <div v-if="allGroupsHasNextPage" class="text-center mt-8">
+    <!-- "Load More" button for pagination -->
+    <!-- MODIFIED: Container uses flex and justify-end for right alignment -->
+    <div v-if="allGroupsHasNextPage" class="flex justify-end mt-8">
       <button
         @click="loadMoreGroups"
         :disabled="isLoadingAllGroups"
-        class="px-6 py-3 bg-white border-2 border-blue-600 text-blue-600 rounded-full font-semibold hover:bg-blue-50 transition-colors disabled:opacity-50"
+        class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-6 rounded-full shadow-lg transition-all duration-200 ease-in-out transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {{ isLoadingAllGroups ? 'Loading...' : 'Load More' }}
       </button>

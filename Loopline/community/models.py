@@ -1,4 +1,4 @@
-import os # <-- Add this import
+import os
 from django.db import models
 from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
@@ -27,7 +27,7 @@ def get_post_media_path(instance, filename):
 # --- MODELS START HERE ---
 
 class UserProfile(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True, related_name='profile')
     bio = models.TextField(blank=True, null=True)
     location_city = models.CharField(max_length=100, blank=True, null=True)
     location_state = models.CharField(max_length=100, blank=True, null=True)
@@ -40,6 +40,14 @@ class UserProfile(models.Model):
     interests = ArrayField(models.CharField(max_length=100), blank=True, null=True, default=list)
     picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True, max_length=255)
     updated_at = models.DateTimeField(auto_now=True)
+
+   
+    saved_posts = models.ManyToManyField(
+        'StatusPost', # Forward reference using string
+        related_name='saved_by',
+        blank=True
+    )
+    
 
     def __str__(self):
         try:

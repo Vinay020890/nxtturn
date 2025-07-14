@@ -7,13 +7,13 @@ from django.contrib.contenttypes.models import ContentType
 from django.http import Http404
 from django.db.models import Q, Count, Value, CharField, Case, When
 from django.db import transaction
-from django.utils import timezone # Import timezone for admin actions (if not already there)
+from django.utils import timezone
 
 from rest_framework import generics, status, views, serializers, permissions
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.pagination import PageNumberPagination
+from rest_framework.pagination import PageNumberPagination, CursorPagination # NEW: Import CursorPagination
 
 from .models import (
     UserProfile, Follow, StatusPost, ForumCategory, Group, ForumPost,
@@ -22,21 +22,28 @@ from .models import (
 from .serializers import (
     UserSerializer, UserProfileSerializer, UserProfileUpdateSerializer,
     StatusPostSerializer, ForumCategorySerializer, ForumPostSerializer,
-    GroupSerializer, CommentSerializer, FeedItemSerializer, ConversationSerializer,
+    GroupSerializer, CommentSerializer, ConversationSerializer, # Removed FeedItemSerializer as it's not directly used in views
     MessageSerializer, MessageCreateSerializer, NotificationSerializer, ReportSerializer
 )
 from .permissions import IsOwnerOrReadOnly, IsGroupMember
 
-
-
-
-
 User = get_user_model()
 
+# ==================================
+# Custom Pagination Classes
+# ==================================
+
+# Standard PageNumberPagination for less dynamic lists (e.g., search results, saved posts)
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = 'page_size'
     max_page_size = 50
+
+# NEW: CursorPagination for dynamic feeds (Main Feed, Group Feeds)
+class PostCursorPagination(CursorPagination):
+    page_size = 10
+    ordering = '-created_at' # Crucial for cursor pagination: Must match queryset ordering
+    page_size_query_param = 'page_size' # Allow client to specify page size
 
 # ==================================
 # User Profile & Follower Views
@@ -63,10 +70,10 @@ class UserProfileDetailView(generics.RetrieveUpdateAPIView):
 class UserPostListView(generics.ListAPIView):
     serializer_class = StatusPostSerializer
     permission_classes = [AllowAny]
-    pagination_class = PageNumberPagination
+    pagination_class = PageNumberPagination # KEEP: Offset pagination is fine for a user's own post list
     def get_queryset(self):
         user = get_object_or_404(User, username=self.kwargs.get('username'))
-        return StatusPost.objects.filter(author=user).select_related('author__userprofile').prefetch_related('likes', 'media', 'poll__options', 'poll__votes').order_by('-created_at')
+        return StatusPost.objects.filter(author=user).select_related('author__profile').prefetch_related('likes', 'media', 'poll__options', 'poll__votes').order_by('-created_at')
     def get_serializer_context(self):
         return {'request': self.request}
 
@@ -107,7 +114,7 @@ class FollowersListView(generics.ListAPIView):
 class UserSearchAPIView(generics.ListAPIView):
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
-    pagination_class = StandardResultsSetPagination
+    pagination_class = StandardResultsSetPagination # KEEP: Offset pagination for search results
     def get_queryset(self):
         query = self.request.query_params.get('q', None)
         if not query or not query.strip():
@@ -119,9 +126,6 @@ class UserSearchAPIView(generics.ListAPIView):
             Q(last_name__icontains=query)
         )
         
-        # Annotate results with a priority score.
-        # Users whose username STARTS WITH the query get a higher priority (1).
-        # Others who just contain it get a lower priority (2).
         queryset = User.objects.filter(search_filter).annotate(
             priority=Case(
                 When(username__istartswith=query, then=1),
@@ -129,64 +133,41 @@ class UserSearchAPIView(generics.ListAPIView):
             )
         ).distinct()
 
-        # Order by our new priority field first, then alphabetically by username.
         return queryset.order_by('priority', 'username')
-    
-
 
 class ContentSearchAPIView(generics.ListAPIView):
-    """
-    API endpoint for searching StatusPost content.
-    Accepts a search query parameter 'q'.
-    """
     serializer_class = StatusPostSerializer
     permission_classes = [IsAuthenticated]
-    pagination_class = StandardResultsSetPagination # Use our existing pagination
+    pagination_class = StandardResultsSetPagination # KEEP: Offset pagination for search results
 
     def get_queryset(self):
-        """
-        Filter posts based on the 'q' query parameter.
-        """
         query = self.request.query_params.get('q', None)
-
         if not query or not query.strip():
-            # If no query is provided, return no results.
             return StatusPost.objects.none()
 
-        # Perform a case-insensitive search on the content of the posts.
-        # This is a good starting point for content search.
         queryset = StatusPost.objects.filter(
             content__icontains=query
         ).select_related(
-            'author__userprofile'
+            'author__profile'
         ).prefetch_related(
             'media', 'likes', 'poll__options', 'poll__votes'
-        ).order_by('-created_at') # Order by most recent first
+        ).order_by('-created_at')
 
         return queryset
 
     def get_serializer_context(self):
-        # Pass request context to the serializer for calculating `is_liked_by_user`
         return {'request': self.request}
 
 # ==================================
 # Status Post Views
 # ==================================
-# In C:\Users\Vinay\Project\Loopline\community\views.py
-
-# --- REPLACEMENT StatusPostListCreateView ---
 class StatusPostListCreateView(generics.ListCreateAPIView):
-    queryset = StatusPost.objects.select_related('author__userprofile', 'group__creator').prefetch_related('likes', 'media', 'poll__options', 'poll__votes').order_by('-created_at')
+    queryset = StatusPost.objects.select_related('author__profile', 'group__creator').prefetch_related('likes', 'media', 'poll__options', 'poll__votes').order_by('-created_at')
     serializer_class = StatusPostSerializer
-    pagination_class = PageNumberPagination
+    pagination_class = PageNumberPagination # KEEP: This view handles both list (paginated) and create (not paginated)
 
     def get_permissions(self):
-        """
-        This method now correctly checks for 'group_id' from the frontend
-        to apply the IsGroupMember permission.
-        """
         if self.request.method == 'POST':
-            # The frontend sends the group's ID under the key 'group_id'.
             if 'group_id' in self.request.data and self.request.data['group_id']:
                 return [IsAuthenticated(), IsGroupMember()]
             else:
@@ -194,12 +175,6 @@ class StatusPostListCreateView(generics.ListCreateAPIView):
         return [AllowAny()] 
 
     def perform_create(self, serializer):
-        """
-        This method is called by DRF after the serializer is validated.
-        Our serializer setup correctly takes 'group_id' from the request
-        and puts the corresponding Group object into validated_data['group'].
-        We then explicitly save it with the post.
-        """
         group = serializer.validated_data.get('group', None)
         serializer.save(author=self.request.user, group=group)
     
@@ -207,7 +182,7 @@ class StatusPostListCreateView(generics.ListCreateAPIView):
         return {'request': self.request}
 
 class StatusPostRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = StatusPost.objects.select_related('author__userprofile').prefetch_related('likes', 'media', 'poll__options', 'poll__votes').all()
+    queryset = StatusPost.objects.select_related('author__profile').prefetch_related('likes', 'media', 'poll__options', 'poll__votes').all()
     serializer_class = StatusPostSerializer
     permission_classes = [IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
     lookup_field = 'pk'
@@ -227,76 +202,47 @@ class LikeToggleAPIView(APIView):
             like.delete()
         return Response({"liked": created, "like_count": target_object.likes.count()}, status=status.HTTP_200_OK)
     
-# === PASTE THIS NEW VIEW AND SECTION INTO community/views.py ===
-
 # ==================================
 # Moderation Views
 # ==================================
 class ReportCreateAPIView(generics.CreateAPIView):
-    """
-    API endpoint for creating a new report on a piece of content.
-    The URL pattern must provide the content_type_id (ct_id) and object_id (obj_id).
-    
-    Example URL: /api/community/content/<ct_id>/<obj_id>/report/
-    """
     queryset = Report.objects.all()
     serializer_class = ReportSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_serializer_context(self):
-        """
-        Pass the request and view context to the serializer.
-        This is crucial for our custom validation logic.
-        """
         context = super().get_serializer_context()
         context['view'] = self
         return context
     
 class PollVoteAPIView(APIView):
     permission_classes = [IsAuthenticated]
-
     def post(self, request, poll_id, option_id, format=None):
         poll = get_object_or_404(Poll, pk=poll_id)
         option = get_object_or_404(PollOption, pk=option_id, poll=poll)
         
-        # Atomically create or update the vote
         with transaction.atomic():
-            vote, created = PollVote.objects.update_or_create(
+            PollVote.objects.update_or_create(
                 user=request.user,
                 poll=poll,
                 defaults={'option': option}
             )
         
-        # We need to return the entire updated Post object so the frontend can refresh the state.
-        # This is better than just returning a success message.
         post_instance = poll.post
         context = {'request': request}
-        
-        # Re-serialize the parent post with the new vote data
         serializer = StatusPostSerializer(instance=post_instance, context=context)
-
         return Response(serializer.data, status=status.HTTP_200_OK)
     
     def delete(self, request, poll_id, option_id, format=None):
-        """
-        Handles vote retraction. The option_id from the URL is not needed
-        to identify the vote, but it's part of the URL structure.
-        """
         poll = get_object_or_404(Poll, pk=poll_id)
-        
-        # Find and delete the vote for this user on this poll.
-        # This is safe and won't crash if the vote doesn't exist.
         PollVote.objects.filter(user=request.user, poll=poll).delete()
-        
-        # Just like in post, return the full updated post object
-        # so the frontend can sync its state.
         post_instance = poll.post
         context = {'request': request}
         serializer = StatusPostSerializer(instance=post_instance, context=context)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 # ==================================
-# Forum Views  <-- RESTORED
+# Forum Views
 # ==================================
 class ForumCategoryListView(generics.ListAPIView):
     queryset = ForumCategory.objects.all()
@@ -306,7 +252,7 @@ class ForumCategoryListView(generics.ListAPIView):
 class ForumPostListCreateView(generics.ListCreateAPIView):
     serializer_class = ForumPostSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
-    pagination_class = PageNumberPagination
+    pagination_class = PageNumberPagination # KEEP: Offset pagination for forum posts
     def get_queryset(self):
         queryset = ForumPost.objects.select_related('author', 'category', 'group').prefetch_related('likes').order_by('-created_at')
         category_id = self.kwargs.get('category_id')
@@ -330,7 +276,7 @@ class ForumPostListCreateView(generics.ListCreateAPIView):
         return {'request': self.request}
 
 class ForumPostRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = ForumPost.objects.select_related('author__userprofile', 'category', 'group').prefetch_related('likes').all()
+    queryset = ForumPost.objects.select_related('author__profile', 'category', 'group').prefetch_related('likes').all()
     serializer_class = ForumPostSerializer
     permission_classes = [IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
     lookup_field = 'pk'
@@ -338,53 +284,31 @@ class ForumPostRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
         return {'request': self.request}
 
 # ==================================
-# Group Views  <-- RESTORED
+# Group Views
 # ==================================
 class GroupListView(generics.ListCreateAPIView):
     serializer_class = GroupSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
-    pagination_class = StandardResultsSetPagination
+    pagination_class = StandardResultsSetPagination # KEEP: Offset pagination for group discovery
 
     def get_queryset(self):
-        # This queryset with select_related is crucial for performance and for our fix.
-        return Group.objects.select_related('creator__userprofile').prefetch_related('members').all()
+        return Group.objects.select_related('creator__profile').prefetch_related('members').all()
 
     def perform_create(self, serializer):
-        # This part is correct: save the group and add the creator as a member.
         group = serializer.save(creator=self.request.user)
         group.members.add(self.request.user)
 
     def create(self, request, *args, **kwargs):
-        """
-        THIS IS THE FIX.
-        We override the default 'create' behavior to ensure the response
-        payload is serialized with the full GroupSerializer, not the limited
-        one used for validating input.
-        """
-        # Step 1: Validate incoming data (uses the appropriate serializer based on get_serializer_class).
-        # For a POST, this will be your internal GroupCreateSerializer if you keep it,
-        # or just GroupSerializer if you simplify. We'll use the default DRF behavior.
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
-        # Step 2: Use perform_create to save the object and add the member.
         self.perform_create(serializer)
-
-        # Step 3: Re-fetch the newly created instance from the database using our optimized queryset.
-        # This guarantees that the 'creator' and 'creator.userprofile' are loaded.
         new_group_instance = self.get_queryset().get(pk=serializer.instance.pk)
-        
-        # Step 4: Serialize the *full* instance for the response using the main GroupSerializer.
-        # We explicitly use GroupSerializer here to ensure it has all fields.
         response_serializer = GroupSerializer(new_group_instance, context=self.get_serializer_context())
-        
-        # Step 5: Return the standard 201 CREATED response with the rich data.
         headers = self.get_success_headers(response_serializer.data)
         return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
-
 class GroupRetrieveAPIView(generics.RetrieveAPIView):
-    queryset = Group.objects.prefetch_related('members__userprofile', 'creator__userprofile').all()
+    queryset = Group.objects.prefetch_related('members__profile', 'creator__profile').all()
     serializer_class = GroupSerializer
     permission_classes = [AllowAny]
     lookup_field = 'pk'
@@ -403,53 +327,33 @@ class GroupMembershipView(APIView):
             return Response({"detail": "You are not a member."}, status=status.HTTP_400_BAD_REQUEST)
         group.members.remove(request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
-    
-
-# === PASTE THIS NEW VIEW INTO community/views.py ===
-# (e.g., in the "Group Views" section)
-
-# In C:\Users\Vinay\Project\Loopline\community\views.py
-
-# --- REPLACEMENT GroupPostListView ---
-# In C:\Users\Vinay\Project\Loopline\community\views.py
 
 class GroupPostListView(generics.ListAPIView):
-    """
-    API endpoint for listing all StatusPosts that belong to a specific group.
-    """
     serializer_class = StatusPostSerializer
     permission_classes = [AllowAny]
-    pagination_class = StandardResultsSetPagination
+    pagination_class = PostCursorPagination # NEW: Use cursor pagination here
 
     def get_queryset(self):
-        """
-        This queryset is correct. It filters by group and pre-fetches related data.
-        """
         group_id = self.kwargs.get('group_id')
         return StatusPost.objects.filter(
             group__id=group_id
         ).select_related(
-            'author__userprofile', 
+            'author__profile', 
             'group'
         ).prefetch_related(
             'media', 'likes', 'poll__options', 'poll__votes'
-        ).order_by('-created_at')
+        ).order_by('-created_at') # IMPORTANT: Must match cursor pagination ordering
 
-    # --- THIS IS THE FIX ---
-    # We add a custom 'list' method to explicitly control and apply pagination.
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
         page = self.paginate_queryset(queryset)
         
         if page is not None:
-            # If a page exists, serialize that page's data.
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
 
-        # Fallback if pagination is somehow disabled or not applicable.
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
-    # --- END OF FIX ---
 
     def get_serializer_context(self):
         return {'request': self.request}
@@ -457,31 +361,27 @@ class GroupPostListView(generics.ListAPIView):
 # ==================================
 # Comment Views
 # ==================================
-# This is the NEW code
 class CommentListCreateAPIView(generics.ListCreateAPIView):
     serializer_class = CommentSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
-    pagination_class = None
+    pagination_class = None # KEEP: No pagination for comments (show all)
     
     def get_queryset(self):
         content_type = get_object_or_404(ContentType, model=self.kwargs.get('content_type').lower())
         parent_object = get_object_or_404(content_type.model_class(), pk=self.kwargs.get('object_id'))
-        return Comment.objects.filter(content_type=content_type, object_id=parent_object.id).select_related('author__userprofile').order_by('created_at')
+        return Comment.objects.filter(content_type=content_type, object_id=parent_object.id).select_related('author__profile').order_by('created_at')
 
     def get_serializer_context(self):
-        """Pass the request and view context to the serializer."""
         context = super().get_serializer_context()
         context['request'] = self.request
         context['view'] = self
         return context
 
     def perform_create(self, serializer):
-        # All logic will now be handled in the serializer's .create() method.
-        # This simplification is key for the next steps.
         serializer.save()
 
 class CommentRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Comment.objects.select_related('author__userprofile').all()
+    queryset = Comment.objects.select_related('author__profile').all()
     serializer_class = CommentSerializer
     permission_classes = [IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
     lookup_field = 'pk'
@@ -489,37 +389,66 @@ class CommentRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView)
 # ==================================
 # Feed View
 # ==================================
-# In community/views.py
-
-# ==================================
-# Feed View (High-Performance Version)
-# ==================================
 class FeedListView(generics.ListAPIView):
-    # Change 1: Use StatusPostSerializer directly. We've proven it works and
-    # provides all the necessary data, including the nested group object.
     serializer_class = StatusPostSerializer
     permission_classes = [IsAuthenticated]
-    pagination_class = PageNumberPagination
+    pagination_class = PostCursorPagination # NEW: Use cursor pagination here
 
     def get_queryset(self):
         user = self.request.user
         following_user_ids = list(user.following.values_list('following_id', flat=True))
         user_ids_for_feed = following_user_ids + [user.id]
 
-        # Change 2: The queryset now pre-fetches everything needed.
-        # This makes the view simpler and more efficient.
         return StatusPost.objects.filter(
             author_id__in=user_ids_for_feed
         ).select_related(
-            'author__userprofile', 
-            'group'  # The crucial part for our context display
+            'author__profile', 
+            'group'
         ).prefetch_related(
             'media', 'likes', 'poll__options', 'poll__votes'
-        ).order_by('-created_at')
+        ).order_by('-created_at') # IMPORTANT: Must match cursor pagination ordering
 
     def get_serializer_context(self):
-        # This is still needed for 'is_liked_by_user'
         return {'request': self.request}
+    
+# ==================================
+# Saved Posts Views
+# ==================================
+class SavedPostToggleView(APIView):
+    """
+    Toggles saving or unsaving a post for the currently authenticated user.
+    Expects a POST request to /api/community/posts/<pk>/save/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk, format=None):
+        post = get_object_or_404(StatusPost, pk=pk)
+        profile = request.user.profile
+        
+        if post in profile.saved_posts.all():
+            profile.saved_posts.remove(post)
+        else:
+            profile.saved_posts.add(post)
+
+        serializer = StatusPostSerializer(post, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class SavedPostListView(generics.ListAPIView):
+    """
+    Returns a paginated list of posts saved by the currently authenticated user.
+    """
+    serializer_class = StatusPostSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination # KEEP: Offset pagination for saved posts
+
+    def get_queryset(self):
+        user = self.request.user
+        return user.profile.saved_posts.select_related(
+            'author__profile', 
+            'group'
+        ).prefetch_related(
+            'media', 'likes', 'poll__options', 'poll__votes'
+        ).order_by('-created_at') # Order by most recently saved first, or by post creation date
 
 # ==================================
 # Private Messaging Views
@@ -527,17 +456,17 @@ class FeedListView(generics.ListAPIView):
 class ConversationListView(generics.ListAPIView):
     serializer_class = ConversationSerializer
     permission_classes = [IsAuthenticated]
-    pagination_class = PageNumberPagination
+    pagination_class = PageNumberPagination # KEEP: Offset pagination for conversations
     def get_queryset(self):
-        return self.request.user.conversations.prefetch_related('participants__userprofile').order_by('-updated_at')
+        return self.request.user.conversations.prefetch_related('participants__profile').order_by('-updated_at')
 
 class MessageListView(generics.ListAPIView):
     serializer_class = MessageSerializer
     permission_classes = [IsAuthenticated]
-    pagination_class = PageNumberPagination
+    pagination_class = PageNumberPagination # KEEP: Offset pagination for messages within conversation
     def get_queryset(self):
         conversation = get_object_or_404(Conversation, pk=self.kwargs.get('conversation_id'), participants=self.request.user)
-        return conversation.messages.select_related('sender__userprofile').order_by('timestamp')
+        return conversation.messages.select_related('sender__profile').order_by('timestamp')
 
 class SendMessageView(APIView):
     permission_classes = [IsAuthenticated]
@@ -561,7 +490,7 @@ class SendMessageView(APIView):
 class NotificationListAPIView(generics.ListAPIView):
     serializer_class = NotificationSerializer
     permission_classes = [IsAuthenticated]
-    pagination_class = StandardResultsSetPagination
+    pagination_class = StandardResultsSetPagination # KEEP: Offset pagination for notifications
     def get_queryset(self):
         return self.request.user.notifications_received.all().order_by('-timestamp')
 

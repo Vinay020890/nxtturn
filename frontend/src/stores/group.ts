@@ -3,7 +3,7 @@
 import { ref } from 'vue';
 import { defineStore } from 'pinia';
 import axiosInstance from '@/services/axiosInstance';
-import type { User } from './auth'; 
+import type { User } from './auth';
 import type { Post } from './feed';
 import { useAuthStore } from './auth';
 
@@ -17,7 +17,7 @@ export interface Group {
   member_count: number;
   is_member: boolean;
   created_at: string;
-  privacy_level: 'public' | 'private'; 
+  privacy_level: 'public' | 'private';
 }
 
 interface PaginatedGroupResponse {
@@ -27,13 +27,11 @@ interface PaginatedGroupResponse {
   results: Group[];
 }
 
-interface PaginatedGroupPostResponse {
-  count: number;
+interface CursorPaginatedGroupPostResponse {
   next: string | null;
   previous: string | null;
   results: Post[];
 }
-
 
 // --- Store Definition ---
 
@@ -47,8 +45,7 @@ export const useGroupStore = defineStore('group', () => {
   const joinLeaveError = ref<string | null>(null);
 
   const isLoadingGroupPosts = ref(false);
-  const groupPostsCurrentPage = ref(1);
-  const groupPostsHasNextPage = ref(false);
+  const groupPostsNextCursor = ref<string | null>(null);
 
   const allGroups = ref<Group[]>([]);
   const isLoadingAllGroups = ref(false);
@@ -57,7 +54,27 @@ export const useGroupStore = defineStore('group', () => {
   const allGroupsHasNextPage = ref(false);
   
   const isCreatingGroup = ref(false);
-  const createGroupError = ref<string | object | null>(null); 
+  const createGroupError = ref<string | object | null>(null);
+
+  function $reset() {
+    currentGroup.value = null;
+    groupPosts.value = [];
+    isLoadingGroup.value = false;
+    groupError.value = null;
+    isJoiningLeaving.value = false;
+    joinLeaveError.value = null;
+    isLoadingGroupPosts.value = false;
+    groupPostsNextCursor.value = null;
+
+    allGroups.value = [];
+    isLoadingAllGroups.value = false;
+    allGroupsError.value = null;
+    allGroupsCurrentPage.value = 1;
+    allGroupsHasNextPage.value = false;
+
+    isCreatingGroup.value = false;
+    createGroupError.value = null;
+  }
 
   // --- Actions ---
 
@@ -69,7 +86,7 @@ export const useGroupStore = defineStore('group', () => {
     try {
       const response = await axiosInstance.get<Group>(`/groups/${groupId}/`);
       currentGroup.value = response.data;
-      await fetchGroupPosts(groupId, 1);
+      await fetchGroupPosts(groupId);
     } catch (err: any) {
       console.error(`Error fetching details for group ${groupId}:`, err);
       groupError.value = err.response?.data?.detail || 'Failed to load group details.';
@@ -79,47 +96,44 @@ export const useGroupStore = defineStore('group', () => {
     }
   }
 
-  async function fetchGroupPosts(groupId: number, page: number = 1) {
+  async function fetchGroupPosts(groupId: number, url: string | null = null) {
     if (isLoadingGroupPosts.value) return;
     isLoadingGroupPosts.value = true;
-    
+    groupError.value = null;
+
     try {
-      const response = await axiosInstance.get<PaginatedGroupPostResponse>(`/groups/${groupId}/status-posts/`, {
-        params: { page }
-      });
-      
-      if (page === 1) {
+      const apiUrl = url || `/groups/${groupId}/status-posts/`;
+      const response = await axiosInstance.get<CursorPaginatedGroupPostResponse>(apiUrl);
+
+      if (!url) {
         groupPosts.value = response.data.results;
       } else {
         groupPosts.value.push(...response.data.results);
       }
-      
-      groupPostsCurrentPage.value = page;
-      groupPostsHasNextPage.value = response.data.next !== null;
-
+      groupPostsNextCursor.value = response.data.next;
     } catch (err: any) {
       console.error(`Error fetching posts for group ${groupId}:`, err);
+      groupError.value = err.response?.data?.detail || 'Failed to load group posts.';
     } finally {
       isLoadingGroupPosts.value = false;
     }
   }
 
   async function fetchNextPageOfGroupPosts() {
-    if (currentGroup.value && groupPostsHasNextPage.value && !isLoadingGroupPosts.value) {
-      await fetchGroupPosts(currentGroup.value.id, groupPostsCurrentPage.value + 1);
+    if (groupPostsNextCursor.value && !isLoadingGroupPosts.value && currentGroup.value) {
+      await fetchGroupPosts(currentGroup.value.id, groupPostsNextCursor.value);
     }
   }
 
   function addPostToGroupFeed(post: Post) {
     if (currentGroup.value && post.group?.id === currentGroup.value.id) {
-      groupPosts.value = [post, ...groupPosts.value];
+      groupPosts.value.unshift(post);
     }
   }
 
   function clearGroupPosts() {
     groupPosts.value = [];
-    groupPostsCurrentPage.value = 1;
-    groupPostsHasNextPage.value = false;
+    groupPostsNextCursor.value = null;
   }
 
   async function fetchGroups(page: number = 1) {
@@ -263,14 +277,19 @@ export const useGroupStore = defineStore('group', () => {
     groupError,
     isJoiningLeaving,
     joinLeaveError,
+    isLoadingGroupPosts,
+    groupPostsNextCursor,
+
     allGroups,
     isLoadingAllGroups,
     allGroupsError,
     allGroupsHasNextPage,
+    // === NEW: Expose allGroupsCurrentPage ===
+    allGroupsCurrentPage,
+    // =========================================
+
     isCreatingGroup,
     createGroupError,
-    isLoadingGroupPosts,
-    groupPostsHasNextPage,
 
     // Actions
     fetchGroupDetails,
@@ -278,10 +297,11 @@ export const useGroupStore = defineStore('group', () => {
     fetchNextPageOfGroupPosts,
     fetchGroups,
     fetchNextPageOfGroups,
-    createGroup,    
+    createGroup,
     joinGroup,
     leaveGroup,
     clearCurrentGroup,
     addPostToGroupFeed,
+    $reset,
   };
 });

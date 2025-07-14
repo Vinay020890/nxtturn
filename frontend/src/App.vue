@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch, ref, computed } from 'vue';
+import { onMounted, onUnmounted, watch, ref, computed } from 'vue'; // FIXED: Changed onUnunmounted to onUnmounted
 import { RouterView, useRouter, RouterLink, useRoute } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useNotificationStore } from '@/stores/notification';
@@ -234,11 +234,24 @@ const handleLogout = async () => { await authStore.logout(); };
         <h3 class="text-lg font-semibold text-gray-800">Navigation</h3>
         <ul>
           <li>
-            <RouterLink :to="{ name: 'group-list' }" class="block px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-colors">
+            <RouterLink 
+              :to="{ name: 'group-list' }" 
+              class="block px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-colors"
+              active-class="bg-blue-50 text-blue-700 font-semibold"
+            >
               Groups
             </RouterLink>
           </li>
-          <!-- Future links like Saved Pages will go here -->
+          <!-- NEW: Saved Posts Link -->
+          <li>
+            <RouterLink 
+              :to="{ name: 'saved-posts' }" 
+              class="block px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-colors"
+              active-class="bg-blue-50 text-blue-700 font-semibold"
+            >
+              Saved Posts
+            </RouterLink>
+          </li>
         </ul>
       </div>
     </aside>

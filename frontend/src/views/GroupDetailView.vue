@@ -15,59 +15,66 @@ const authStore = useAuthStore();
 
 const { 
   currentGroup, 
-  groupPosts, 
+  groupPosts, // This now holds cursor-paginated posts
   isLoadingGroup, 
   groupError,
   isJoiningLeaving,
   joinLeaveError,
   isLoadingGroupPosts,
-  groupPostsHasNextPage
+  groupPostsNextCursor // NEW: Replaces groupPostsHasNextPage
 } = storeToRefs(groupStore);
 
 const { isAuthenticated, currentUser } = storeToRefs(authStore);
 
 const loadMoreGroupPostsTrigger = ref<HTMLElement | null>(null);
-let observer: IntersectionObserver | null = null;
+let observer: IntersectionObserver | null = null; // Declare observer
 
 const showJoinLeaveButton = computed(() => isAuthenticated.value && currentGroup.value);
 const isGroupCreator = computed(() => isAuthenticated.value && currentGroup.value && currentUser.value?.id === currentGroup.value.creator.id);
 
-// --- THIS IS THE FIX ---
-// The `onMounted` hook is now async to allow for awaiting the initial fetch.
-onMounted(async () => {
-  // 1. AWAIT the initial data load. This pauses execution here until the
-  //    group details and the FIRST page of posts are loaded.
-  await groupStore.fetchGroupDetails(Number(route.params.id));
+// === NEW: Function to set up the Intersection Observer ===
+function setupObserver() {
+  // Disconnect any existing observer first to prevent issues with re-observing
+  if (observer) {
+    observer.disconnect();
+    observer = null; // Clear the old observer
+  }
 
-  // 2. NOW that we have the correct initial state, set up the observer.
   observer = new IntersectionObserver((entries) => {
-    if (entries[0].isIntersecting && groupPostsHasNextPage.value) {
+    // Trigger fetch if the target is intersecting AND there is a next cursor AND not currently loading
+    if (entries[0].isIntersecting && groupPostsNextCursor.value && !isLoadingGroupPosts.value) {
       groupStore.fetchNextPageOfGroupPosts();
     }
   }, { rootMargin: '200px' });
 
-  // 3. If the trigger element exists, start observing it.
+  // Start observing if the target element exists
   if (loadMoreGroupPostsTrigger.value) {
     observer.observe(loadMoreGroupPostsTrigger.value);
   }
+}
+// ==========================================================
+
+onMounted(async () => {
+  // Initial fetch of group details and first page of posts
+  await groupStore.fetchGroupDetails(Number(route.params.id));
+  setupObserver(); // Setup observer after initial data fetch
 });
 
 onUnmounted(() => {
-  groupStore.clearCurrentGroup();
+  groupStore.clearCurrentGroup(); // Clears group details and posts
+  // Disconnect observer on component unmount
   if (observer) {
     observer.disconnect();
   }
 });
 
-// This watcher handles navigation between different group pages
-watch(() => route.params.id, (newId) => {
-  if (newId) {
-    // When navigating to a new group, we re-fetch everything.
-    // The onMounted logic will handle setting up a new observer correctly
-    // for the new page's content.
-    groupStore.fetchGroupDetails(Number(newId));
+// Watch for changes in route.params.id to re-fetch group data and reset observer
+watch(() => route.params.id, async (newId, oldId) => {
+  if (newId && newId !== oldId) { // Only run if ID actually changes and not on initial load
+    await groupStore.fetchGroupDetails(Number(newId)); // This also clears previous posts
+    setupObserver(); // Re-setup observer for the new group's content
   }
-}, { immediate: false }); // We don't need immediate: true because onMounted handles the initial load.
+}, { immediate: false }); // No immediate: true because onMounted handles initial load
 
 // Handlers for Join/Leave are unchanged.
 async function handleJoinGroup() {
@@ -104,7 +111,7 @@ async function handleLeaveGroup() {
       <p>{{ groupError }}</p>
     </div>
 
-    <!-- Group Content (Main Display Block) - THIS IS THE CORRECTED TEMPLATE -->
+    <!-- Group Content (Main Display Block) -->
     <div v-else-if="currentGroup">
       <!-- Group Header -->
       <header class="bg-white p-6 rounded-lg shadow-md mb-8">
@@ -169,13 +176,14 @@ async function handleLeaveGroup() {
              :hide-group-context="true"
            />
         </div>
-        <div v-else-if="!isLoadingGroupPosts" class="bg-white p-6 rounded-lg shadow-md text-center text-gray-500">
+        <div v-else-if="!isLoadingGroupPosts && groupPosts.length === 0" class="bg-white p-6 rounded-lg shadow-md text-center text-gray-500">
           <p>No posts in this group yet. Be the first to create one!</p>
         </div>
         
         <!-- Infinite Scroll Trigger & Loading Indicator -->
-        <div ref="loadMoreGroupPostsTrigger" class="h-10"></div>
-        <div v-if="isLoadingGroupPosts" class="text-center p-4 text-gray-500">
+        <!-- Only show the trigger if there's a next cursor to load more posts -->
+        <div v-if="groupPostsNextCursor" ref="loadMoreGroupPostsTrigger" class="h-10"></div>
+        <div v-if="isLoadingGroupPosts && groupPosts.length > 0" class="text-center p-4 text-gray-500">
           Loading more posts...
         </div>
       </main>

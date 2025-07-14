@@ -4,7 +4,7 @@ import { ref } from 'vue';
 import { defineStore } from 'pinia';
 import axiosInstance from '@/services/axiosInstance';
 import { useAuthStore } from './auth';
-import { useProfileStore } from './profile';
+import { useProfileStore } from './profile'; // Imported for updateUserPost action
 import { useGroupStore } from './group';
 
 // --- Interfaces ---
@@ -41,32 +41,47 @@ export interface Post {
   title: string | null;
   content: string | null;
   media: PostMedia[];
-  poll: Poll | null; 
+  poll: Poll | null;
   like_count: number;
   comment_count?: number;
   is_liked_by_user: boolean;
   content_type_id: number;
   object_id: number;
   isLiking?: boolean;
-  isDeleting?: boolean; 
+  isDeleting?: boolean;
   isUpdating?: boolean;
   group: { id: number; name: string; } | null;
+  is_saved: boolean;
 }
-interface PaginatedFeedResponse {
-  count: number;
+
+// Interface for Cursor-based Pagination Response
+interface CursorPaginatedResponse {
   next: string | null;
   previous: string | null;
   results: Post[];
 }
 
+// Interface for Offset-based Pagination Response (like for Saved Posts)
+interface OffsetPaginatedResponse {
+  count: number;
+  next: string | null; // This 'next' will be a URL with ?page=X
+  previous: string | null;
+  results: Post[];
+}
+
+
 export const useFeedStore = defineStore('feed', () => {
   // --- State ---
-  const posts = ref<Post[]>([]);
-  const isLoading = ref(false);
-  const error = ref<string | null>(null);
-  const currentPage = ref(1);
-  const totalPages = ref(1);
-  const hasNextPage = ref(false);
+  const mainFeedPosts = ref<Post[]>([]);
+  const mainFeedNextCursor = ref<string | null>(null); // URL for the next cursor page
+  const isLoadingMainFeed = ref(false);
+  const mainFeedError = ref<string | null>(null);
+
+  const savedPosts = ref<Post[]>([]);
+  const savedPostsNextPageUrl = ref<string | null>(null); // URL for the next offset page
+  const isLoadingSavedPosts = ref(false);
+  const savedPostsError = ref<string | null>(null);
+
   const createPostError = ref<string | null>(null);
   const isCreatingPost = ref(false);
   const deletePostError = ref<string | null>(null);
@@ -75,47 +90,117 @@ export const useFeedStore = defineStore('feed', () => {
   const isLoadingSinglePost = ref(false);
   const singlePostError = ref<string | null>(null);
 
+  // === $reset() method implementation ===
+  function $reset() {
+    mainFeedPosts.value = [];
+    mainFeedNextCursor.value = null;
+    isLoadingMainFeed.value = false;
+    mainFeedError.value = null;
+
+    savedPosts.value = [];
+    savedPostsNextPageUrl.value = null;
+    isLoadingSavedPosts.value = false;
+    savedPostsError.value = null;
+
+    createPostError.value = null;
+    isCreatingPost.value = false;
+    deletePostError.value = null;
+    updatePostError.value = null;
+    singlePost.value = null;
+    isLoadingSinglePost.value = false;
+    singlePostError.value = null;
+  }
+  // ==========================================
+
   // --- Actions ---
 
-  async function fetchFeed(page: number = 1) {
-    if (isLoading.value && page > 1) return;
-    isLoading.value = true;
-    error.value = null;
+  async function fetchFeed(url: string | null = null) {
+    if (isLoadingMainFeed.value) return;
+    isLoadingMainFeed.value = true;
+    mainFeedError.value = null;
 
     try {
       const authStore = useAuthStore();
       if (!authStore.isAuthenticated) {
-        isLoading.value = false;
+        isLoadingMainFeed.value = false;
+        mainFeedError.value = "Authentication required to fetch feed.";
         return;
       }
-      const response = await axiosInstance.get<PaginatedFeedResponse>('/feed/', {
-        params: { page }
-      });
+      
+      const apiUrl = url || '/feed/';
+
+      const response = await axiosInstance.get<CursorPaginatedResponse>(apiUrl);
       const fetchedPosts = response.data.results.map(post => ({
           ...post,
           isLiking: false,
-          isDeleting: false
+          isDeleting: false,
+          isUpdating: false
       }));
       
-      if (page === 1) {
-        posts.value = fetchedPosts;
+      if (!url) {
+        mainFeedPosts.value = fetchedPosts;
       } else {
-        posts.value.push(...fetchedPosts);
+        mainFeedPosts.value.push(...fetchedPosts);
       }
 
-      currentPage.value = page;
-      hasNextPage.value = response.data.next !== null;
-      totalPages.value = response.data.count > 0 ? Math.ceil(response.data.count / 10) : 1;
+      mainFeedNextCursor.value = response.data.next;
+
     } catch (err: any) {
-      error.value = err.response?.data?.detail || err.message || 'Failed to fetch feed.';
+      mainFeedError.value = err.response?.data?.detail || err.message || 'Failed to fetch feed.';
+      console.error("FeedStore: Error fetching main feed:", err);
     } finally {
-      isLoading.value = false;
+      isLoadingMainFeed.value = false;
     }
   }
 
-  async function fetchNextPageOfFeed() {
-    if (hasNextPage.value && !isLoading.value) {
-      await fetchFeed(currentPage.value + 1);
+  async function fetchNextPageOfMainFeed() {
+    if (mainFeedNextCursor.value && !isLoadingMainFeed.value) {
+      await fetchFeed(mainFeedNextCursor.value);
+    }
+  }
+
+  async function fetchSavedPosts(url: string | null = null) {
+    if (isLoadingSavedPosts.value) return;
+    isLoadingSavedPosts.value = true;
+    savedPostsError.value = null;
+
+    try {
+      const authStore = useAuthStore();
+      if (!authStore.isAuthenticated) {
+        isLoadingSavedPosts.value = false;
+        savedPostsError.value = "Authentication required to fetch saved posts.";
+        return;
+      }
+
+      const apiUrl = url || '/posts/saved/';
+
+      const response = await axiosInstance.get<OffsetPaginatedResponse>(apiUrl);
+      const fetchedPosts = response.data.results.map(post => ({
+        ...post,
+        isLiking: false,
+        isDeleting: false,
+        isUpdating: false
+      }));
+
+      if (!url) {
+        savedPosts.value = fetchedPosts;
+      } else {
+        savedPosts.value.push(...fetchedPosts);
+      }
+
+      savedPostsNextPageUrl.value = response.data.next;
+
+    } catch (err: any) {
+      savedPostsError.value = err.response?.data?.detail || err.message || 'Failed to fetch saved posts.';
+      console.error("FeedStore: Failed to fetch saved posts:", err);
+    } finally {
+      isLoadingSavedPosts.value = false;
+    }
+  }
+
+  async function fetchNextPageOfSavedPosts() {
+    if (savedPostsNextPageUrl.value && !isLoadingSavedPosts.value) {
+      await fetchSavedPosts(savedPostsNextPageUrl.value);
     }
   }
 
@@ -144,14 +229,11 @@ export const useFeedStore = defineStore('feed', () => {
         return null;
       }
       const response = await axiosInstance.post<Post>('/posts/', postData);
-      const newPost = { ...response.data, isLiking: false, isDeleting: false };
+      const newPost = { ...response.data, isLiking: false, isDeleting: false, isUpdating: false };
       const groupStore = useGroupStore();
 
-      // Always add the new post to the main feed.
-      posts.value.unshift(newPost);
+      mainFeedPosts.value.unshift(newPost);
 
-      // AND if the post belongs to the currently viewed group,
-      // ALSO add it to the group's post list for an instant update.
       if (newPost.group && newPost.group.id === groupStore.currentGroup?.id) {
         groupStore.addPostToGroupFeed(newPost);
       }
@@ -182,34 +264,43 @@ export const useFeedStore = defineStore('feed', () => {
   }
 
   async function toggleLike(postId: number, postType: string, contentTypeId: number, objectId: number) {
-    const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
-    let localPostRef: Post | null = null;
-    if (postIndex !== -1) {
-      localPostRef = posts.value[postIndex];
-    } else if (singlePost.value && singlePost.value.id === postId) {
-      localPostRef = singlePost.value;
-    }
-    if (localPostRef) {
-      if (localPostRef.isLiking) return;
-      localPostRef.isLiking = true;
-      const originalLikedStatus = localPostRef.is_liked_by_user;
-      const originalLikeCount = localPostRef.like_count;
-      localPostRef.is_liked_by_user = !localPostRef.is_liked_by_user;
-      localPostRef.like_count += localPostRef.is_liked_by_user ? 1 : -1;
+    const updatePostInList = (list: Post[], updatedPost: Post) => {
+      const index = list.findIndex(p => p.id === updatedPost.id && p.post_type === updatedPost.post_type);
+      if (index !== -1) {
+        list[index] = { ...list[index], ...updatedPost };
+      }
+    };
+
+    const postToUpdate = mainFeedPosts.value.find(p => p.id === postId) ||
+                         singlePost.value ||
+                         savedPosts.value.find(p => p.id === postId);
+
+    if (postToUpdate && !postToUpdate.isLiking) {
+      postToUpdate.isLiking = true;
+      const originalLikedStatus = postToUpdate.is_liked_by_user;
+      const originalLikeCount = postToUpdate.like_count;
+      postToUpdate.is_liked_by_user = !postToUpdate.is_liked_by_user;
+      postToUpdate.like_count += postToUpdate.is_liked_by_user ? 1 : -1;
+
       try {
         const apiUrl = `/content/${contentTypeId}/${objectId}/like/`;
-        const response = await axiosInstance.post<{ liked: boolean, like_count: number }>(apiUrl);
-        localPostRef.is_liked_by_user = response.data.liked;
-        localPostRef.like_count = response.data.like_count;
+        const response = await axiosInstance.post<Post>(apiUrl);
+
+        updatePostInList(mainFeedPosts.value, response.data);
+        updatePostInList(savedPosts.value, response.data);
+        if (singlePost.value && singlePost.value.id === response.data.id) {
+          singlePost.value = { ...singlePost.value, ...response.data };
+        }
       } catch (err: any) {
-        localPostRef.is_liked_by_user = originalLikedStatus;
-        localPostRef.like_count = originalLikeCount;
-        error.value = err.response?.data?.detail || err.message || 'Failed to toggle like.';
+        postToUpdate.is_liked_by_user = originalLikedStatus;
+        postToUpdate.like_count = originalLikeCount;
+        mainFeedError.value = err.response?.data?.detail || err.message || 'Failed to toggle like.';
+        console.error("FeedStore: Error toggling like:", err);
         throw err;
       } finally {
-        localPostRef.isLiking = false;
+        if (postToUpdate) postToUpdate.isLiking = false;
       }
-    } else {
+    } else if (!postToUpdate) {
       try {
         const apiUrl = `/content/${contentTypeId}/${objectId}/like/`;
         await axiosInstance.post(apiUrl);
@@ -221,58 +312,73 @@ export const useFeedStore = defineStore('feed', () => {
   }
 
   function incrementCommentCount(postId: number, postType: string) {
-    const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
-    if (postIndex !== -1) {
-      posts.value[postIndex].comment_count = (posts.value[postIndex].comment_count || 0) + 1;
-    }
-     if (singlePost.value && singlePost.value.id === postId) {
+    const findAndIncrement = (list: Post[]) => {
+      const post = list.find(p => p.id === postId && p.post_type === postType);
+      if (post) post.comment_count = (post.comment_count || 0) + 1;
+    };
+    findAndIncrement(mainFeedPosts.value);
+    findAndIncrement(savedPosts.value);
+    if (singlePost.value && singlePost.value.id === postId) {
       singlePost.value.comment_count = (singlePost.value.comment_count || 0) + 1;
     }
   }
 
   async function deletePost(postId: number, postType: string): Promise<boolean> {
-      const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
-      if (postIndex !== -1) {
-          posts.value[postIndex].isDeleting = true;
-      }
+      const markAsDeleting = (list: Post[]) => {
+          const post = list.find(p => p.id === postId && p.post_type === postType);
+          if (post) post.isDeleting = true;
+      };
+      markAsDeleting(mainFeedPosts.value);
+      markAsDeleting(savedPosts.value);
+
       try {
           if (postType.toLowerCase() !== 'statuspost') {
               throw new Error(`Deletion for post_type '${postType}' is not supported here.`);
           }
           await axiosInstance.delete(`/posts/${postId}/`);
-          if (postIndex !== -1) {
-              posts.value.splice(postIndex, 1);
-          }
-           if (singlePost.value && singlePost.value.id === postId) {
-            singlePost.value = null; 
+
+          mainFeedPosts.value = mainFeedPosts.value.filter(p => !(p.id === postId && p.post_type === postType));
+          savedPosts.value = savedPosts.value.filter(p => !(p.id === postId && p.post_type === postType));
+          
+          if (singlePost.value && singlePost.value.id === postId) {
+            singlePost.value = null;
           }
           return true;
       } catch (err: any) {
           deletePostError.value = err.response?.data?.detail || err.message || 'Failed to delete post.';
-          if (postIndex !== -1 && posts.value[postIndex]) {
-              posts.value[postIndex].isDeleting = false;
-          }
+          console.error("FeedStore: Error deleting post:", err);
           return false;
       }
   }
 
   async function updatePost(postId: number, postType: string, formData: FormData): Promise<boolean> {
-      const postIndex = posts.value.findIndex(p => p.id === postId && p.post_type === postType);
-      if (postIndex !== -1) {
-          posts.value[postIndex].isUpdating = true;
-      }
-       if (singlePost.value && singlePost.value.id === postId) {
+      const markAsUpdating = (list: Post[]) => {
+          const post = list.find(p => p.id === postId && p.post_type === postType);
+          if (post) post.isUpdating = true;
+      };
+      markAsUpdating(mainFeedPosts.value);
+      markAsUpdating(savedPosts.value);
+      if (singlePost.value && singlePost.value.id === postId) {
         singlePost.value.isUpdating = true;
       }
+
       try {
           if (postType.toLowerCase() !== 'statuspost') {
               throw new Error(`Update for post_type '${postType}' is not supported here.`);
           }
           const response = await axiosInstance.patch<Post>(`/posts/${postId}/`, formData);
           const updatedData = { ...response.data, isUpdating: false };
-          if (postIndex !== -1) {
-              posts.value[postIndex] = { ...posts.value[postIndex], ...updatedData };
-          }
+
+          const updateInList = (list: Post[]) => {
+              // FIXED: Correctly use updatedData.id instead of an undefined 'post.id'
+              const index = list.findIndex(p => p.id === updatedData.id && p.post_type === updatedData.post_type);
+              if (index !== -1) {
+                  list[index] = { ...list[index], ...updatedData };
+              }
+          };
+          updateInList(mainFeedPosts.value);
+          updateInList(savedPosts.value);
+
           if (singlePost.value && singlePost.value.id === postId) {
             singlePost.value = { ...singlePost.value, ...updatedData };
           }
@@ -281,23 +387,36 @@ export const useFeedStore = defineStore('feed', () => {
           return true;
       } catch (err: any) {
           updatePostError.value = err.response?.data?.detail || 'Failed to update post.';
-          if (postIndex !== -1 && posts.value[postIndex]) {
-              posts.value[postIndex].isUpdating = false;
-          }
+          console.error("FeedStore: Error updating post:", err);
+          return false;
+      } finally {
+          const revertUpdating = (list: Post[]) => {
+              const post = list.find(p => p.id === postId && p.post_type === postType);
+              if (post) post.isUpdating = false;
+          };
+          revertUpdating(mainFeedPosts.value);
+          revertUpdating(savedPosts.value);
           if (singlePost.value && singlePost.value.id === postId) {
             singlePost.value.isUpdating = false;
           }
-          return false;
       }
   }
   
   async function castVote(pollId: number, optionId: number): Promise<void> {
-    const postWithPoll = posts.value.find(p => p.poll?.id === pollId) || (singlePost.value?.poll?.id === pollId ? singlePost.value : null);
-    if (!postWithPoll || !postWithPoll.poll) return;
-    const poll = postWithPoll.poll;
+    const postToUpdate = mainFeedPosts.value.find(p => p.poll?.id === pollId) ||
+                         singlePost.value ||
+                         savedPosts.value.find(p => p.poll?.id === pollId);
+
+    if (!postToUpdate || !postToUpdate.poll) {
+        console.warn(`Post with poll ID ${pollId} not found in store for voting.`);
+        return;
+    }
+
+    const poll = postToUpdate.poll;
     const previousVoteId = poll.user_vote;
     const isRetracting = previousVoteId === optionId;
     const originalPollState = JSON.parse(JSON.stringify(poll));
+
     if (previousVoteId !== null) {
       const prevOption = poll.options.find(o => o.id === previousVoteId);
       if (prevOption) prevOption.vote_count--;
@@ -315,6 +434,7 @@ export const useFeedStore = defineStore('feed', () => {
       }
       poll.user_vote = optionId;
     }
+
     try {
       let response;
       const apiUrl = `/polls/${pollId}/options/${optionId}/vote/`;
@@ -324,34 +444,93 @@ export const useFeedStore = defineStore('feed', () => {
         response = await axiosInstance.post<Post>(apiUrl);
       }
       const updatedPost = response.data;
-      const postIndex = posts.value.findIndex(p => p.id === updatedPost.id);
-      if (postIndex !== -1) {
-        posts.value[postIndex] = { ...posts.value[postIndex], ...updatedPost };
-      }
-       if (singlePost.value && singlePost.value.id === updatedPost.id) {
+
+      const updateInList = (list: Post[]) => {
+        const index = list.findIndex(p => p.id === updatedPost.id);
+        if (index !== -1) {
+          list[index] = { ...list[index], ...updatedPost };
+        }
+      };
+      updateInList(mainFeedPosts.value);
+      updateInList(savedPosts.value);
+      if (singlePost.value && singlePost.value.id === updatedPost.id) {
         singlePost.value = { ...singlePost.value, ...updatedPost };
       }
+
     } catch (err: any) {
-       const postIndexToRevert = posts.value.findIndex(p => p.poll?.id === pollId);
-       if (postIndexToRevert !== -1) {
-           posts.value[postIndexToRevert].poll = originalPollState;
-       }
-       if (singlePost.value?.poll?.id === pollId) {
-         singlePost.value.poll = originalPollState;
-       }
       console.error("Failed to cast/retract vote:", err);
-      error.value = err.response?.data?.detail || "Failed to update vote.";
+      mainFeedError.value = err.response?.data?.detail || "Failed to update vote.";
+      const revertPollInList = (list: Post[]) => {
+        const post = list.find(p => p.poll?.id === pollId);
+        if (post) post.poll = originalPollState;
+      };
+      revertPollInList(mainFeedPosts.value);
+      revertPollInList(savedPosts.value);
+      if (singlePost.value?.poll?.id === pollId) {
+        singlePost.value.poll = originalPollState;
+      }
     }
   }
 
+  async function toggleSavePost(postId: number): Promise<void> {
+    const postToUpdateInMainFeed = mainFeedPosts.value.find(p => p.id === postId);
+    const postToUpdateInSaved = savedPosts.value.find(p => p.id === postId);
+    const postToUpdateInSingle = singlePost.value && singlePost.value.id === postId ? singlePost.value : null;
+
+    const originalIsSaved = postToUpdateInMainFeed?.is_saved ?? postToUpdateInSaved?.is_saved ?? postToUpdateInSingle?.is_saved ?? false;
+
+    if (postToUpdateInMainFeed) postToUpdateInMainFeed.is_saved = !postToUpdateInMainFeed.is_saved;
+    if (postToUpdateInSaved) postToUpdateInSaved.is_saved = !postToUpdateInSaved.is_saved;
+    if (postToUpdateInSingle) postToUpdateInSingle.is_saved = !postToUpdateInSingle.is_saved;
+
+    try {
+      const response = await axiosInstance.post<Post>(`/posts/${postId}/save/`);
+      const updatedPost = response.data;
+
+      const updatePostInList = (list: Post[], postData: Post) => {
+        const index = list.findIndex(p => p.id === postData.id);
+        if (index !== -1) {
+          list[index] = { ...list[index], ...postData };
+        }
+      };
+
+      updatePostInList(mainFeedPosts.value, updatedPost);
+      if (singlePost.value && singlePost.value.id === updatedPost.id) {
+        singlePost.value = { ...singlePost.value, ...updatedPost };
+      }
+
+      if (updatedPost.is_saved) {
+        if (!postToUpdateInSaved) {
+          // As per recommendation, for Saved Posts, we're using "Load More" button.
+          // For now, new saved posts will appear on the next full fetch (e.g. when user navigates to saved posts page).
+          // If you want instant add here, you'd need to consider ordering.
+        }
+      } else {
+        savedPosts.value = savedPosts.value.filter(p => p.id !== updatedPost.id);
+      }
+
+    } catch (err: any) {
+      console.error(`FeedStore: Error toggling save status for post ID ${postId}:`, err);
+      mainFeedError.value = err.response?.data?.detail || err.message || 'Failed to toggle save status.';
+      if (postToUpdateInMainFeed) postToUpdateInMainFeed.is_saved = originalIsSaved;
+      if (postToUpdateInSaved) postToUpdateInSaved.is_saved = originalIsSaved;
+      if (postToUpdateInSingle) postToUpdateInSingle.is_saved = originalIsSaved;
+    }
+  }
+
+
   return {
     // State
-    posts,
-    isLoading,
-    error,
-    currentPage,
-    totalPages,
-    hasNextPage,
+    mainFeedPosts,
+    mainFeedNextCursor,
+    isLoadingMainFeed,
+    mainFeedError,
+    
+    savedPosts,
+    savedPostsNextPageUrl,
+    isLoadingSavedPosts,
+    savedPostsError,
+
     createPostError,
     isCreatingPost,
     deletePostError,
@@ -359,15 +538,22 @@ export const useFeedStore = defineStore('feed', () => {
     singlePost,
     isLoadingSinglePost,
     singlePostError,
+
     // Actions
     fetchFeed,
-    fetchNextPageOfFeed, // Expose the new action
+    fetchNextPageOfMainFeed,
+    fetchSavedPosts,
+    fetchNextPageOfSavedPosts,
+
+    fetchPostById,
     createPost,
     toggleLike,
-    incrementCommentCount, 
+    incrementCommentCount,
     deletePost,
     updatePost,
     castVote,
-    fetchPostById,
+    toggleSavePost,
+
+    $reset,
   };
 });

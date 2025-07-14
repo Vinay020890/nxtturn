@@ -87,8 +87,9 @@ class UserSerializer(serializers.ModelSerializer):
         # This method safely gets the picture URL.
         # It checks for the existence of the profile and the picture field.
         try:
-            if obj.userprofile and obj.userprofile.picture and hasattr(obj.userprofile.picture, 'url'):
-                return obj.userprofile.picture.url
+            # FIXED: Use .profile, which is the new 'related_name'.
+            if hasattr(obj, 'profile') and obj.profile.picture and hasattr(obj.profile.picture, 'url'):
+                return obj.profile.picture.url
         except UserProfile.DoesNotExist:
             # This handles the case where a User was somehow created without a profile.
             pass
@@ -291,8 +292,10 @@ class StatusPostSerializer(serializers.ModelSerializer):
     poll = PollSerializer(read_only=True, allow_null=True)
     poll_data = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
+    is_saved = serializers.SerializerMethodField()
 
-    # --- 2. ADD THE NEW METHOD HERE ---
+
+    
     def validate_media_to_delete(self, value):
         """
         Custom validator to parse a JSON string of IDs from FormData
@@ -307,7 +310,7 @@ class StatusPostSerializer(serializers.ModelSerializer):
             return [int(id_val) for id_val in ids]
         except (json.JSONDecodeError, ValueError, TypeError):
             raise serializers.ValidationError("Invalid format. media_to_delete must be a JSON-formatted array of integers.")
-    # --- END OF NEW METHOD ---
+    
 
     class Meta:
         model = StatusPost
@@ -322,12 +325,13 @@ class StatusPostSerializer(serializers.ModelSerializer):
             'media_to_delete',
             # Poll fields
             'poll',
-            'poll_data'
+            'poll_data',
+            'is_saved'
         ]
         read_only_fields = [
             'id', 'author', 'created_at', 'updated_at', 'like_count',
             'is_liked_by_user', 'content_type_id', 'object_id', 'post_type',
-            'comment_count', 'media', 'poll', 'group' # Added 'poll' here
+            'comment_count', 'media', 'poll', 'group', 'is_saved' # Added 'poll' here
         ]
 
      # --- ADD THE NEW METHOD HERE ---
@@ -523,6 +527,18 @@ class StatusPostSerializer(serializers.ModelSerializer):
             
         instance.save()
         return self.Meta.model.objects.get(pk=instance.pk)
+    
+    
+    def get_is_saved(self, obj):
+        """
+        Checks if the post is saved by the requesting user.
+        """
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return False
+        # Uses the 'saved_by' related_name from the UserProfile model
+        return obj.saved_by.filter(user=request.user).exists()
+    
 
     def get_like_count(self, obj):
         return obj.likes.count() if hasattr(obj, 'likes') else 0

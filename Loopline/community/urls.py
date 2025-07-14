@@ -57,4 +57,9 @@ urlpatterns = [
 
      # NEW: URL for casting a vote on a poll
     path('polls/<int:poll_id>/options/<int:option_id>/vote/', views.PollVoteAPIView.as_view(), name='poll-vote'),
+
+     # === NEW: URLS FOR SAVED POSTS ===
+    # ================================================
+    path('posts/<int:pk>/save/', views.SavedPostToggleView.as_view(), name='post-save-toggle'),
+    path('posts/saved/', views.SavedPostListView.as_view(), name='saved-post-list'),
 ]
