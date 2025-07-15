@@ -1,10 +1,9 @@
-// src/stores/profile.ts
+// C:\Users\Vinay\Project\frontend\src\stores\profile.ts
+
 import { ref } from 'vue';
 import { defineStore } from 'pinia';
 import axiosInstance from '@/services/axiosInstance';
-
-// --- IMPORTANT: Import the updated Post interface AND the new PostMedia interface ---
-import type { Post, PostMedia } from '@/stores/feed'; 
+import type { Post } from '@/stores/feed'; 
 import { useAuthStore, type User } from '@/stores/auth';
 
 export interface UserProfile {
@@ -28,7 +27,7 @@ export const useProfileStore = defineStore('profile', () => {
   const authStoreInstance = useAuthStore();
 
   const currentProfile = ref<UserProfile | null>(null);
-  const userPosts = ref<Post[]>([]); // This now uses the updated Post interface automatically
+  const userPosts = ref<Post[]>([]);
   const isLoadingProfile = ref(false);
   const isLoadingPosts = ref(false);
   const errorProfile = ref<string | null>(null);
@@ -43,9 +42,6 @@ export const useProfileStore = defineStore('profile', () => {
   });
   const isFollowing = ref(false);
   const isLoadingFollow = ref(false);
-
-  // No changes needed to the functions below this line for the media gallery feature.
-  // They already use the 'Post' type which we've updated centrally in feed.ts.
 
   async function fetchProfile(username: string) {
     isLoadingProfile.value = true;
@@ -80,7 +76,13 @@ export const useProfileStore = defineStore('profile', () => {
       const response = await axiosInstance.get<PaginatedPostsResponse>(`/users/${username}/posts/`, {
           params: { page }
       });
-      userPosts.value = response.data.results;
+      // Add UI flags to the posts
+      userPosts.value = response.data.results.map(post => ({
+          ...post,
+          isLiking: false,
+          isDeleting: false,
+          isUpdating: false,
+      }));
       postsPagination.value.count = response.data.count;
       postsPagination.value.next = response.data.next;
       postsPagination.value.previous = response.data.previous;
@@ -135,34 +137,13 @@ export const useProfileStore = defineStore('profile', () => {
     }
   }
 
-  function toggleLikeInUserPosts(postId: number, postType: string) {
-    const postIndex = userPosts.value.findIndex(p => p.id === postId && p.post_type === postType);
-    if (postIndex !== -1) {
-      const post = userPosts.value[postIndex];
-      post.is_liked_by_user = !post.is_liked_by_user;
-      post.like_count += post.is_liked_by_user ? 1 : -1;
-    }
-  }
-
-  function incrementCommentCountInUserPosts(postId: number, postType: string) {
-    const postIndex = userPosts.value.findIndex(p => p.id === postId && p.post_type === postType);
-    if (postIndex !== -1) {
-      userPosts.value[postIndex].comment_count = (userPosts.value[postIndex].comment_count || 0) + 1;
-    }
-  }
-
-  function updateUserPost(updatedPostData: Post) {
-    const postIndex = userPosts.value.findIndex(p => p.id === updatedPostData.id && p.post_type === updatedPostData.post_type);
-    if (postIndex !== -1) {
-      userPosts.value[postIndex] = { 
-          ...userPosts.value[postIndex],
-          ...updatedPostData,
-          isUpdating: false
-      };
-    }
-  }
+  // === DELETED FUNCTIONS ===
+  // The logic for toggling likes, incrementing comments, and updating posts
+  // is now centralized in feedStore.ts to ensure consistency across the app.
+  // We no longer need these redundant, siloed functions.
 
   return {
+    // State
     currentProfile,
     userPosts,
     isLoadingProfile,
@@ -172,14 +153,13 @@ export const useProfileStore = defineStore('profile', () => {
     postsPagination,
     isFollowing,
     isLoadingFollow,
+    // Actions
     fetchProfile,
     fetchUserPosts,
     clearProfileData,
     followUser,
     unfollowUser,
     updateProfilePicture,
-    toggleLikeInUserPosts,
-    incrementCommentCountInUserPosts,
-    updateUserPost,
+    // --- Redundant functions have been removed from the return object ---
   };
 });

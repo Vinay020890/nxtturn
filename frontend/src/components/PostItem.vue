@@ -1,9 +1,6 @@
 <script setup lang="ts">
-// --- MODIFIED IMPORTS ---
-// We now import both functions from our updated utility file
+// --- Imports ---
 import { getAvatarUrl, buildMediaUrl } from '@/utils/avatars';
-
-// All other imports remain the same
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import type { Post, PostMedia } from '@/stores/feed';
 import { useFeedStore } from '@/stores/feed';
@@ -12,7 +9,8 @@ import { useCommentStore } from '@/stores/comment';
 import CommentItem from '@/components/CommentItem.vue';
 import { useAuthStore } from '@/stores/auth';
 import { storeToRefs } from 'pinia';
-import { useProfileStore } from '@/stores/profile';
+// We no longer need useProfileStore for this component's actions
+// import { useProfileStore } from '@/stores/profile'; 
 import PollDisplay from './PollDisplay.vue';
 import MentionAutocomplete from './MentionAutocomplete.vue';
 import eventBus from '@/services/eventBus';
@@ -23,7 +21,6 @@ const emit = defineEmits(['report-content']);
 const feedStore = useFeedStore();
 const commentStore = useCommentStore();
 const authStore = useAuthStore();
-const profileStore = useProfileStore();
 const { currentUser, isAuthenticated } = storeToRefs(authStore);
 const { isCreatingComment, createCommentError } = storeToRefs(commentStore);
 const showComments = ref(false);
@@ -72,7 +69,7 @@ function handleReportClick() {
     object_id: props.post.object_id,
     content_type_id: props.post.content_type_id
   });
-  showOptionsMenu.value = false; // Close the menu after clicking
+  showOptionsMenu.value = false;
 }
 
 function reEmitReportEvent(payload: { content_type: string, content_type_id: number, object_id: number }) {
@@ -84,6 +81,7 @@ watch(showOptionsMenu, (isOpen) => {
   if (isOpen) document.addEventListener('click', closeOnClickOutside, true);
   else document.removeEventListener('click', closeOnClickOutside, true);
 });
+
 const handleNavigation = () => {
   if (isEditing.value) {
     isEditing.value = false;
@@ -103,29 +101,35 @@ function toggleCommentDisplay() {
     commentStore.fetchComments(props.post.post_type, props.post.object_id);
   }
 }
-async function toggleLike() {
-  if (!isAuthenticated.value) return alert('Please login to like posts.');
-  await feedStore.toggleLike(props.post.id, props.post.post_type, props.post.content_type_id, props.post.object_id);
-  if (profileStore.currentProfile?.user.username === props.post.author.username) {
-    profileStore.toggleLikeInUserPosts(props.post.id, props.post.post_type);
-  }
-}
 
-// === NEW: toggleSave method ===
+// === THIS IS THE ONLY FUNCTIONAL CHANGE ===
+// It is now simplified to only call the central store action.
+async function toggleLike() {
+  if (!isAuthenticated.value) {
+    return alert('Please login to like posts.');
+  }
+  await feedStore.toggleLike(
+    props.post.id, 
+    props.post.post_type, 
+    props.post.content_type_id, 
+    props.post.object_id
+  );
+}
+// === END OF CHANGE ===
+
 async function toggleSave() {
   if (!isAuthenticated.value) {
-    showOptionsMenu.value = false; // Close menu if not authenticated
+    showOptionsMenu.value = false;
     return alert('Please login to save posts.');
   }
-  showOptionsMenu.value = false; // Close menu after action
-  // Call the new action on the feedStore (we'll implement this next)
+  showOptionsMenu.value = false;
   await feedStore.toggleSavePost(props.post.id);
 }
-// =============================
 
 async function handleDeletePost() {
   if (!isOwner.value) return;
   if (window.confirm("Are you sure you want to delete this post? This action cannot be undone.")) {
+    // This correctly calls the central feedStore action.
     const success = await feedStore.deletePost(props.post.id, props.post.post_type);
     if (!success) localDeleteError.value = feedStore.deletePostError || "Failed to delete post.";
   }
@@ -136,29 +140,24 @@ function setActiveMedia(index: number) { activeMediaIndex.value = index; }
 
 function toggleEditMode() {
   isEditing.value = !isEditing.value;
-  localEditError.value = null; // Reset errors when entering/leaving edit mode
+  localEditError.value = null;
 
   if (isEditing.value) {
     if (props.post.poll) {
       editPollQuestion.value = props.post.poll.question;
       editPollOptions.value = props.post.poll.options.map(opt => ({ id: opt.id, text: opt.text }));
       deletedOptionIds.value = [];
-      
       editContent.value = '';
       editableMedia.value = [];
-
     } else {
       editContent.value = props.post.content || '';
       editableMedia.value = [...props.post.media];
-
       editPollQuestion.value = '';
       editPollOptions.value = [];
     }
-    
     newImageFiles.value = [];
     newVideoFiles.value = [];
     mediaToDeleteIds.value = [];
-
     nextTick(() => {
       editTextAreaRef.value?.focus(); 
     });
@@ -175,7 +174,6 @@ function removePollOptionFromEdit(index: number) {
   if (editPollOptions.value.length <= 2) {
     return;
   }
-  
   const optionToRemove = editPollOptions.value[index];
   if (optionToRemove.id !== null) {
     deletedOptionIds.value.push(optionToRemove.id);
@@ -190,14 +188,17 @@ function handleNewFiles(event: Event, type: 'image' | 'video') {
   for (const file of Array.from(files)) targetArray.value.push(file);
   (event.target as HTMLInputElement).value = '';
 }
+
 function flagExistingMediaForRemoval(mediaId: number) {
   mediaToDeleteIds.value.push(mediaId);
   editableMedia.value = editableMedia.value.filter(m => m.id !== mediaId);
 }
+
 function removeNewFile(index: number, type: 'image' | 'video') {
   const targetArray = type === 'image' ? newImageFiles : newVideoFiles;
   targetArray.value.splice(index, 1);
 }
+
 function getObjectURL(file: File): string { return URL.createObjectURL(file); }
 
 async function handleUpdatePost() {
@@ -208,7 +209,6 @@ async function handleUpdatePost() {
     localEditError.value = "A post cannot be empty. It must have text or at least one media file.";
     return;
   }
-
   const formData = new FormData();
   if (editContent.value !== (props.post.content || '')) {
     formData.append('content', editContent.value);
@@ -218,26 +218,20 @@ async function handleUpdatePost() {
   if (mediaToDeleteIds.value.length > 0) {
     formData.append('media_to_delete', JSON.stringify(mediaToDeleteIds.value));
   }
-  
   let hasChanges = false;
   for (const _ of formData.entries()) {
     hasChanges = true;
     break;
   }
   if (!hasChanges) {
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     isEditing.value = false;
     return;
   }
-
+  // This correctly calls the central feedStore action.
   const success = await feedStore.updatePost(props.post.id, props.post.post_type, formData);
-  
   if (success) {
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     window.getSelection()?.removeAllRanges();
     postArticleRef.value?.focus();
     isEditing.value = false;
@@ -249,7 +243,6 @@ async function handleUpdatePost() {
 async function handleUpdatePoll() {
   localEditError.value = null;
   feedStore.updatePostError = null;
-
   if (!editPollQuestion.value.trim()) {
     localEditError.value = "Poll question cannot be empty.";
     return;
@@ -258,19 +251,16 @@ async function handleUpdatePoll() {
     localEditError.value = "Poll options cannot be empty.";
     return;
   }
-
   const pollPayload = {
     question: editPollQuestion.value,
     options_to_update: editPollOptions.value.filter(opt => opt.id !== null),
     options_to_add: editPollOptions.value.filter(opt => opt.id === null),
     options_to_delete: deletedOptionIds.value
   };
-
   const formData = new FormData();
   formData.append('poll_data', JSON.stringify(pollPayload));
-
+  // This correctly calls the central feedStore action.
   const success = await feedStore.updatePost(props.post.id, props.post.post_type, formData);
-
   if (success) {
     isEditing.value = false;
   } else {
@@ -289,6 +279,7 @@ function linkifyContent(text: string | null | undefined): string {
   });
   return linkedText;
 }
+
 async function handleCommentSubmit() {
   if (!newCommentContent.value.trim()) return;
   await commentStore.createComment(props.post.post_type, props.post.object_id, newCommentContent.value, props.post.id);
@@ -317,16 +308,12 @@ async function handleCommentSubmit() {
           <p class="text-sm text-gray-500">{{ format(new Date(post.created_at), 'Pp') }}</p>
         </div>
       </div>
-
-      <!-- CONSOLIDATED OPTIONS MENU -->
       <div v-if="isAuthenticated" class="relative" ref="optionsMenuRef">
         <button @click.stop="toggleOptionsMenu" class="p-2 rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
           <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
         </button>
         <div v-if="showOptionsMenu" class="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-10">
           <div class="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
-            
-            <!-- NEW: Save/Unsave Post button - appears for all authenticated users -->
             <button
               @click.prevent="toggleSave"
               class="w-full text-left flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
@@ -337,9 +324,7 @@ async function handleCommentSubmit() {
               </svg>
               <span>{{ post.is_saved ? 'Unsave Post' : 'Save Post' }}</span>
             </button>
-
             <template v-if="isOwner">
-              <!-- Owner-specific actions -->
               <button
                 @click="handleEditClick"
                 :disabled="post.isDeleting"
@@ -355,7 +340,6 @@ async function handleCommentSubmit() {
               </button>
             </template>
             <template v-else>
-              <!-- Non-owner (but authenticated) actions -->
               <button @click="handleReportClick" class="w-full text-left flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900" role="menuitem">
                 <svg class="w-5 h-5 mr-3 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6H8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
@@ -363,14 +347,12 @@ async function handleCommentSubmit() {
                 <span>Report Post</span>
               </button>
             </template>
-
           </div>
         </div>
       </div>
     </header>
 
     <div v-if="localDeleteError" class="m-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md">{{ localDeleteError }}</div>
-    
     <div v-if="!isEditing">
       <div v-if="post.content" class="p-4"><p class="text-gray-800 whitespace-pre-wrap" v-html="linkifyContent(post.content)"></p></div>
       <PollDisplay v-if="post.poll" :poll="post.poll" />
@@ -393,13 +375,10 @@ async function handleCommentSubmit() {
         </div>
       </div>
     </div>
-    
     <div v-else class="p-4">
       <form v-if="!post.poll" @submit.prevent="handleUpdatePost" novalidate>
         <div v-if="localEditError" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md mb-4">{{ localEditError }}</div>
-        
         <MentionAutocomplete ref="editTextAreaRef" v-model="editContent" placeholder="Edit your post..." :rows="3" class="text-base"/>
-        
         <div class="mt-2 flex flex-wrap gap-2">
           <div v-for="media in editableMedia" :key="`edit-${media.id}`" class="relative w-20 h-20">
             <span v-if="media.media_type === 'video'" class="w-full h-full bg-gray-200 flex items-center justify-center text-2xl text-gray-500 rounded-md">▶</span>
@@ -416,7 +395,6 @@ async function handleCommentSubmit() {
               <button @click="removeNewFile(index, 'video')" type="button" class="absolute top-1 right-1 bg-gray-800 bg-opacity-50 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-500">×</button>
           </div>
         </div>
-
         <div class="mt-4 flex justify-between items-center">
           <div class="flex gap-4">
             <label for="add-images-edit" class="text-gray-500 hover:text-blue-500 cursor-pointer"><svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg></label>
@@ -427,10 +405,8 @@ async function handleCommentSubmit() {
           <button type="submit" :disabled="post.isUpdating" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-full">Save Changes</button>
         </div>
       </form>
-
       <form v-else @submit.prevent="handleUpdatePoll" novalidate>
           <div v-if="localEditError" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md mb-4">{{ localEditError }}</div>
-          
           <div class="p-4 border border-gray-200 rounded-md bg-gray-50">
             <input 
               type="text" 
@@ -439,7 +415,6 @@ async function handleCommentSubmit() {
               class="w-full p-2 border border-gray-300 rounded-md mb-3" 
               maxlength="255"
             >
-            
             <div v-for="(option, index) in editPollOptions" :key="option.id || `new-${index}`" class="flex items-center gap-2 mb-2">
               <input 
                 type="text" 
@@ -448,7 +423,6 @@ async function handleCommentSubmit() {
                 class="flex-grow p-2 border border-gray-300 rounded-md" 
                 maxlength="100"
               >
-              
               <button 
                 @click.prevent="removePollOptionFromEdit(index)" 
                 :disabled="editPollOptions.length <= 2" 
@@ -458,7 +432,6 @@ async function handleCommentSubmit() {
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
               </button>
             </div>
-
             <button 
               @click.prevent="addPollOptionToEdit" 
               :disabled="editPollOptions.length >= 5" 
@@ -468,7 +441,6 @@ async function handleCommentSubmit() {
               Add Option
             </button>
           </div>
-
           <div class="mt-4 flex justify-end">
             <button 
               type="submit" 
@@ -479,11 +451,8 @@ async function handleCommentSubmit() {
             </button>
           </div>
       </form>
-      
       <div v-if="localEditError" class="text-red-600 mt-2">{{ localEditError }}</div>
-
     </div>
-    
     <footer v-if="!isEditing" class="p-4 border-t border-gray-200 flex items-center gap-6 text-gray-500">
       <button @click="toggleLike" class="flex items-center gap-2 hover:text-red-500 transition-colors" :class="{'text-red-500 font-bold': post.is_liked_by_user}" :disabled="post.isLiking">
         <svg class="h-6 w-6" :fill="post.is_liked_by_user ? 'currentColor' : 'none'" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.5l1.318-1.182a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z"></path></svg>
@@ -494,7 +463,6 @@ async function handleCommentSubmit() {
         <span>{{ post.comment_count }}</span>
       </button>
     </footer>
-    
     <section v-if="!isEditing && showComments" class="bg-gray-50 p-4 border-t border-gray-200">
       <div v-if="isLoadingComments">Loading...</div>
       <div v-else-if="commentError" class="text-red-600">Error: {{ commentError }}</div>
@@ -510,7 +478,6 @@ async function handleCommentSubmit() {
         />
         <p v-if="commentsForThisPost.length === 0" class="text-sm text-gray-500 py-4 text-center">No comments yet.</p>
       </div>
-
       <form v-if="isAuthenticated" @submit.prevent="handleCommentSubmit" class="mt-4 flex items-start gap-3">
           <img :src="getAvatarUrl(authStore.currentUser?.picture, authStore.currentUser?.first_name, authStore.currentUser?.last_name)" alt="your avatar" class="w-8 h-8 rounded-full object-cover flex-shrink-0 bg-gray-200">
           <div class="flex-grow">
