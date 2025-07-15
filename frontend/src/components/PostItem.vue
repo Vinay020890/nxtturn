@@ -9,8 +9,6 @@ import { useCommentStore } from '@/stores/comment';
 import CommentItem from '@/components/CommentItem.vue';
 import { useAuthStore } from '@/stores/auth';
 import { storeToRefs } from 'pinia';
-// We no longer need useProfileStore for this component's actions
-// import { useProfileStore } from '@/stores/profile'; 
 import PollDisplay from './PollDisplay.vue';
 import MentionAutocomplete from './MentionAutocomplete.vue';
 import eventBus from '@/services/eventBus';
@@ -102,8 +100,6 @@ function toggleCommentDisplay() {
   }
 }
 
-// === THIS IS THE ONLY FUNCTIONAL CHANGE ===
-// It is now simplified to only call the central store action.
 async function toggleLike() {
   if (!isAuthenticated.value) {
     return alert('Please login to like posts.');
@@ -115,7 +111,6 @@ async function toggleLike() {
     props.post.object_id
   );
 }
-// === END OF CHANGE ===
 
 async function toggleSave() {
   if (!isAuthenticated.value) {
@@ -129,7 +124,6 @@ async function toggleSave() {
 async function handleDeletePost() {
   if (!isOwner.value) return;
   if (window.confirm("Are you sure you want to delete this post? This action cannot be undone.")) {
-    // This correctly calls the central feedStore action.
     const success = await feedStore.deletePost(props.post.id, props.post.post_type);
     if (!success) localDeleteError.value = feedStore.deletePostError || "Failed to delete post.";
   }
@@ -228,7 +222,6 @@ async function handleUpdatePost() {
     isEditing.value = false;
     return;
   }
-  // This correctly calls the central feedStore action.
   const success = await feedStore.updatePost(props.post.id, props.post.post_type, formData);
   if (success) {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
@@ -259,7 +252,6 @@ async function handleUpdatePoll() {
   };
   const formData = new FormData();
   formData.append('poll_data', JSON.stringify(pollPayload));
-  // This correctly calls the central feedStore action.
   const success = await feedStore.updatePost(props.post.id, props.post.post_type, formData);
   if (success) {
     isEditing.value = false;
@@ -353,8 +345,15 @@ async function handleCommentSubmit() {
     </header>
 
     <div v-if="localDeleteError" class="m-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md">{{ localDeleteError }}</div>
+    
     <div v-if="!isEditing">
-      <div v-if="post.content" class="p-4"><p class="text-gray-800 whitespace-pre-wrap" v-html="linkifyContent(post.content)"></p></div>
+      <!-- === THIS IS THE FIX === -->
+      <!-- Only show the post.content div if there is content AND there is NO poll -->
+      <div v-if="post.content && !post.poll" class="p-4">
+        <p class="text-gray-800 whitespace-pre-wrap" v-html="linkifyContent(post.content)"></p>
+      </div>
+      <!-- === END OF FIX === -->
+      
       <PollDisplay v-if="post.poll" :poll="post.poll" />
       <div v-if="post.media && post.media.length > 0" class="relative bg-gray-100">
         <div class="relative">
@@ -375,6 +374,7 @@ async function handleCommentSubmit() {
         </div>
       </div>
     </div>
+    
     <div v-else class="p-4">
       <form v-if="!post.poll" @submit.prevent="handleUpdatePost" novalidate>
         <div v-if="localEditError" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md mb-4">{{ localEditError }}</div>

@@ -450,8 +450,16 @@ class StatusPostSerializer(serializers.ModelSerializer):
         images_data = validated_data.pop('images', [])
         videos_data = validated_data.pop('videos', [])
         poll_data = validated_data.pop('poll_data', None)
-        validated_data.pop('media_to_delete', None)
-        
+        validated_data.pop('media_to_delete', None) # Not used in create
+
+        # --- THIS IS THE FIX ---
+        # If a poll is being created, we ignore any separate 'content' that might have been
+        # sent and instead set the post's content to be the poll's question.
+        # This prevents the question from appearing twice in the UI.
+        if poll_data:
+            validated_data['content'] = poll_data.get('question', '')
+        # --- END OF FIX ---
+
         validated_data['author'] = request.user
         post = StatusPost.objects.create(**validated_data)
 
@@ -471,11 +479,9 @@ class StatusPostSerializer(serializers.ModelSerializer):
                 PollOption(poll=poll, text=option_text) for option_text in poll_data['options']
             ]
             PollOption.objects.bulk_create(poll_options_to_create)
-        
-        # --- THIS IS THE NEW LOGIC ---
+
         if post.content:
             process_mentions(actor=request.user, target_object=post, content_text=post.content)
-        # --- END OF NEW LOGIC ---
             
         return post
 
