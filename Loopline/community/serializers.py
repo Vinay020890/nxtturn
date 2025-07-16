@@ -412,31 +412,28 @@ class StatusPostSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Invalid JSON format for poll data.")
 
     def validate(self, data):
-        # This is the original validation logic from your file, now with poll support
         is_update = self.instance is not None
         
-        # Determine current and incoming values
-        # --- THIS IS THE FIX ---
-        # Get the content from the incoming data, or fall back to the existing instance's content.
-        # Crucially, if that is also None, fall back to an empty string '' BEFORE trying to strip().
         content = (data.get('content', self.instance.content if is_update else None) or '').strip()
-        # --- END OF FIX ---
-
         new_images = data.get('images', [])
         new_videos = data.get('videos', [])
         poll_data = data.get('poll_data')
 
         if is_update:
             # --- THIS IS THE FIX ---
-            # We add a check for poll_data, just like in the 'create' validation
-            media_to_delete_ids = self.validate_media_to_delete(data.get('media_to_delete'))
+            # The field-level `validate_media_to_delete` has already run and converted
+            # the JSON string into a Python list. We just need to get that list.
+            # We provide an empty list `[]` as the default if the key is not present.
+            media_to_delete_ids = data.get('media_to_delete', [])
+            # --- END OF FIX ---
+
             surviving_media_count = self.instance.media.exclude(id__in=media_to_delete_ids).count()
             final_media_count = surviving_media_count + len(new_images) + len(new_videos)
             
-            # The new, corrected rule:
+            # This rule checks the final state of the post after the update is applied.
+            # If there's no text content left, AND no media left, AND no poll, it's an error.
             if not content and final_media_count == 0 and not poll_data:
                 raise serializers.ValidationError("A post cannot be empty. It must have text content, media, or a poll.")
-            # --- END OF FIX ---
         else:
             # On create, the post must have something.
             if not content and not new_images and not new_videos and not poll_data:
