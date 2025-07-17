@@ -327,10 +327,26 @@ export const useFeedStore = defineStore('feed', () => {
     }
   }
 
+  // --- NEW FUNCTION TO ADD ---
+  function decrementCommentCount(postId: number, postType: string) {
+    const groupStore = useGroupStore();
+    const profileStore = useProfileStore();
+    const postToUpdate = 
+        mainFeedPosts.value.find(p => p.id === postId) ||
+        savedPosts.value.find(p => p.id === postId) ||
+        groupStore.groupPosts.find(p => p.id === postId) ||
+        profileStore.userPosts.find(p => p.id === postId) ||
+        (singlePost.value?.id === postId ? singlePost.value : null);
+        
+    if (postToUpdate && postToUpdate.comment_count) {
+      postToUpdate.comment_count = Math.max(0, postToUpdate.comment_count - 1);
+    }
+  }
+  // --- END OF NEW FUNCTION ---
+
   async function deletePost(postId: number, postType: string): Promise<boolean> {
       const groupStore = useGroupStore();
       const profileStore = useProfileStore();
-
       const findAndMark = (postList: Post[], id: number) => {
         const post = postList.find(p => p.id === id);
         if (post) post.isDeleting = true;
@@ -344,7 +360,6 @@ export const useFeedStore = defineStore('feed', () => {
 
       try {
           await axiosInstance.delete(`/posts/${postId}/`);
-
           mainFeedPosts.value = mainFeedPosts.value.filter(p => p.id !== postId);
           savedPosts.value = savedPosts.value.filter(p => p.id !== postId);
           groupStore.groupPosts = groupStore.groupPosts.filter(p => p.id !== postId);
@@ -357,7 +372,6 @@ export const useFeedStore = defineStore('feed', () => {
       } catch (err: any) {
           deletePostError.value = err.response?.data?.detail || err.message || 'Failed to delete post.';
           console.error("FeedStore: Error deleting post:", err);
-
           const findAndUnmark = (list: Post[], id: number) => {
             const post = list.find(p => p.id === id);
             if (post) post.isDeleting = false;
@@ -373,13 +387,11 @@ export const useFeedStore = defineStore('feed', () => {
   async function updatePost(postId: number, postType: string, formData: FormData): Promise<boolean> {
       const groupStore = useGroupStore();
       const profileStore = useProfileStore();
-      
       const findAndMark = (postList: Post[], id: number) => {
         const post = postList.find(p => p.id === id);
         if (post) post.isUpdating = true;
         return post;
       };
-
       const postToUpdate = findAndMark(mainFeedPosts.value, postId) ||
                          findAndMark(savedPosts.value, postId) ||
                          findAndMark(groupStore.groupPosts, postId) ||
@@ -390,13 +402,10 @@ export const useFeedStore = defineStore('feed', () => {
         console.warn(`updatePost: Post with ID ${postId} not found in any active store.`);
         return false;
       }
-
       try {
           const response = await axiosInstance.patch<Post>(`/posts/${postId}/`, formData);
           const updatedData = { ...response.data, isUpdating: false, isLiking: postToUpdate.isLiking };
-          
           Object.assign(postToUpdate, updatedData);
-
           return true;
       } catch (err: any) {
           updatePostError.value = err.response?.data?.detail || 'Failed to update post.';
@@ -410,7 +419,6 @@ export const useFeedStore = defineStore('feed', () => {
   async function castVote(pollId: number, optionId: number): Promise<void> {
     const groupStore = useGroupStore();
     const profileStore = useProfileStore();
-
     const postToUpdate = 
         mainFeedPosts.value.find(p => p.poll?.id === pollId) ||
         savedPosts.value.find(p => p.poll?.id === pollId) ||
@@ -427,12 +435,10 @@ export const useFeedStore = defineStore('feed', () => {
         }
         return;
     }
-
     const poll = postToUpdate.poll;
     const previousVoteId = poll.user_vote;
     const isRetracting = previousVoteId === optionId;
     const originalPollState = JSON.parse(JSON.stringify(poll));
-
     if (previousVoteId !== null) {
       const prevOption = poll.options.find(o => o.id === previousVoteId);
       if (prevOption) prevOption.vote_count--;
@@ -450,7 +456,6 @@ export const useFeedStore = defineStore('feed', () => {
       }
       poll.user_vote = optionId;
     }
-
     try {
       let response;
       const apiUrl = `/polls/${pollId}/options/${optionId}/vote/`;
@@ -460,9 +465,7 @@ export const useFeedStore = defineStore('feed', () => {
         response = await axiosInstance.post<Post>(apiUrl);
       }
       const updatedPostData = response.data;
-      
       Object.assign(postToUpdate, updatedPostData);
-
     } catch (err: any) {
       console.error("FeedStore: Failed to cast/retract vote:", err);
       mainFeedError.value = err.response?.data?.detail || "Failed to update vote.";
@@ -473,7 +476,6 @@ export const useFeedStore = defineStore('feed', () => {
   async function toggleSavePost(postId: number): Promise<void> {
     const groupStore = useGroupStore();
     const profileStore = useProfileStore();
-
     const postToUpdate = 
         mainFeedPosts.value.find(p => p.id === postId) ||
         savedPosts.value.find(p => p.id === postId) ||
@@ -485,20 +487,15 @@ export const useFeedStore = defineStore('feed', () => {
         console.warn(`toggleSavePost: Post with ID ${postId} not found in any active store.`);
         return;
     }
-
     const originalIsSaved = postToUpdate.is_saved;
     postToUpdate.is_saved = !postToUpdate.is_saved;
-
     try {
       const response = await axiosInstance.post<Post>(`/posts/${postId}/save/`);
       const updatedPost = response.data;
-      
       Object.assign(postToUpdate, updatedPost);
-
       if (!updatedPost.is_saved) {
         savedPosts.value = savedPosts.value.filter(p => p.id !== updatedPost.id);
       }
-
     } catch (err: any) {
       console.error(`FeedStore: Error toggling save status for post ID ${postId}:`, err);
       mainFeedError.value = err.response?.data?.detail || err.message || 'Failed to toggle save status.';
@@ -532,6 +529,7 @@ export const useFeedStore = defineStore('feed', () => {
     createPost,
     toggleLike,
     incrementCommentCount,
+    decrementCommentCount, // <-- EXPORT THE NEW FUNCTION
     deletePost,
     updatePost,
     castVote,

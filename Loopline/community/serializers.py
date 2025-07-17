@@ -486,18 +486,21 @@ class StatusPostSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def update(self, instance, validated_data):
-        # --- Standard Media Handling (Unchanged) ---
+        # --- CHANGE 1: Get the request object to know who the user is ---
+        request = self.context.get('request')
+        
         images_data = validated_data.pop('images', [])
         videos_data = validated_data.pop('videos', [])
         media_to_delete_ids = validated_data.pop('media_to_delete', [])
-        
-        # --- New, Advanced Poll Handling ---
         poll_data = validated_data.pop('poll_data', None)
         
-        # Update the main post instance with any text content
+        # --- CHANGE 2: Capture the original content BEFORE updating ---
+        original_content = instance.content
+        
+        # This line updates the instance with new data (e.g., new content from the form)
         instance = super().update(instance, validated_data)
 
-        # Handle media deletions and additions (Unchanged)
+        # This part for handling media and polls remains unchanged
         if media_to_delete_ids:
             instance.media.filter(id__in=media_to_delete_ids).delete()
         
@@ -509,32 +512,19 @@ class StatusPostSerializer(serializers.ModelSerializer):
         if media_to_create:
             PostMedia.objects.bulk_create(media_to_create)
 
-        # --- THIS IS THE NEW, ADVANCED POLL LOGIC ---
         if poll_data and hasattr(instance, 'poll'):
             poll = instance.poll
-            
-            # 1. Update the Poll Question
             poll.question = poll_data.get('question', poll.question)
             poll.save()
-            
-            # 2. Delete Options
-            # The frontend will send a list of IDs for options to be deleted.
             options_to_delete_ids = poll_data.get('options_to_delete', [])
             if options_to_delete_ids:
-                # We also delete the associated votes to keep the database clean.
                 PollOption.objects.filter(id__in=options_to_delete_ids, poll=poll).delete()
-            
-            # 3. Update Existing Options
-            # The frontend will send a list of option objects that have an 'id'.
             options_to_update = poll_data.get('options_to_update', [])
             for option_data in options_to_update:
                 option_id = option_data.get('id')
                 option_text = option_data.get('text')
                 if option_id and option_text is not None:
                     PollOption.objects.filter(id=option_id, poll=poll).update(text=option_text)
-            
-            # 4. Add New Options
-            # The frontend will send a list of option objects that DO NOT have an 'id'.
             options_to_add = poll_data.get('options_to_add', [])
             if options_to_add:
                 new_poll_options = [
@@ -543,9 +533,15 @@ class StatusPostSerializer(serializers.ModelSerializer):
                 ]
                 if new_poll_options:
                     PollOption.objects.bulk_create(new_poll_options)
-        # --- END OF NEW POLL LOGIC ---
             
         instance.save()
+
+        # --- CHANGE 3: Process mentions if the content has changed ---
+        # This checks if the new content is different from the old content.
+        if instance.content is not None and instance.content != original_content:
+            process_mentions(actor=request.user, target_object=instance, content_text=instance.content)
+        # --- END OF CHANGE 3 ---
+            
         return self.Meta.model.objects.get(pk=instance.pk)
     
     

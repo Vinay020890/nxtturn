@@ -5,13 +5,11 @@ import axiosInstance from '@/services/axiosInstance';
 import { getAvatarUrl } from '@/utils/avatars';
 import type { User } from '@/stores/auth';
 
-// --- THIS IS THE CORRECT PROPS DEFINITION ---
 const props = defineProps<{
-  modelValue: string; // Used for v-model
+  modelValue: string;
   placeholder?: string;
   rows?: number;
 }>();
-// --- IT SHOULD NOT CONTAIN A 'post' PROP ---
 
 const emit = defineEmits(['update:modelValue']);
 
@@ -50,12 +48,12 @@ const searchUsers = debounce(async (query: string) => {
 
 const checkForMention = (text: string, cursorPosition: number) => {
   const textBeforeCursor = text.slice(0, cursorPosition);
-  const mentionMatch = textBeforeCursor.match(/@(\w*)$/);
+  const mentionMatch = textBeforeCursor.match(/@([\w.-]*)$/);
 
   if (mentionMatch) {
     showDropdown.value = true;
     activeIndex.value = -1;
-    searchUsers(mentionMatch[1]);
+    searchUsers(mentionMatch[1]); 
   } else {
     showDropdown.value = false;
   }
@@ -67,21 +65,17 @@ const selectUser = (user: User) => {
   const currentText = props.modelValue;
   const cursorPosition = textareaRef.value.selectionStart;
   const textBeforeCursor = currentText.slice(0, cursorPosition);
-  
   const mentionStartIndex = textBeforeCursor.lastIndexOf('@');
 
   if (mentionStartIndex !== -1) {
     const textBeforeMention = currentText.slice(0, mentionStartIndex);
-    const textAfterPartialMention = currentText.slice(cursorPosition).split(' ')[0];
-    const textFurtherAfter = currentText.slice(cursorPosition + textAfterPartialMention.length);
-    
-    const newText = `${textBeforeMention}@${user.username} ${textFurtherAfter}`;
+    const textAfterCursor = currentText.slice(cursorPosition);
+    const newText = `${textBeforeMention}@${user.username} ${textAfterCursor}`;
     emit('update:modelValue', newText);
-    
     const newCursorPosition = (textBeforeMention + `@${user.username} `).length;
-    textareaRef.value.focus();
     setTimeout(() => {
         if(textareaRef.value) {
+            textareaRef.value.focus();
             textareaRef.value.selectionStart = textareaRef.value.selectionEnd = newCursorPosition;
         }
     }, 0);
@@ -100,8 +94,8 @@ const handleKeydown = (event: KeyboardEvent) => {
     event.preventDefault();
     activeIndex.value = (activeIndex.value - 1 + searchResults.value.length) % searchResults.value.length;
   } else if (event.key === 'Enter' || event.key === 'Tab') {
-    event.preventDefault();
     if (activeIndex.value !== -1) {
+      event.preventDefault();
       selectUser(searchResults.value[activeIndex.value]);
     }
   } else if (event.key === 'Escape') {
@@ -110,14 +104,22 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 };
 
+// === THIS IS THE FIX for the deprecation warning ===
 watch(showDropdown, (isOpen) => {
-    const listener = () => showDropdown.value = false;
+    const listener = (e: MouseEvent) => {
+      // Use the 'e' parameter that is passed into the function, not the global 'event'.
+      const rootEl = (e.target as HTMLElement).closest('.relative');
+      if (!rootEl || !rootEl.contains(e.target as Node)) {
+        showDropdown.value = false;
+      }
+    };
     if (isOpen) {
         document.addEventListener('click', listener, true);
     } else {
         document.removeEventListener('click', listener, true);
     }
 });
+// === END OF FIX ===
 </script>
 
 <template>

@@ -263,7 +263,10 @@ async function handleUpdatePoll() {
 function linkifyContent(text: string | null | undefined): string {
   if (!text) return '';
   const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])|(\bwww\.[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
-  const mentionRegex = /@(\w+)/g;
+  
+  // THIS IS THE FIX: The new regex allows for periods and hyphens.
+  const mentionRegex = /@([\w.-]+)/g;
+  
   let linkedText = text.replace(urlRegex, url => `<a href="${url.startsWith('www.') ? 'http://' + url : url}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline">${url}</a>`);
   linkedText = linkedText.replace(mentionRegex, (match, username) => {
     const profileUrl = `/profile/${username}`;

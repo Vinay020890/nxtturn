@@ -20,7 +20,7 @@ def process_mentions(actor, target_object, content_text):
 
     # Regex to find all words prefixed with @
     # Using a set ensures we only process each unique username once.
-    mentioned_usernames = set(re.findall(r'@(\w+)', content_text))
+    mentioned_usernames = set(re.findall(r'@([\w.-]+)', content_text))
 
     if not mentioned_usernames:
         return
