@@ -1,23 +1,52 @@
 // C:\Users\Vinay\Project\frontend\src\views\SavedPostsView.vue
 
 <script setup lang="ts">
-// ---- [CHANGE 1] ---- Import onBeforeRouteLeave, remove onUnmounted
 import { ref, onMounted } from 'vue';
 import { onBeforeRouteLeave } from 'vue-router';
-// --------------------
 import { useFeedStore } from '@/stores/feed';
 import PostItem from '@/components/PostItem.vue';
 
+// --- ADDED FOR REPORTING ---
+import { storeToRefs } from 'pinia';
+import { useModerationStore } from '@/stores/moderation';
+import ReportFormModal from '@/components/ReportFormModal.vue';
+// --- END ADDED ---
+
 const feedStore = useFeedStore();
+// --- ADDED FOR REPORTING ---
+const moderationStore = useModerationStore();
+const { submissionError } = storeToRefs(moderationStore);
+// --- END ADDED ---
 
-// Reporting state can remain for future use if needed
-const showReportModal = ref(false);
-const reportPayload = ref({ content_type: '', object_id: 0, content_type_id: 0 });
+// --- REPLACED old placeholder logic with new, functional logic ---
+const isReportModalOpen = ref(false);
+const contentToReport = ref<{ content_type_id: number; object_id: number; } | null>(null);
 
-function prepareReportModal(payload: { content_type: string, object_id: number, content_type_id: number }) {
-  reportPayload.value = payload;
-  showReportModal.value = true;
+function handleOpenReportModal(payload: { content_type: string, content_type_id: number, object_id: number }) {
+  contentToReport.value = {
+    content_type_id: payload.content_type_id,
+    object_id: payload.object_id,
+  };
+  isReportModalOpen.value = true;
 }
+
+async function handleReportSubmit(payload: { reason: string; details: string }) {
+  if (!contentToReport.value) return;
+  const success = await moderationStore.submitReport({
+    ct_id: contentToReport.value.content_type_id,
+    obj_id: contentToReport.value.object_id,
+    reason: payload.reason,
+    details: payload.details,
+  });
+  if (success) {
+    isReportModalOpen.value = false;
+    contentToReport.value = null;
+    alert('Thank you for your report. It has been submitted for review.');
+  } else {
+    alert(`Failed to submit report: ${submissionError.value || 'An unknown error occurred.'}`);
+  }
+}
+// --- END REPLACED ---
 
 async function fetchMoreSavedPosts() {
   await feedStore.fetchNextPageOfSavedPosts();
@@ -25,19 +54,13 @@ async function fetchMoreSavedPosts() {
 
 // Lifecycle Hooks
 onMounted(() => {
-  // ---- [CHANGE 2] ---- The manual splice is no longer needed
-  // feedStore.savedPosts.splice(0); 
-  // --------------------
   feedStore.fetchSavedPosts();
 });
 
-// ---- [CHANGE 3] ---- Replace onUnmounted with onBeforeRouteLeave
 onBeforeRouteLeave((to, from) => {
-  // Call the new, targeted reset action
   feedStore.resetSavedPostsState();
   console.log('Leaving saved posts view, state cleaned up.');
 });
-// --------------------
 </script>
 
 <template>
@@ -62,7 +85,7 @@ onBeforeRouteLeave((to, from) => {
         v-for="post in feedStore.savedPosts"
         :key="post.id"
         :post="post"
-        @report-content="prepareReportModal"
+        @report-content="handleOpenReportModal"
       />
       
       <div v-if="feedStore.savedPostsNextPageUrl" class="flex justify-end py-4">
@@ -77,6 +100,11 @@ onBeforeRouteLeave((to, from) => {
 
     </div>
 
-    <!-- Report Modal can be added here in the future if needed -->
+    <!-- REPLACED MODAL COMMENT WITH ACTUAL COMPONENT -->
+    <ReportFormModal 
+      :is-open="isReportModalOpen" 
+      @close="isReportModalOpen = false" 
+      @submit="handleReportSubmit"
+    />
   </div>
 </template>

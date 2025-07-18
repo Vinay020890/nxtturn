@@ -10,9 +10,43 @@ import { storeToRefs } from 'pinia';
 import CreatePostForm from '@/components/CreatePostForm.vue';
 import PostItem from '@/components/PostItem.vue';
 
+import { useModerationStore } from '@/stores/moderation';
+import ReportFormModal from '@/components/ReportFormModal.vue';
+
 const route = useRoute();
 const groupStore = useGroupStore();
 const authStore = useAuthStore();
+
+const moderationStore = useModerationStore();
+const { submissionError } = storeToRefs(moderationStore);
+
+const isReportModalOpen = ref(false);
+const contentToReport = ref<{ content_type_id: number; object_id: number; } | null>(null);
+
+function handleOpenReportModal(payload: { content_type: string, content_type_id: number, object_id: number }) {
+  contentToReport.value = {
+    content_type_id: payload.content_type_id,
+    object_id: payload.object_id,
+  };
+  isReportModalOpen.value = true;
+}
+
+async function handleReportSubmit(payload: { reason: string; details: string }) {
+  if (!contentToReport.value) return;
+  const success = await moderationStore.submitReport({
+    ct_id: contentToReport.value.content_type_id,
+    obj_id: contentToReport.value.object_id,
+    reason: payload.reason,
+    details: payload.details,
+  });
+  if (success) {
+    isReportModalOpen.value = false;
+    contentToReport.value = null;
+    alert('Thank you for your report. It has been submitted for review.');
+  } else {
+    alert(`Failed to submit report: ${submissionError.value || 'An unknown error occurred.'}`);
+  }
+}
 
 const { 
   currentGroup, 
@@ -169,10 +203,11 @@ async function handleLeaveGroup() {
         <div v-if="groupPosts.length > 0" class="space-y-6">
            <PostItem 
              v-for="post in groupPosts" 
-             :key="post.id" 
-             :post="post" 
-             :hide-group-context="true"
-           />
+            :key="post.id" 
+            :post="post" 
+            :hide-group-context="true"
+            @report-content="handleOpenReportModal"
+          />
         </div>
         <div v-else-if="!isLoadingGroupPosts && groupPosts.length === 0" class="bg-white p-6 rounded-lg shadow-md text-center text-gray-500">
           <p>No posts in this group yet. Be the first to create one!</p>
@@ -185,5 +220,12 @@ async function handleLeaveGroup() {
         </div>
       </main>
     </div>
+
+    <ReportFormModal 
+      :is-open="isReportModalOpen" 
+      @close="isReportModalOpen = false" 
+      @submit="handleReportSubmit"
+    />
+    
   </div>
 </template>

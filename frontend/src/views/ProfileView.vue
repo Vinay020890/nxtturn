@@ -7,9 +7,18 @@ import { useProfileStore } from '@/stores/profile';
 import { useAuthStore } from '@/stores/auth';
 import { storeToRefs } from 'pinia';
 
+// --- ADDED FOR REPORTING ---
+import { useModerationStore } from '@/stores/moderation';
+import ReportFormModal from '@/components/ReportFormModal.vue';
+// --- END ADDED ---
+
 const route = useRoute();
 const profileStore = useProfileStore();
 const authStore = useAuthStore();
+// --- ADDED FOR REPORTING ---
+const moderationStore = useModerationStore();
+const { submissionError } = storeToRefs(moderationStore);
+// --- END ADDED ---
 
 const { 
   currentProfile, userPosts, isLoadingProfile, isLoadingPosts, 
@@ -17,6 +26,11 @@ const {
 } = storeToRefs(profileStore);
 
 const { currentUser, isAuthenticated } = storeToRefs(authStore);
+
+// --- ADDED FOR REPORTING ---
+const isReportModalOpen = ref(false);
+const contentToReport = ref<{ content_type_id: number; object_id: number; } | null>(null);
+// --- END ADDED ---
 
 const selectedFile = ref<File | null>(null);
 const picturePreviewUrl = ref<string | null>(null);
@@ -28,7 +42,6 @@ const isOwnProfile = computed(() => isAuthenticated.value && currentUser.value?.
 
 const loadProfileData = async (page = 1) => {
   if (username.value) {
-    // Only fetch profile details on the first page load for this user
     if(page === 1) {
       await profileStore.fetchProfile(username.value);
     }
@@ -55,13 +68,40 @@ const handlePageChange = (page: number) => {
   loadProfileData(page);
 };
 
+// --- ADDED FOR REPORTING ---
+function handleOpenReportModal(payload: { content_type: string, content_type_id: number, object_id: number }) {
+  contentToReport.value = {
+    content_type_id: payload.content_type_id,
+    object_id: payload.object_id,
+  };
+  isReportModalOpen.value = true;
+}
+
+async function handleReportSubmit(payload: { reason: string; details: string }) {
+  if (!contentToReport.value) return;
+  const success = await moderationStore.submitReport({
+    ct_id: contentToReport.value.content_type_id,
+    obj_id: contentToReport.value.object_id,
+    reason: payload.reason,
+    details: payload.details,
+  });
+  if (success) {
+    isReportModalOpen.value = false;
+    contentToReport.value = null;
+    alert('Thank you for your report. It has been submitted for review.');
+  } else {
+    alert(`Failed to submit report: ${submissionError.value || 'An unknown error occurred.'}`);
+  }
+}
+// --- END ADDED ---
+
 function handleFileChange(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0];
   if (file) {
     selectedFile.value = file;
     picturePreviewUrl.value = URL.createObjectURL(file);
     uploadError.value = null;
-    uploadProfilePicture(); // Automatically trigger upload
+    uploadProfilePicture();
   }
 }
 
@@ -106,7 +146,7 @@ async function uploadProfilePicture() {
                 :src="picturePreviewUrl || getAvatarUrl(currentProfile.picture, currentProfile.user.first_name, currentProfile.user.last_name)" 
                 alt="Profile Picture" 
                 class="w-full h-full rounded-full object-cover border-4 border-white shadow-lg bg-gray-200"
-        >
+              >
                <label 
                   v-if="isOwnProfile" 
                   for="picture-upload"
@@ -153,7 +193,12 @@ async function uploadProfilePicture() {
         <div v-if="isLoadingPosts && userPosts.length === 0" class="text-center p-10 text-gray-500">Loading posts...</div>
         <div v-else-if="errorPosts" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md">{{ errorPosts }}</div>
         <div v-else-if="userPosts.length > 0" class="space-y-6">
-          <PostItem v-for="post in userPosts" :key="post.id" :post="post" />
+          <PostItem 
+            v-for="post in userPosts" 
+            :key="post.id" 
+            :post="post"
+            @report-content="handleOpenReportModal" 
+          />
         </div>
         <div v-else class="bg-white rounded-lg shadow-md p-10 text-center text-gray-500">
           This user hasn't posted anything yet.
@@ -171,5 +216,13 @@ async function uploadProfilePicture() {
         </div>
       </div>
     </div>
+
+    <!-- ADDED REPORT MODAL -->
+    <ReportFormModal 
+      :is-open="isReportModalOpen" 
+      @close="isReportModalOpen = false" 
+      @submit="handleReportSubmit"
+    />
+    <!-- END ADDED -->
   </div>
 </template>
