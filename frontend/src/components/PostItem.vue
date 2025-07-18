@@ -294,17 +294,22 @@ async function handleCommentSubmit() {
     class="bg-white rounded-2xl shadow-sm mb-6 focus:outline-none border border-gray-100"
   >
     
-    <!-- Final Post Header -->
+    <!-- ======================================================= -->
+    <!-- ==== Final Header (Donald Trump Style) ================ -->
+    <!-- ======================================================= -->
     <header class="flex items-start justify-between p-4">
-      <div class="flex items-center">
+      <div class="flex items-start">
         <router-link :to="{ name: 'profile', params: { username: post.author.username } }">
           <img :src="getAvatarUrl(post.author.picture, post.author.first_name, post.author.last_name)" alt="author avatar" class="w-11 h-11 rounded-full object-cover mr-4 bg-gray-200">
         </router-link>
         
         <div>
+          <!-- Line 1: Username and Group Name -->
           <div class="flex items-center gap-x-2">
             <router-link :to="{ name: 'profile', params: { username: post.author.username } }" class="font-semibold text-gray-900 hover:underline">{{ post.author.username }}</router-link>
             <template v-if="post.group && !hideGroupContext">
+              <!-- This blue arrow matches the screenshot -->
+              <span class="text-blue-500 text-xs">▶</span> 
               <router-link
                 :to="{ name: 'group-detail-page', params: { id: post.group.id } }"
                 class="font-semibold text-gray-500 hover:underline"
@@ -313,7 +318,8 @@ async function handleCommentSubmit() {
               </router-link>
             </template>
           </div>
-          <p class="text-sm text-gray-500">{{ formattedTimestamp }}</p>
+          <!-- Line 2: Timestamp -->
+          <p class="text-sm text-gray-500 mt-0.5">{{ formattedTimestamp }}</p>
         </div>
       </div>
 
@@ -328,16 +334,10 @@ async function handleCommentSubmit() {
 
     <!-- Post Body & Media Section -->
     <div v-if="!isEditing" class="pb-3">
-        <!-- Post Text Content -->
         <div v-if="post.content && !post.poll" class="px-4">
             <p class="text-gray-800 whitespace-pre-wrap" v-html="linkifyContent(post.content)"></p>
         </div>
-        <!-- Poll Display -->
         <PollDisplay v-if="post.poll" :poll="post.poll" />
-        
-        <!-- ======================================================= -->
-        <!-- ==== Final Media Display (WITH PADDING FIX) ========= -->
-        <!-- ======================================================= -->
         <div v-if="post.media && post.media.length > 0" class="mt-3 relative px-4">
             <template v-if="activeMedia">
                 <video v-if="activeMedia.media_type === 'video'" controls class="w-full max-h-[70vh] object-contain rounded-xl" :key="activeMedia.id" :src="buildMediaUrl(activeMedia.file_url)"></video>
@@ -358,15 +358,25 @@ async function handleCommentSubmit() {
     </div>
 
     <!-- Final Actions Footer -->
-    <footer v-if="!isEditing" class="px-4 pb-2">
-      <div class="border-t border-gray-200 pt-3 flex items-center gap-x-6 text-gray-600">
-        <button @click="toggleLike" :disabled="post.isLiking" class="flex items-center gap-x-2 transition-colors duration-150 hover:text-red-500" :class="{ 'text-red-500 font-medium': post.is_liked_by_user }">
+    <footer v-if="!isEditing" class="px-4 pt-4 pb-2">
+      <div class="flex items-center gap-x-6 text-gray-600">
+        <button
+          @click="toggleLike"
+          :disabled="post.isLiking"
+          class="flex items-center gap-x-1.5 transition-colors duration-150 hover:text-red-500"
+          :class="{ 'text-red-500 font-semibold': post.is_liked_by_user }"
+        >
           <svg class="h-5 w-5" :fill="post.is_liked_by_user ? 'currentColor' : 'none'" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.5l1.318-1.182a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z"></path></svg>
-          <span class="text-sm">{{ post.like_count ?? 0 }}</span>
+          <span class="text-sm font-medium">Like</span>
+          <span v-if="(post.like_count ?? 0) > 0" class="text-sm font-medium">{{ post.like_count }}</span>
         </button>
-        <button @click="toggleCommentDisplay" class="flex items-center gap-x-2 transition-colors duration-150 hover:text-blue-600">
+        <button
+          @click="toggleCommentDisplay"
+          class="flex items-center gap-x-1.5 transition-colors duration-150 hover:text-blue-600"
+        >
           <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
-          <span class="text-sm">{{ post.comment_count ?? 0 }}</span>
+          <span class="text-sm font-medium">Comment</span>
+          <span v-if="(post.comment_count ?? 0) > 0" class="text-sm font-medium">{{ post.comment_count }}</span>
         </button>
       </div>
     </footer>
