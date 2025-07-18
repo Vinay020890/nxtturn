@@ -294,9 +294,7 @@ async function handleCommentSubmit() {
     class="bg-white rounded-2xl shadow-sm mb-6 focus:outline-none border border-gray-100"
   >
     
-    <!-- ======================================================= -->
-    <!-- ==== Final Header (Donald Trump Style) ================ -->
-    <!-- ======================================================= -->
+    <!-- Final Header (Two-line layout) -->
     <header class="flex items-start justify-between p-4">
       <div class="flex items-start">
         <router-link :to="{ name: 'profile', params: { username: post.author.username } }">
@@ -308,7 +306,6 @@ async function handleCommentSubmit() {
           <div class="flex items-center gap-x-2">
             <router-link :to="{ name: 'profile', params: { username: post.author.username } }" class="font-semibold text-gray-900 hover:underline">{{ post.author.username }}</router-link>
             <template v-if="post.group && !hideGroupContext">
-              <!-- This blue arrow matches the screenshot -->
               <span class="text-blue-500 text-xs">▶</span> 
               <router-link
                 :to="{ name: 'group-detail-page', params: { id: post.group.id } }"
@@ -357,9 +354,11 @@ async function handleCommentSubmit() {
       <form v-else @submit.prevent="handleUpdatePoll" novalidate><div v-if="localEditError" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md mb-4">{{ localEditError }}</div><div class="p-4 border border-gray-200 rounded-md bg-gray-50"><input type="text" v-model="editPollQuestion" placeholder="Poll Question" class="w-full p-2 border border-gray-300 rounded-md mb-3" maxlength="255"><div v-for="(option, index) in editPollOptions" :key="option.id || `new-${index}`" class="flex items-center gap-2 mb-2"><input type="text" v-model="option.text" :placeholder="`Option ${index + 1}`" class="flex-grow p-2 border border-gray-300 rounded-md" maxlength="100"><button @click.prevent="removePollOptionFromEdit(index)" :disabled="editPollOptions.length <= 2" class="text-gray-400 hover:text-red-500 disabled:opacity-50 flex-shrink-0" type="button"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></button></div><button @click.prevent="addPollOptionToEdit" :disabled="editPollOptions.length >= 5" class="text-sm text-blue-500 hover:text-blue-700 disabled:opacity-50 mt-1" type="button">Add Option</button></div><div class="mt-4 flex justify-end"><button type="submit" :disabled="post.isUpdating" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-full disabled:bg-blue-300">{{ post.isUpdating ? 'Saving...' : 'Save Changes' }}</button></div></form>
     </div>
 
-    <!-- Final Actions Footer -->
-    <footer v-if="!isEditing" class="px-4 pt-4 pb-2">
-      <div class="flex items-center gap-x-6 text-gray-600">
+    <!-- ======================================================= -->
+    <!-- ==== Final Actions Footer (WITH INSET BORDER) ======= -->
+    <!-- ======================================================= -->
+    <footer v-if="!isEditing" class="px-4 pt-1 pb-2">
+      <div class="border-t border-gray-200 pt-3 flex items-center gap-x-6 text-gray-600">
         <button
           @click="toggleLike"
           :disabled="post.isLiking"
