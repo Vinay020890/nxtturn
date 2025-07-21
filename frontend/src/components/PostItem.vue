@@ -340,8 +340,8 @@ async function handleCommentSubmit() {
             <div class="relative">
                 <template v-if="activeMedia">
                     <!-- Added bg-black for better presentation of various media sizes -->
-                    <video v-if="activeMedia.media_type === 'video'" controls class="w-full max-h-[70vh] object-contain rounded-xl bg-black" :key="activeMedia.id" :src="buildMediaUrl(activeMedia.file_url)"></video>
-                    <img v-else :src="buildMediaUrl(activeMedia.file_url)" class="w-full max-h-[70vh] object-contain rounded-xl bg-black">
+                    <video v-if="activeMedia.media_type === 'video'" controls class="w-full max-h-[70vh] object-contain rounded-xl bg-white" :key="activeMedia.id" :src="buildMediaUrl(activeMedia.file_url)"></video>
+                    <img v-else :src="buildMediaUrl(activeMedia.file_url)" class="w-full max-h-[70vh] object-contain rounded-xl bg-white">
                 </template>
                 <template v-if="hasMultipleMedia">
                     <!-- Improved button styles and icons -->
