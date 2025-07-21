@@ -330,20 +330,49 @@ async function handleCommentSubmit() {
     </header>
 
     <!-- Post Body & Media Section -->
+    
     <div v-if="!isEditing" class="pb-3">
         <div v-if="post.content && !post.poll" class="px-4">
             <p class="text-gray-800 whitespace-pre-wrap" v-html="linkifyContent(post.content)"></p>
         </div>
         <PollDisplay v-if="post.poll" :poll="post.poll" />
-        <div v-if="post.media && post.media.length > 0" class="mt-3 relative px-4">
-            <template v-if="activeMedia">
-                <video v-if="activeMedia.media_type === 'video'" controls class="w-full max-h-[70vh] object-contain rounded-xl" :key="activeMedia.id" :src="buildMediaUrl(activeMedia.file_url)"></video>
-                <img v-else :src="buildMediaUrl(activeMedia.file_url)" class="w-full max-h-[70vh] object-contain rounded-xl">
-            </template>
-            <template v-if="hasMultipleMedia">
-                <button @click="prevMedia" class="absolute left-6 top-1/2 -translate-y-1/2 bg-gray-900 bg-opacity-40 text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-opacity-60 transition-all duration-200"><</button>
-                <button @click="nextMedia" class="absolute right-6 top-1/2 -translate-y-1/2 bg-gray-900 bg-opacity-40 text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-opacity-60 transition-all duration-200">></button>
-            </template>
+        <div v-if="post.media && post.media.length > 0" class="mt-3 px-4">
+            <div class="relative">
+                <template v-if="activeMedia">
+                    <!-- Added bg-black for better presentation of various media sizes -->
+                    <video v-if="activeMedia.media_type === 'video'" controls class="w-full max-h-[70vh] object-contain rounded-xl bg-black" :key="activeMedia.id" :src="buildMediaUrl(activeMedia.file_url)"></video>
+                    <img v-else :src="buildMediaUrl(activeMedia.file_url)" class="w-full max-h-[70vh] object-contain rounded-xl bg-black">
+                </template>
+                <template v-if="hasMultipleMedia">
+                    <!-- Improved button styles and icons -->
+                    <button @click="prevMedia" class="absolute left-2 top-1/2 -translate-y-1/2 bg-gray-900 bg-opacity-40 text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-opacity-60 transition-all duration-200"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg></button>
+                    <button @click="nextMedia" class="absolute right-2 top-1/2 -translate-y-1/2 bg-gray-900 bg-opacity-40 text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-opacity-60 transition-all duration-200"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></button>
+                </template>
+            </div>
+            
+            <!-- ======================================================= -->
+            <!-- ==== THIS IS THE NEW THUMBNAIL GALLERY TO BE ADDED ==== -->
+            <!-- ======================================================= -->
+            <div v-if="hasMultipleMedia" class="flex flex-wrap gap-2 mt-3">
+              <div
+                v-for="(mediaItem, index) in post.media"
+                :key="`thumb-${mediaItem.id}`"
+                @click="setActiveMedia(index)"
+                class="cursor-pointer w-20 h-20 rounded-md overflow-hidden border-2 transition-all"
+                :class="index === activeMediaIndex ? 'border-blue-500' : 'border-transparent hover:border-gray-400'"
+              >
+                <!-- Thumbnail for video shows a generic icon -->
+                <div v-if="mediaItem.media_type === 'video'" class="w-full h-full bg-gray-800 flex items-center justify-center">
+                    <svg class="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2H4zm3.5 2.5a.5.5 0 01.8-.4l4.652 3a.5.5 0 010 .8l-4.652 3a.5.5 0 01-.8-.4v-6z"></path></svg>
+                </div>
+                <!-- Thumbnail for image -->
+                <img v-else :src="buildMediaUrl(mediaItem.file_url)" class="w-full h-full object-cover">
+              </div>
+            </div>
+            <!-- ======================================================= -->
+            <!-- ============ END OF NEW THUMBNAIL GALLERY ============= -->
+            <!-- ======================================================= -->
+
         </div>
     </div>
     
