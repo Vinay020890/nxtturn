@@ -353,7 +353,7 @@ async function handleCommentSubmit() {
             <!-- ======================================================= -->
             <!-- ==== THIS IS THE NEW THUMBNAIL GALLERY TO BE ADDED ==== -->
             <!-- ======================================================= -->
-            <div v-if="hasMultipleMedia" class="flex flex-wrap gap-2 mt-3">
+            <div v-if="hasMultipleMedia" class="flex flex-wrap justify-center gap-2 mt-3">
               <div
                 v-for="(mediaItem, index) in post.media"
                 :key="`thumb-${mediaItem.id}`"
