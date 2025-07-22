@@ -12,8 +12,8 @@ const { currentUser } = storeToRefs(authStore);
   <!-- The main grid container now correctly handles the top padding -->
   <div class="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 grid grid-cols-12 gap-8 pt-6">
     
-    <!-- Column 1: Left Sidebar. The 'sticky' class has been removed. -->
-    <aside class="col-span-3 hidden md:block">
+    <!-- Column 1: Left Sidebar. Added sticky positioning. -->
+    <aside class="col-span-3 hidden md:block sticky top-6 self-start">
       <div class="space-y-4">
         <div v-if="currentUser" class="bg-white rounded-lg p-4 border border-gray-200 shadow-sm text-center">
           <img 

@@ -99,7 +99,8 @@ async function uploadProfilePicture() {
     await profileStore.updateProfilePicture(username.value, selectedFile.value);
     selectedFile.value = null;
     picturePreviewUrl.value = null;
-  } catch (error: any) {
+  } catch (error: any)
+ {
     uploadError.value = error.message || "Failed to upload picture.";
     selectedFile.value = null;
     picturePreviewUrl.value = null;
@@ -119,11 +120,11 @@ async function uploadProfilePicture() {
       <p>{{ errorProfile }}</p>
     </div>
 
-    <!-- This container now uses the grid system without sticky positioning for perfect alignment -->
+    <!-- This container now uses the grid system with sticky positioning for the left column -->
     <div v-else-if="currentProfile" class="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 grid grid-cols-12 gap-8 pt-6">
       
-      <!-- Column 1: The Profile Card, spanning 6 columns for a wider look -->
-      <aside class="col-span-6">
+      <!-- Column 1: The Profile Card. Added sticky positioning. -->
+      <aside class="col-span-6 sticky top-6 self-start">
         <div class="bg-white rounded-lg shadow-md p-6">
           <div class="flex flex-col items-center text-center">
             <div class="relative w-32 h-32 mb-4">
