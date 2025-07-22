@@ -15,7 +15,7 @@ const authStore = useAuthStore();
 const notificationStore = useNotificationStore();
 const searchStore = useSearchStore();
 const router = useRouter();
-const route = useRoute(); // We need the route object for the key
+const route = useRoute();
 const { currentUser } = storeToRefs(authStore);
 const { userResults, postResults, isLoadingUsers, isLoadingPosts } = storeToRefs(searchStore);
 const searchQuery = ref('');
@@ -90,7 +90,7 @@ const handleLogout = async () => { await authStore.logout(); };
   <div class="h-screen flex flex-col bg-gray-50">
     
     <header class="bg-white shadow-sm flex-shrink-0 z-20 sticky top-0">
-      <nav class="container mx-auto max-w-7xl px-4 sm-px-6 lg:px-8">
+      <nav class="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div class="flex items-center justify-between h-16">
           
           <div class="flex-shrink-0">
@@ -114,7 +114,21 @@ const handleLogout = async () => { await authStore.logout(); };
                   <svg class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                 </div>
               </form>
-              <!-- Search Dropdown is here -->
+              <div v-if="showSearchDropdown && searchQuery" class="absolute top-full mt-2 w-full rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-30">
+                <ul class="max-h-96 overflow-auto py-1 text-base">
+                  <li v-if="isSearching" class="px-4 py-2 text-sm text-gray-500">Searching...</li>
+                  <li v-else-if="!isSearching && !hasAnyResults" class="px-4 py-2 text-sm text-gray-500">No results found.</li>
+                  <template v-if="userResults.length > 0">
+                    <li class="px-4 pt-2 pb-1 text-xs font-bold text-gray-500 uppercase">Users</li>
+                    <li v-for="user in userResults.slice(0, 3)" :key="`user-${user.id}`"><a @click.prevent="selectUserAndNavigate(user)" href="#" class="flex items-center gap-3 px-4 py-2 text-sm cursor-pointer hover:bg-gray-100"><img :src="getAvatarUrl(user.picture, user.first_name, user.last_name)" alt="avatar" class="w-8 h-8 rounded-full object-cover"><div><span class="font-medium text-gray-900">{{ user.first_name }} {{ user.last_name }}</span><p class="text-gray-500 text-xs">@{{ user.username }}</p></div></a></li>
+                  </template>
+                  <template v-if="postResults.length > 0">
+                    <li class="px-4 pt-2 pb-1 text-xs font-bold text-gray-500 uppercase border-t border-gray-100 mt-1">Posts</li>
+                    <li v-for="post in postResults.slice(0, 3)" :key="`post-${post.id}`"><a @click.prevent="selectPostAndNavigate(post)" href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 truncate">{{ post.content }}</a></li>
+                  </template>
+                  <li v-if="!isSearching && hasAnyResults" class="border-t border-gray-200"><button @click="handleFullSearchSubmit" class="w-full text-left px-4 py-2 text-sm font-medium text-blue-600 hover:bg-gray-100">See all results for "{{ searchQuery }}"</button></li>
+                </ul>
+              </div>
             </div>
           </div>
 
@@ -143,9 +157,7 @@ const handleLogout = async () => { await authStore.logout(); };
     </header>
 
     <div class="flex-grow overflow-y-auto scrollbar-hide">
-      <!-- THIS IS THE FIX: Adding a key forces the component to re-render on navigation -->
       <RouterView :key="route.fullPath" />
     </div>
-
   </div>
 </template>
