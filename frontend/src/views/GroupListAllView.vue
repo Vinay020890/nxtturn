@@ -1,10 +1,6 @@
-<!-- C:\Users\Vinay\Project\frontend\src\views\GroupListAllView.vue -->
-
 <script setup lang="ts">
-// ---- [CHANGE 1] ---- Add onBeforeRouteLeave
 import { onMounted, ref } from 'vue';
 import { onBeforeRouteLeave } from 'vue-router';
-// --------------------
 import { useGroupStore } from '@/stores/group';
 import { storeToRefs } from 'pinia';
 import { useRouter } from 'vue-router';
@@ -13,51 +9,40 @@ import type { Group } from '@/stores/group';
 
 const groupStore = useGroupStore();
 const router = useRouter();
-
-// The store now uses allGroupsNextPageUrl, but allGroupsHasNextPage is still useful for the button
 const { allGroups, isLoadingAllGroups, allGroupsError, allGroupsHasNextPage } = storeToRefs(groupStore);
-
 const isCreateGroupModalOpen = ref(false);
 
 onMounted(() => {
-  // ---- [CHANGE 2] ---- Remove manual state clearing. The leave guard handles this now.
-  // groupStore.allGroups.splice(0);
-  // groupStore.allGroupsCurrentPage = 1;
-  // --------------------
-  
-  // fetchGroups without an argument will fetch the first page.
   groupStore.fetchGroups();
 });
 
-// ---- [CHANGE 3] ---- Add the onBeforeRouteLeave guard for cleanup
 onBeforeRouteLeave((to, from) => {
   groupStore.resetAllGroupsState();
-  console.log('Leaving "All Groups" view, state cleaned up.');
 });
-// --------------------
 
 function openCreateGroupModal() {
   isCreateGroupModalOpen.value = true;
 }
 
 function handleGroupCreated(newGroup: Group) {
+  // THIS IS THE FIX: Corrected variable name
   isCreateGroupModalOpen.value = false;
   router.push({ name: 'group-detail-page', params: { id: newGroup.id } });
 }
 
 function loadMoreGroups() {
-  // This action now uses the stored next page URL internally
   groupStore.fetchNextPageOfGroups();
 }
 </script>
 
 <template>
-  <div class="max-w-4xl mx-auto p-4">
-    <header class="flex justify-between items-center mb-6">
-      <h1 class="text-3xl font-bold text-gray-800">Discover Groups</h1>
+  <div class="max-w-4xl mx-auto">
+    
+    <header class="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex justify-between items-center mb-6">
+      <h1 class="text-2xl font-bold text-gray-800">Discover Groups</h1>
       <button 
         @click="openCreateGroupModal"
-        class="px-6 py-2 bg-blue-600 text-white rounded-full font-semibold hover:bg-blue-700 transition-colors"
+        class="px-5 py-2 bg-blue-600 text-white rounded-full font-semibold hover:bg-blue-700 transition-colors"
       >
         + Create New Group
       </button>

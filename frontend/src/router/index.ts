@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import CommunityLayout from '@/layouts/CommunityLayout.vue';
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -14,68 +15,26 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      name: 'feed',
-      component: () => import('@/views/FeedView.vue'),
-      meta: { requiresAuth: true }
-    },
-    {
-      path: '/login',
-      name: 'login',
-      component: () => import('@/views/LoginView.vue'),
-      meta: { requiresGuest: true }
-    },
-    {
-      path: '/register',
-      name: 'register',
-      component: () => import('@/views/RegisterView.vue'),
-      meta: { requiresGuest: true }
+      component: CommunityLayout,
+      meta: { requiresAuth: true },
+      children: [
+        { path: '', name: 'feed', component: () => import('@/views/FeedView.vue') },
+        { path: 'groups', name: 'group-list', component: () => import('@/views/GroupListAllView.vue') },
+        { path: 'groups/:id', name: 'group-detail-page', component: () => import('@/views/GroupDetailView.vue') },
+        { path: 'saved-posts', name: 'saved-posts', component: () => import('@/views/SavedPostsView.vue') },
+        { path: 'notifications', name: 'notifications', component: () => import('@/views/NotificationsPage.vue') },
+        { path: 'search', name: 'search', component: () => import('@/views/SearchPage.vue') },
+        { path: 'posts/:postId', name: 'single-post', component: () => import('@/views/SinglePostView.vue') }
+      ]
     },
     {
       path: '/profile/:username',
       name: 'profile',
       component: () => import('@/views/ProfileView.vue'),
-      meta: { requiresAuth: false }
+      meta: { requiresAuth: false } 
     },
-    {
-      path: '/notifications',
-      name: 'notifications',
-      component: () => import('@/views/NotificationsPage.vue'),
-      meta: { requiresAuth: true }
-    },
-    {
-      path: '/search',
-      name: 'search',
-      component: () => import('@/views/SearchPage.vue'),
-      meta: { requiresAuth: true }
-    },
-    {
-      path: '/posts/:postId',
-      name: 'single-post',
-      component: () => import('@/views/SinglePostView.vue'),
-      meta: { requiresAuth: true }
-    },
-    {
-      path: '/groups',
-      name: 'group-list',
-      component: () => import('@/views/GroupListAllView.vue'),
-      meta: { requiresAuth: true }
-    },
-    {
-      path: '/groups/:id',
-      name: 'group-detail-page',
-      component: () => import('@/views/GroupDetailView.vue'),
-      meta: { requiresAuth: true }
-    },
-    // ====================================================================
-    // === NEW ROUTE FOR SAVED POSTS ===
-    // ====================================================================
-    {
-      path: '/saved-posts',
-      name: 'saved-posts',
-      component: () => import('@/views/SavedPostsView.vue'), // This is the new component we'll create later
-      meta: { requiresAuth: true }
-    },
-    // ====================================================================
+    { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue'), meta: { requiresGuest: true } },
+    { path: '/register', name: 'register', component: () => import('@/views/RegisterView.vue'), meta: { requiresGuest: true } }
   ],
 });
 
