@@ -50,7 +50,7 @@ export interface Post {
   isLiking?: boolean;
   isDeleting?: boolean;
   isUpdating?: boolean;
-  group: { id: number; name: string; } | null;
+  group: { id: number; name: string; slug: string; } | null;
   is_saved: boolean;
 }
 

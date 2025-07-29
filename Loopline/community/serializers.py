@@ -281,7 +281,7 @@ class StatusPostSerializer(serializers.ModelSerializer):
     class SimpleGroupSerializer(serializers.ModelSerializer):
         class Meta:
             model = Group
-            fields = ['id', 'name']
+            fields = ['id', 'name', 'slug']
     
     author = UserSerializer(read_only=True)
     is_liked_by_user = serializers.SerializerMethodField()
@@ -669,21 +669,32 @@ class GroupSerializer(serializers.ModelSerializer):
     creator = UserSerializer(read_only=True)
     member_count = serializers.IntegerField(source='members.count', read_only=True)
     is_member = serializers.SerializerMethodField()
+    is_creator = serializers.SerializerMethodField() # <-- 1. ADD THIS LINE
 
     class Meta:
         model = Group
-        fields = ['id', 'name', 'description', 'creator', 'member_count', 'is_member', 'created_at', 'privacy_level']
-        
-        # --- THIS IS THE FIX ---
-        # We remove 'privacy_level' from this list to make it writable.
+        fields = [
+            'id', 'name', 'slug', 'description', 'creator', 'member_count', 
+            'is_member', 'is_creator', 'created_at', 'privacy_level' # <-- 2. ADD 'is_creator' HERE
+        ]
         read_only_fields = ['creator', 'member_count', 'created_at']
-        # --- END OF FIX ---
 
     def get_is_member(self, obj):
         request = self.context.get('request')
         if request and request.user.is_authenticated:
             return obj.members.filter(pk=request.user.pk).exists()
         return False
+
+    # --- 3. ADD THIS NEW METHOD ---
+    def get_is_creator(self, obj):
+        """Checks if the requesting user is the creator of the group."""
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return obj.creator == request.user
+        return False
+    # --- END OF NEW METHOD ---
+
+    
 
 # --- Replace your existing CommentSerializer with this one ---
 class CommentSerializer(serializers.ModelSerializer):

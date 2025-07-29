@@ -1,4 +1,4 @@
-// C:\Users\Vinay\Project\frontend\src/stores/group.ts
+// C:\Users\Vinay\Project\frontend\src\stores\group.ts
 
 import { ref } from 'vue';
 import { defineStore } from 'pinia';
@@ -11,11 +11,13 @@ import { useAuthStore } from './auth';
 
 export interface Group {
   id: number;
+  slug: string;
   name: string;
   description: string;
   creator: User;
   member_count: number;
   is_member: boolean;
+  is_creator?: boolean; // ADDITION: Add the optional is_creator flag from the API
   created_at: string;
   privacy_level: 'public' | 'private';
 }
@@ -55,6 +57,10 @@ export const useGroupStore = defineStore('group', () => {
   
   const isCreatingGroup = ref(false);
   const createGroupError = ref<string | object | null>(null);
+  
+  // --- ADDITION: NEW STATE FOR DELETION ---
+  const isDeletingGroup = ref(false);
+  const deleteGroupError = ref<string | null>(null);
 
   function $reset() {
     currentGroup.value = null;
@@ -74,6 +80,10 @@ export const useGroupStore = defineStore('group', () => {
 
     isCreatingGroup.value = false;
     createGroupError.value = null;
+
+    // ADDITION: Reset new state
+    isDeletingGroup.value = false;
+    deleteGroupError.value = null;
   }
 
   // --- Targeted Reset Functions ---
@@ -97,17 +107,20 @@ export const useGroupStore = defineStore('group', () => {
 
   // --- Actions ---
 
-  async function fetchGroupDetails(groupId: number) {
+  async function fetchGroupDetails(groupSlug: string) { // <-- Parameter changed to string slug
     isLoadingGroup.value = true;
     groupError.value = null;
     resetGroupFeedState(); 
 
     try {
-      const response = await axiosInstance.get<Group>(`/groups/${groupId}/`);
+      // Use the new slug parameter in the URL
+      const response = await axiosInstance.get<Group>(`/groups/${groupSlug}/`); 
       currentGroup.value = response.data;
-      await fetchGroupPosts(groupId);
+      // Pass the numeric ID from the response to fetch the posts
+      await fetchGroupPosts(response.data.id); 
     } catch (err: any) {
-      console.error(`Error fetching details for group ${groupId}:`, err);
+      // Update the error message to be more helpful
+      console.error(`Error fetching details for group slug ${groupSlug}:`, err); 
       groupError.value = err.response?.data?.detail || 'Failed to load group details.';
       currentGroup.value = null;
     } finally {
@@ -203,22 +216,12 @@ export const useGroupStore = defineStore('group', () => {
           if (errorData.name?.[0]) fieldErrors.push(`Name: ${errorData.name[0]}`);
           if (errorData.description?.[0]) fieldErrors.push(`Description: ${errorData.description[0]}`);
           if (errorData.privacy_level?.[0]) fieldErrors.push(`Privacy Level: ${errorData.privacy_level[0]}`);
-          if (fieldErrors.length > 0) {
-            errorMessage = fieldErrors.join(' ');
-          } else if (errorData.detail) {
-            errorMessage = errorData.detail;
-          }
-        } else if (typeof errorData === 'string') {
-          errorMessage = errorData;
-        }
+          if (fieldErrors.length > 0) { errorMessage = fieldErrors.join(' '); } else if (errorData.detail) { errorMessage = errorData.detail; }
+        } else if (typeof errorData === 'string') { errorMessage = errorData; }
         createGroupError.value = errorMessage;
-      } else {
-        createGroupError.value = errorMessage;
-      }
+      } else { createGroupError.value = errorMessage; }
       return null;
-    } finally {
-      isCreatingGroup.value = false;
-    }
+    } finally { isCreatingGroup.value = false; }
   }
 
   async function joinGroup(groupId: number): Promise<boolean> {
@@ -226,10 +229,7 @@ export const useGroupStore = defineStore('group', () => {
     joinLeaveError.value = null;
     try {
       const authStore = useAuthStore();
-      if (!authStore.isAuthenticated) {
-        joinLeaveError.value = "You must be logged in to join a group.";
-        return false;
-      }
+      if (!authStore.isAuthenticated) { joinLeaveError.value = "You must be logged in to join a group."; return false; }
       await axiosInstance.post(`/groups/${groupId}/membership/`);
       if (currentGroup.value && currentGroup.value.id === groupId) {
         currentGroup.value.is_member = true;
@@ -245,9 +245,7 @@ export const useGroupStore = defineStore('group', () => {
       console.error(`Error joining group ${groupId}:`, err);
       joinLeaveError.value = err.response?.data?.detail || 'Failed to join group.';
       return false;
-    } finally {
-      isJoiningLeaving.value = false;
-    }
+    } finally { isJoiningLeaving.value = false; }
   }
 
   async function leaveGroup(groupId: number): Promise<boolean> {
@@ -255,10 +253,7 @@ export const useGroupStore = defineStore('group', () => {
     joinLeaveError.value = null;
     try {
       const authStore = useAuthStore();
-      if (!authStore.isAuthenticated) {
-        joinLeaveError.value = "You must be logged in to leave a group.";
-        return false;
-      }
+      if (!authStore.isAuthenticated) { joinLeaveError.value = "You must be logged in to leave a group."; return false; }
       await axiosInstance.delete(`/groups/${groupId}/membership/`);
       if (currentGroup.value && currentGroup.value.id === groupId) {
         currentGroup.value.is_member = false;
@@ -274,11 +269,31 @@ export const useGroupStore = defineStore('group', () => {
       console.error(`Error leaving group ${groupId}:`, err);
       joinLeaveError.value = err.response?.data?.detail || 'Failed to leave group.';
       return false;
-    } finally {
-      isJoiningLeaving.value = false;
-    }
+    } finally { isJoiningLeaving.value = false; }
   }
   
+  // --- ADDITION: NEW DELETE GROUP ACTION ---
+  async function deleteGroup(groupId: number): Promise<boolean> {
+    isDeletingGroup.value = true;
+    deleteGroupError.value = null;
+    try {
+      await axiosInstance.delete(`/groups/${groupId}/`);
+      // After a successful delete, remove it from the list of all groups
+      allGroups.value = allGroups.value.filter(g => g.id !== groupId);
+      // And clear the current group if it's the one we deleted
+      if (currentGroup.value && currentGroup.value.id === groupId) {
+        currentGroup.value = null;
+      }
+      return true;
+    } catch (err: any) {
+      console.error(`Error deleting group ${groupId}:`, err);
+      deleteGroupError.value = err.response?.data?.detail || 'Could not delete the group.';
+      return false;
+    } finally {
+      isDeletingGroup.value = false;
+    }
+  }
+
   return {
     // State
     currentGroup,
@@ -296,6 +311,9 @@ export const useGroupStore = defineStore('group', () => {
     allGroupsNextPageUrl,
     isCreatingGroup,
     createGroupError,
+    // ADDITION: New State
+    isDeletingGroup, 
+    deleteGroupError,
 
     // Actions
     fetchGroupDetails,
@@ -307,6 +325,9 @@ export const useGroupStore = defineStore('group', () => {
     joinGroup,
     leaveGroup,
     addPostToGroupFeed,
+    // ADDITION: New Action
+    deleteGroup,
+    
     $reset,
 
     // Exported Reset Functions

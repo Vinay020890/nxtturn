@@ -20,7 +20,7 @@ const router = createRouter({
       children: [
         { path: '', name: 'feed', component: () => import('@/views/FeedView.vue') },
         { path: 'groups', name: 'group-list', component: () => import('@/views/GroupListAllView.vue') },
-        { path: 'groups/:id', name: 'group-detail-page', component: () => import('@/views/GroupDetailView.vue') },
+        { path: 'groups/:slug', name: 'group-detail-page', component: () => import('@/views/GroupDetailView.vue') },
         { path: 'saved-posts', name: 'saved-posts', component: () => import('@/views/SavedPostsView.vue') },
         { path: 'notifications', name: 'notifications', component: () => import('@/views/NotificationsPage.vue') },
         { path: 'search', name: 'search', component: () => import('@/views/SearchPage.vue') },

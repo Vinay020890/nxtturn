@@ -75,3 +75,18 @@ class IsGroupMember(permissions.BasePermission):
                 # In this case, this permission class doesn't restrict it, and IsAuthenticated applies.
                 return True 
         return False # Not authenticated or no user
+    
+class IsCreatorOrReadOnly(permissions.BasePermission):
+    """
+    Custom permission to only allow the creator of a group to edit or delete it.
+    """
+    message = "You must be the creator of this group to perform this action."
+
+    def has_object_permission(self, request, view, obj):
+        # Read permissions (GET, HEAD, OPTIONS) are allowed for any request.
+        if request.method in permissions.SAFE_METHODS:
+            return True
+
+        # Write permissions (DELETE, PUT, PATCH) are only allowed to the creator of the group.
+        # This assumes the object 'obj' is a Group instance.
+        return obj.creator == request.user

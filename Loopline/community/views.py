@@ -25,7 +25,7 @@ from .serializers import (
     GroupSerializer, CommentSerializer, ConversationSerializer, # Removed FeedItemSerializer as it's not directly used in views
     MessageSerializer, MessageCreateSerializer, NotificationSerializer, ReportSerializer
 )
-from .permissions import IsOwnerOrReadOnly, IsGroupMember
+from .permissions import IsOwnerOrReadOnly, IsGroupMember, IsCreatorOrReadOnly
 
 User = get_user_model()
 
@@ -293,39 +293,52 @@ class GroupListView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         return Group.objects.select_related('creator__profile').prefetch_related('members').all()
+    
+    def get_serializer_context(self):
+        """
+        Ensure the request object is passed to the serializer context.
+        This is crucial for fields like 'is_member' and 'is_creator'.
+        """
+        return {'request': self.request}
 
     def perform_create(self, serializer):
         group = serializer.save(creator=self.request.user)
         group.members.add(self.request.user)
 
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        new_group_instance = self.get_queryset().get(pk=serializer.instance.pk)
-        response_serializer = GroupSerializer(new_group_instance, context=self.get_serializer_context())
-        headers = self.get_success_headers(response_serializer.data)
-        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+    
 
-class GroupRetrieveAPIView(generics.RetrieveAPIView):
+class GroupRetrieveAPIView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Group.objects.prefetch_related('members__profile', 'creator__profile').all()
     serializer_class = GroupSerializer
-    permission_classes = [AllowAny]
-    lookup_field = 'pk'
+    permission_classes = [IsAuthenticatedOrReadOnly, IsCreatorOrReadOnly]
+    lookup_field = 'slug'
 
 class GroupMembershipView(APIView):
     permission_classes = [IsAuthenticated]
+    
     def post(self, request, group_id, format=None):
         group = get_object_or_404(Group, pk=group_id)
         if group.members.filter(pk=request.user.pk).exists():
             return Response({"detail": "You are already a member."}, status=status.HTTP_400_BAD_REQUEST)
         group.members.add(request.user)
         return Response({"detail": f"Joined group '{group.name}'."}, status=status.HTTP_200_OK)
+
     def delete(self, request, group_id, format=None):
         group = get_object_or_404(Group, pk=group_id)
-        if not group.members.filter(pk=request.user.pk).exists():
+        user = request.user
+
+        # --- THIS IS THE NEW SAFETY CHECK ---
+        if group.creator == user:
+            return Response(
+                {"detail": "As the group creator, you must transfer ownership before leaving."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        # --- END OF SAFETY CHECK ---
+
+        if not group.members.filter(pk=user.pk).exists():
             return Response({"detail": "You are not a member."}, status=status.HTTP_400_BAD_REQUEST)
-        group.members.remove(request.user)
+        
+        group.members.remove(user)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 class GroupPostListView(generics.ListAPIView):

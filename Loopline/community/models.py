@@ -7,6 +7,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.utils.text import slugify
 
 User = settings.AUTH_USER_MODEL
 
@@ -137,13 +138,13 @@ class ForumCategory(models.Model):
         return self.name
 
 class Group(models.Model):
-    name = models.CharField(max_length=150, unique=True)
+    name = models.CharField(max_length=150) # MODIFICATION: unique=True has been removed.
+    slug = models.SlugField(max_length=255, unique=True, blank=True) # NEW: slug field for unique URLs.
     description = models.TextField(blank=True, null=True)
     creator = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_groups')
     members = models.ManyToManyField(User, related_name='joined_groups', blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
-    # --- NEW FIELD: privacy_level ---
     PRIVACY_CHOICES = [
         ('public', 'Public - Anyone can view content and join directly'),
         ('private', 'Private - Only members can view content, requires approval to join'),
@@ -151,13 +152,29 @@ class Group(models.Model):
     privacy_level = models.CharField(
         max_length=10,
         choices=PRIVACY_CHOICES,
-        default='public', # Default to public unless specified otherwise
+        default='public',
         help_text="Defines who can view content and how users can join."
     )
-    # --- END NEW FIELD ---
 
     def __str__(self):
         return self.name
+
+    # --- NEW: save method to auto-generate unique slug ---
+    def save(self, *args, **kwargs):
+        # Only generate a slug if one doesn't already exist.
+        if not self.slug:
+            base_slug = slugify(self.name) or "group"
+            slug = base_slug
+            counter = 1
+            # Keep appending numbers until a unique slug is found.
+            while Group.objects.filter(slug=slug).exists():
+                counter += 1
+                slug = f"{base_slug}-{counter}"
+            self.slug = slug
+        
+        # Call the original save method.
+        super().save(*args, **kwargs)
+    # --- END NEW METHOD ---
 
 class ForumPost(models.Model):
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='forum_posts')

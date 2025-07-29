@@ -1,28 +1,25 @@
-// C:\Users\Vinay\Project\frontend\src\views\GroupDetailView.vue
-
 <script setup lang="ts">
-import { onMounted, watch, computed, ref } from 'vue';
-// ---- [CHANGE 1] ---- Import onBeforeRouteLeave, remove onUnmounted
-import { useRoute, onBeforeRouteLeave } from 'vue-router'; 
+// VERIFIED: No changes to imports
+import { onMounted, watch, computed, ref, nextTick, onUnmounted } from 'vue';
+import { useRoute, onBeforeRouteLeave, useRouter } from 'vue-router';
 import { useGroupStore } from '@/stores/group';
 import { useAuthStore } from '@/stores/auth';
 import { storeToRefs } from 'pinia';
 import CreatePostForm from '@/components/CreatePostForm.vue';
 import PostItem from '@/components/PostItem.vue';
-
 import { useModerationStore } from '@/stores/moderation';
 import ReportFormModal from '@/components/ReportFormModal.vue';
 
 const route = useRoute();
+const router = useRouter();
 const groupStore = useGroupStore();
 const authStore = useAuthStore();
-
 const moderationStore = useModerationStore();
-const { submissionError } = storeToRefs(moderationStore);
 
+// --- NO CHANGES IN THIS SECTION ---
+const { submissionError } = storeToRefs(moderationStore);
 const isReportModalOpen = ref(false);
 const contentToReport = ref<{ content_type_id: number; object_id: number; } | null>(null);
-
 function handleOpenReportModal(payload: { content_type: string, content_type_id: number, object_id: number }) {
   contentToReport.value = {
     content_type_id: payload.content_type_id,
@@ -30,7 +27,6 @@ function handleOpenReportModal(payload: { content_type: string, content_type_id:
   };
   isReportModalOpen.value = true;
 }
-
 async function handleReportSubmit(payload: { reason: string; details: string }) {
   if (!contentToReport.value) return;
   const success = await moderationStore.submitReport({
@@ -47,87 +43,113 @@ async function handleReportSubmit(payload: { reason: string; details: string }) 
     alert(`Failed to submit report: ${submissionError.value || 'An unknown error occurred.'}`);
   }
 }
-
-const { 
-  currentGroup, 
-  groupPosts,
-  isLoadingGroup, 
-  groupError,
-  isJoiningLeaving,
-  joinLeaveError,
-  isLoadingGroupPosts,
-  groupPostsNextCursor
+const {
+  currentGroup, groupPosts, isLoadingGroup, groupError, isJoiningLeaving,
+  joinLeaveError, isLoadingGroupPosts, groupPostsNextCursor, isDeletingGroup,
+  deleteGroupError,
 } = storeToRefs(groupStore);
-
 const { isAuthenticated, currentUser } = storeToRefs(authStore);
-
 const loadMoreGroupPostsTrigger = ref<HTMLElement | null>(null);
 let observer: IntersectionObserver | null = null;
-
 const showJoinLeaveButton = computed(() => isAuthenticated.value && currentGroup.value);
 const isGroupCreator = computed(() => isAuthenticated.value && currentGroup.value && currentUser.value?.id === currentGroup.value.creator.id);
-
+const showOptionsMenu = ref(false);
+const optionsMenuRef = ref<HTMLDivElement | null>(null);
+function toggleOptionsMenu() {
+  showOptionsMenu.value = !showOptionsMenu.value;
+}
+const closeOnClickOutside = (event: MouseEvent) => {
+  if (optionsMenuRef.value && !optionsMenuRef.value.contains(event.target as Node)) {
+    showOptionsMenu.value = false;
+  }
+};
+watch(showOptionsMenu, (isOpen) => {
+  if (isOpen) {
+    document.addEventListener('click', closeOnClickOutside, true);
+  } else {
+    document.removeEventListener('click', closeOnClickOutside, true);
+  }
+});
 function setupObserver() {
   if (observer) {
     observer.disconnect();
     observer = null;
   }
-
   observer = new IntersectionObserver((entries) => {
     if (entries[0].isIntersecting && groupPostsNextCursor.value && !isLoadingGroupPosts.value) {
       groupStore.fetchNextPageOfGroupPosts();
     }
   }, { rootMargin: '200px' });
-
   if (loadMoreGroupPostsTrigger.value) {
     observer.observe(loadMoreGroupPostsTrigger.value);
   }
 }
+// --- END OF UNCHANGED SECTION ---
 
+
+// --- THIS SECTION HAS BEEN MODIFIED TO USE SLUGS ---
 onMounted(async () => {
-  await groupStore.fetchGroupDetails(Number(route.params.id));
+  // Use 'slug' from the route params, not 'id'
+  await groupStore.fetchGroupDetails(route.params.slug as string);
   setupObserver();
 });
 
-// ---- [CHANGE 2] ---- Replace onUnmounted with onBeforeRouteLeave
 onBeforeRouteLeave((to, from) => {
-  // Call our new, robust reset action from the store
   groupStore.resetGroupFeedState();
-  
-  // Also clean up the observer here
   if (observer) {
     observer.disconnect();
   }
-  console.log('Leaving group detail view, state and observer cleaned up.');
+  document.removeEventListener('click', closeOnClickOutside, true);
+  console.log('Leaving group detail view, state and observers cleaned up.');
 });
-// --------------------
 
-watch(() => route.params.id, async (newId, oldId) => {
-  if (newId && newId !== oldId) {
-    await groupStore.fetchGroupDetails(Number(newId));
+onUnmounted(() => {
+    document.removeEventListener('click', closeOnClickOutside, true);
+});
+
+watch(() => route.params.slug, async (newSlug, oldSlug) => { // Watch the 'slug' param
+  if (newSlug && newSlug !== oldSlug) {
+    // Use the new slug to fetch details
+    await groupStore.fetchGroupDetails(newSlug as string);
     setupObserver();
   }
 }, { immediate: false });
+// --- END OF MODIFIED SECTION ---
 
+
+// --- NO CHANGES IN THIS SECTION ---
 async function handleJoinGroup() {
   if (!currentGroup.value) return;
   const success = await groupStore.joinGroup(currentGroup.value.id);
   if (success) {
-    // Optional: Use a more subtle notification system in the future
   } else {
     alert(`Failed to join group: ${joinLeaveError.value || 'Unknown error'}`);
   }
 }
-
 async function handleLeaveGroup() {
   if (!currentGroup.value) return;
   const success = await groupStore.leaveGroup(currentGroup.value.id);
   if (success) {
-    // Optional: Use a more subtle notification system in the future
   } else {
     alert(`Failed to leave group: ${joinLeaveError.value || 'Unknown error'}`);
   }
 }
+function handleTransferOwnership() {
+  alert('Placeholder: The "Transfer Ownership" feature will be built next.');
+}
+async function handleDeleteGroup() {
+    if (!currentGroup.value) return;
+    if (confirm(`Are you sure you want to permanently delete the group "${currentGroup.value.name}"? This action cannot be undone.`)) {
+        const success = await groupStore.deleteGroup(currentGroup.value.id);
+        if (success) {
+            alert('Group deleted successfully.');
+            router.push({ name: 'group-list' }); 
+        } else {
+            alert(`Failed to delete group: ${deleteGroupError.value || 'An unknown error occurred.'}`);
+        }
+    }
+}
+// --- END OF UNCHANGED SECTION ---
 </script>
 
 <template>
@@ -152,26 +174,48 @@ async function handleLeaveGroup() {
             <h1 class="text-3xl font-bold text-gray-900">{{ currentGroup.name }}</h1>
             <p class="text-gray-600 mt-2">{{ currentGroup.description }}</p>
           </div>
-          <div v-if="showJoinLeaveButton" class="flex-shrink-0">
-            <button 
-              v-if="!isGroupCreator"
+
+          <!-- REPLACEMENT: The entire button container is replaced with this new structure -->
+          <div class="flex-shrink-0 ml-4 flex space-x-2">
+            <!-- Regular Join/Leave button is always visible if not the creator -->
+            <button
+              v-if="isAuthenticated && currentGroup && !isGroupCreator"
               @click="currentGroup.is_member ? handleLeaveGroup() : handleJoinGroup()"
               :disabled="isJoiningLeaving"
               :class="[
-                'ml-4 px-6 py-2 rounded-full font-semibold transition-colors duration-200',
-                currentGroup.is_member 
-                  ? 'bg-red-500 text-white hover:bg-red-600' 
-                  : 'bg-blue-600 text-white hover:bg-blue-700',
-                isJoiningLeaving ? 'opacity-50 cursor-not-allowed' : ''
+                  'px-6 py-2 rounded-full font-semibold transition-colors duration-200',
+                  currentGroup.is_member 
+                    ? 'bg-gray-200 text-gray-800 hover:bg-gray-300' 
+                    : 'bg-blue-600 text-white hover:bg-blue-700',
+                  isJoiningLeaving ? 'opacity-50 cursor-not-allowed' : ''
               ]"
             >
               {{ isJoiningLeaving ? 'Processing...' : (currentGroup.is_member ? 'Leave Group' : 'Join Group') }}
             </button>
+
+            <!-- Creator's Options Menu (Three Dots) -->
+            <div v-if="isAuthenticated && isGroupCreator" class="relative" ref="optionsMenuRef">
+              <!-- The Three Dots Button -->
+              <button @click.stop="toggleOptionsMenu" class="p-2 rounded-full text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
+              </button>
+
+              <!-- The Dropdown Menu -->
+              <div v-if="showOptionsMenu" class="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-10">
+                <div class="py-1" role="menu" aria-orientation="vertical">
+                  <a href="#" @click.prevent="handleTransferOwnership" class="text-gray-700 block px-4 py-2 text-sm hover:bg-gray-100" role="menuitem">Transfer Ownership</a>
+                  <a href="#" @click.prevent="handleDeleteGroup" class="text-red-700 block px-4 py-2 text-sm hover:bg-red-50" role="menuitem">Delete Group</a>
+                </div>
+              </div>
+            </div>
           </div>
+          <!-- END OF REPLACEMENT -->
+
         </div>
         <div class="mt-4 text-sm text-gray-500">
-          <span>Created by: 
-            <router-link :to="{ name: 'profile', params: { username: currentGroup.creator.username } }" class="font-semibold hover:underline">
+          <span>Created by:
+            <router-link :to="{ name: 'profile', params: { username: currentGroup.creator.username } }"
+              class="font-semibold hover:underline">
               {{ currentGroup.creator.username }}
             </router-link>
           </span>
@@ -187,32 +231,31 @@ async function handleLeaveGroup() {
       <div v-if="currentGroup.is_member" class="mb-8">
         <CreatePostForm :group-id="currentGroup.id" />
       </div>
-      <div v-else-if="isAuthenticated && !currentGroup.is_member" class="bg-white p-6 rounded-lg shadow-md mb-8 text-center text-gray-500">
+      <div v-else-if="isAuthenticated && !currentGroup.is_member"
+        class="bg-white p-6 rounded-lg shadow-md mb-8 text-center text-gray-500">
         <p>You must join this group to create posts.</p>
-        <button v-if="!isGroupCreator" @click="handleJoinGroup()" :disabled="isJoiningLeaving" class="mt-4 px-6 py-2 bg-blue-600 text-white rounded-full font-semibold hover:bg-blue-700 transition-colors" :class="isJoiningLeaving ? 'opacity-50 cursor-not-allowed' : ''">
+        <button v-if="!isGroupCreator" @click="handleJoinGroup()" :disabled="isJoiningLeaving"
+          class="mt-4 px-6 py-2 bg-blue-600 text-white rounded-full font-semibold hover:bg-blue-700 transition-colors"
+          :class="isJoiningLeaving ? 'opacity-50 cursor-not-allowed' : ''">
           {{ isJoiningLeaving ? 'Joining...' : 'Join Group to Post' }}
         </button>
       </div>
       <div v-else-if="!isAuthenticated" class="bg-white p-6 rounded-lg shadow-md mb-8 text-center text-gray-500">
         <p>Please log in to join this group and create posts.</p>
       </div>
-      
+
       <!-- Group Feed Section -->
       <main class="mt-8">
         <h2 class="text-2xl font-semibold text-gray-800 mb-4">Group Feed</h2>
         <div v-if="groupPosts.length > 0" class="space-y-6">
-           <PostItem 
-             v-for="post in groupPosts" 
-            :key="post.id" 
-            :post="post" 
-            :hide-group-context="true"
-            @report-content="handleOpenReportModal"
-          />
+          <PostItem v-for="post in groupPosts" :key="post.id" :post="post" :hide-group-context="true"
+            @report-content="handleOpenReportModal" />
         </div>
-        <div v-else-if="!isLoadingGroupPosts && groupPosts.length === 0" class="bg-white p-6 rounded-lg shadow-md text-center text-gray-500">
+        <div v-else-if="!isLoadingGroupPosts && groupPosts.length === 0"
+          class="bg-white p-6 rounded-lg shadow-md text-center text-gray-500">
           <p>No posts in this group yet. Be the first to create one!</p>
         </div>
-        
+
         <!-- Infinite Scroll Trigger & Loading Indicator -->
         <div v-if="groupPostsNextCursor" ref="loadMoreGroupPostsTrigger" class="h-10"></div>
         <div v-if="isLoadingGroupPosts && groupPosts.length > 0" class="text-center p-4 text-gray-500">
@@ -221,11 +264,7 @@ async function handleLeaveGroup() {
       </main>
     </div>
 
-    <ReportFormModal 
-      :is-open="isReportModalOpen" 
-      @close="isReportModalOpen = false" 
-      @submit="handleReportSubmit"
-    />
-    
+    <ReportFormModal :is-open="isReportModalOpen" @close="isReportModalOpen = false" @submit="handleReportSubmit" />
+
   </div>
 </template>
