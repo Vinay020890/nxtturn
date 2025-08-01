@@ -23,6 +23,14 @@ export interface UserProfile {
   is_followed_by_request_user: boolean;
 }
 
+// --- NEW INTERFACE FOR THE API RESPONSE ---
+interface PaginatedPostsResponse {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: Post[];
+}
+
 export const useProfileStore = defineStore('profile', () => {
   const authStoreInstance = useAuthStore();
 
@@ -32,14 +40,11 @@ export const useProfileStore = defineStore('profile', () => {
   const isLoadingPosts = ref(false);
   const errorProfile = ref<string | null>(null);
   const errorPosts = ref<string | null>(null);
-  const postsPagination = ref({
-    count: 0,
-    next: null as string | null,
-    previous: null as string | null,
-    currentPage: 1,
-    totalPages: 1,
-    pageSize: 10
-  });
+
+  // --- SIMPLIFIED PAGINATION STATE ---
+  // We only need to know the URL for the next page
+  const userPostsNextPageUrl = ref<string | null>(null);
+
   const isFollowing = ref(false);
   const isLoadingFollow = ref(false);
 
@@ -60,38 +65,46 @@ export const useProfileStore = defineStore('profile', () => {
     }
   }
 
-  async function fetchUserPosts(username: string, page: number = 1) {
+  // --- REFACTORED fetchUserPosts TO SUPPORT APPENDING ---
+  async function fetchUserPosts(username: string, url: string | null = null) {
+    if (isLoadingPosts.value) return; // Prevent duplicate calls
     isLoadingPosts.value = true;
     errorPosts.value = null;
-    if (page === 1) {
-        userPosts.value = [];
-    }
+
+    // Use the provided URL, or construct the initial one
+    const apiUrl = url || `/users/${username}/posts/`;
+    
     try {
-       interface PaginatedPostsResponse {
-            count: number;
-            next: string | null;
-            previous: string | null;
-            results: Post[];
-       }
-      const response = await axiosInstance.get<PaginatedPostsResponse>(`/users/${username}/posts/`, {
-          params: { page }
-      });
-      // Add UI flags to the posts
-      userPosts.value = response.data.results.map(post => ({
+      const response = await axiosInstance.get<PaginatedPostsResponse>(apiUrl);
+      const fetchedPosts = response.data.results.map(post => ({
           ...post,
           isLiking: false,
           isDeleting: false,
           isUpdating: false,
       }));
-      postsPagination.value.count = response.data.count;
-      postsPagination.value.next = response.data.next;
-      postsPagination.value.previous = response.data.previous;
-      postsPagination.value.currentPage = page;
-      postsPagination.value.totalPages = Math.ceil(response.data.count / postsPagination.value.pageSize);
+
+      if (url) {
+        // If a URL was provided, it's a "load more" call, so append the posts
+        userPosts.value.push(...fetchedPosts);
+      } else {
+        // If no URL, it's the first call, so replace the posts
+        userPosts.value = fetchedPosts;
+      }
+      
+      // Update the next page URL
+      userPostsNextPageUrl.value = response.data.next;
+
     } catch (err: any) {
       errorPosts.value = err.response?.data?.detail || 'Failed to fetch user posts.';
     } finally {
       isLoadingPosts.value = false;
+    }
+  }
+
+  // --- NEW ACTION FOR CONVENIENCE, JUST LIKE IN feed.ts ---
+  async function fetchNextPageOfUserPosts(username: string) {
+    if (userPostsNextPageUrl.value && !isLoadingPosts.value) {
+      await fetchUserPosts(username, userPostsNextPageUrl.value);
     }
   }
 
@@ -120,7 +133,7 @@ export const useProfileStore = defineStore('profile', () => {
     userPosts.value = [];
     errorProfile.value = null;
     errorPosts.value = null;
-    postsPagination.value = { count: 0, next: null, previous: null, currentPage: 1, totalPages: 1, pageSize: 10 };
+    userPostsNextPageUrl.value = null; // Reset the next page URL
     isFollowing.value = false;
   }
 
@@ -137,11 +150,6 @@ export const useProfileStore = defineStore('profile', () => {
     }
   }
 
-  // === DELETED FUNCTIONS ===
-  // The logic for toggling likes, incrementing comments, and updating posts
-  // is now centralized in feedStore.ts to ensure consistency across the app.
-  // We no longer need these redundant, siloed functions.
-
   return {
     // State
     currentProfile,
@@ -150,16 +158,16 @@ export const useProfileStore = defineStore('profile', () => {
     isLoadingPosts,
     errorProfile,
     errorPosts,
-    postsPagination,
+    userPostsNextPageUrl, // EXPORT the new next page URL state
     isFollowing,
     isLoadingFollow,
     // Actions
     fetchProfile,
     fetchUserPosts,
+    fetchNextPageOfUserPosts, // EXPORT the new action
     clearProfileData,
     followUser,
     unfollowUser,
     updateProfilePicture,
-    // --- Redundant functions have been removed from the return object ---
   };
 });

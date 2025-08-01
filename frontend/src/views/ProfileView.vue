@@ -13,7 +13,8 @@ const authStore = useAuthStore();
 
 const { 
   currentProfile, userPosts, isLoadingProfile, isLoadingPosts, 
-  errorProfile, errorPosts, postsPagination, isFollowing, isLoadingFollow 
+  errorProfile, errorPosts, userPostsNextPageUrl, // Use the new next page URL state
+  isFollowing, isLoadingFollow 
 } = storeToRefs(profileStore);
 
 const { currentUser, isAuthenticated } = storeToRefs(authStore);
@@ -24,33 +25,54 @@ const uploadError = ref<string |null>(null);
 const username = computed(() => route.params.username as string || '');
 const isOwnProfile = computed(() => isAuthenticated.value && currentUser.value?.username === username.value);
 
-const loadProfileData = async (page = 1) => {
-  if (username.value) {
-    if(page === 1) {
-      await profileStore.fetchProfile(username.value);
+// --- NEW INFINITE SCROLL LOGIC ---
+const loadMoreTrigger = ref<HTMLElement | null>(null);
+let observer: IntersectionObserver | null = null;
+
+const setupObserver = () => {
+  if (observer) observer.disconnect(); // Clean up old observer
+
+  observer = new IntersectionObserver((entries) => {
+    // If the trigger is visible and there's a next page, fetch it
+    if (entries[0].isIntersecting && userPostsNextPageUrl.value && !isLoadingPosts.value) {
+      profileStore.fetchNextPageOfUserPosts(username.value);
     }
-    await profileStore.fetchUserPosts(username.value, page);
+  }, { rootMargin: '200px' });
+
+  if (loadMoreTrigger.value) {
+    observer.observe(loadMoreTrigger.value);
+  }
+};
+
+const loadProfileData = async () => {
+  if (username.value) {
+    // These now run in parallel for a faster initial load
+    await Promise.all([
+        profileStore.fetchProfile(username.value),
+        profileStore.fetchUserPosts(username.value)
+    ]);
+    // After data is loaded, set up the observer
+    setupObserver();
   }
 };
 
 onMounted(() => {
-  loadProfileData(1);
+  loadProfileData();
 });
 
 watch(username, (newUsername, oldUsername) => {
   if (newUsername && newUsername !== oldUsername) {
     profileStore.clearProfileData();
-    loadProfileData(1);
+    loadProfileData();
   }
 });
 
 onUnmounted(() => {
+  if (observer) observer.disconnect(); // Disconnect observer on component leave
   profileStore.clearProfileData();
 });
 
-const handlePageChange = (page: number) => {
-  loadProfileData(page);
-};
+// The handlePageChange function is no longer needed.
 
 function handleFileChange(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0];
@@ -143,28 +165,15 @@ async function uploadProfilePicture() {
         <div v-else class="bg-white rounded-lg shadow-md p-10 text-center text-gray-500">
           This user hasn't posted anything yet.
         </div>
-        <!-- Pagination -->
-        <div v-if="postsPagination.totalPages > 1" class="mt-8 flex justify-center items-center gap-4">
-          <button 
-            @click="handlePageChange(postsPagination.currentPage - 1)" 
-            :disabled="!postsPagination.previous" 
-            class="px-4 py-2 text-sm font-medium bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
-          >
-            Previous
-          </button>
-          <span class="text-sm text-gray-700">Page {{ postsPagination.currentPage }} of {{ postsPagination.totalPages }}</span>
-          <button 
-            @click="handlePageChange(postsPagination.currentPage + 1)" 
-            :disabled="!postsPagination.next" 
-            class="px-4 py-2 text-sm font-medium bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
-          >
-            Next
-          </button>
+        
+        <!-- REMOVED the old pagination buttons -->
+        <!-- ADDED the new infinite scroll trigger and loading indicator -->
+        <div v-if="userPostsNextPageUrl" ref="loadMoreTrigger" class="h-10"></div>
+        <div v-if="isLoadingPosts && userPosts.length > 0" class="text-center p-4 text-gray-500">
+          Loading more posts...
         </div>
+
       </div>
     </div>
-
-    <!-- The ReportFormModal has been removed from here. PostItem now handles it. -->
-    
   </div>
 </template>
