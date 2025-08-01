@@ -4,7 +4,7 @@ import { getAvatarUrl, buildMediaUrl } from '@/utils/avatars';
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import type { Post, PostMedia } from '@/stores/feed';
 import { useFeedStore } from '@/stores/feed';
-import { format, formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 import { useCommentStore } from '@/stores/comment';
 import CommentItem from '@/components/CommentItem.vue';
 import { useAuthStore } from '@/stores/auth';
@@ -12,10 +12,11 @@ import { storeToRefs } from 'pinia';
 import PollDisplay from './PollDisplay.vue';
 import MentionAutocomplete from './MentionAutocomplete.vue';
 import eventBus from '@/services/eventBus';
+import ReportFormModal from './ReportFormModal.vue';
 
 // --- Props, Stores, and Basic State ---
 const props = defineProps<{ post: Post; hideGroupContext?: boolean; }>();
-const emit = defineEmits(['report-content']);
+
 const feedStore = useFeedStore();
 const commentStore = useCommentStore();
 const authStore = useAuthStore();
@@ -47,6 +48,10 @@ const showOptionsMenu = ref(false);
 const optionsMenuRef = ref<HTMLDivElement | null>(null);
 const postArticleRef = ref<HTMLElement | null>(null);
 
+// --- State for Report Modal ---
+const isReportModalOpen = ref(false);
+const reportTarget = ref<{ ct_id: number, obj_id: number } | null>(null);
+
 // --- Computed Properties ---
 const isOwner = computed(() => isAuthenticated.value && currentUser.value?.id === props.post.author.id);
 const commentPostKey = computed(() => `${props.post.post_type}_${props.post.object_id}`);
@@ -55,27 +60,30 @@ const isLoadingComments = computed(() => commentStore.isLoading);
 const commentError = computed(() => commentStore.error);
 const activeMedia = computed(() => props.post.media?.[activeMediaIndex.value]);
 const hasMultipleMedia = computed(() => (props.post.media?.length ?? 0) > 1);
-
-const formattedTimestamp = computed(() => {
-  return formatDistanceToNow(new Date(props.post.created_at), { addSuffix: true });
-});
+const formattedTimestamp = computed(() => formatDistanceToNow(new Date(props.post.created_at), { addSuffix: true }));
 
 // --- Methods ---
 function toggleOptionsMenu() { showOptionsMenu.value = !showOptionsMenu.value; }
 function handleEditClick() { toggleEditMode(); showOptionsMenu.value = false; }
 function handleDeleteClick() { handleDeletePost(); showOptionsMenu.value = false; }
 
+// --- THIS FUNCTION HANDLES REPORTING THE POST ITSELF ---
 function handleReportClick() {
-  emit('report-content', {
-    content_type: props.post.post_type,
-    object_id: props.post.object_id,
-    content_type_id: props.post.content_type_id
-  });
+  reportTarget.value = {
+    ct_id: props.post.content_type_id,
+    obj_id: props.post.object_id
+  };
+  isReportModalOpen.value = true;
   showOptionsMenu.value = false;
 }
 
-function reEmitReportEvent(payload: { content_type: string, content_type_id: number, object_id: number }) {
-  emit('report-content', payload);
+// --- THIS NEW FUNCTION HANDLES REPORTS EMITTED FROM CHILD COMMENTS ---
+function handleCommentReport(payload: { content_type_id: number, object_id: number }) {
+  reportTarget.value = {
+    ct_id: payload.content_type_id,
+    obj_id: payload.object_id
+  };
+  isReportModalOpen.value = true;
 }
 
 const closeOnClickOutside = (event: MouseEvent) => { if (optionsMenuRef.value && !optionsMenuRef.value.contains(event.target as Node)) showOptionsMenu.value = false; };
@@ -84,14 +92,8 @@ watch(showOptionsMenu, (isOpen) => {
   else document.removeEventListener('click', closeOnClickOutside, true);
 });
 
-const handleNavigation = () => {
-  if (isEditing.value) {
-    isEditing.value = false;
-  }
-};
-onMounted(() => {
-  eventBus.on('navigation-started', handleNavigation);
-});
+const handleNavigation = () => { if (isEditing.value) isEditing.value = false; };
+onMounted(() => eventBus.on('navigation-started', handleNavigation));
 onUnmounted(() => {
   document.removeEventListener('click', closeOnClickOutside, true);
   eventBus.off('navigation-started', handleNavigation);
@@ -105,15 +107,8 @@ function toggleCommentDisplay() {
 }
 
 async function toggleLike() {
-  if (!isAuthenticated.value) {
-    return alert('Please login to like posts.');
-  }
-  await feedStore.toggleLike(
-    props.post.id,
-    props.post.post_type,
-    props.post.content_type_id,
-    props.post.object_id
-  );
+  if (!isAuthenticated.value) return alert('Please login to like posts.');
+  await feedStore.toggleLike(props.post.id, props.post.post_type, props.post.content_type_id, props.post.object_id);
 }
 
 async function toggleSave() {
@@ -139,7 +134,6 @@ function setActiveMedia(index: number) { activeMediaIndex.value = index; }
 function toggleEditMode() {
   isEditing.value = !isEditing.value;
   localEditError.value = null;
-
   if (isEditing.value) {
     if (props.post.poll) {
       editPollQuestion.value = props.post.poll.question;
@@ -156,29 +150,17 @@ function toggleEditMode() {
     newImageFiles.value = [];
     newVideoFiles.value = [];
     mediaToDeleteIds.value = [];
-    nextTick(() => {
-      editTextAreaRef.value?.focus();
-    });
+    nextTick(() => editTextAreaRef.value?.focus());
   }
 }
 
-function addPollOptionToEdit() {
-  if (editPollOptions.value.length < 5) {
-    editPollOptions.value.push({ id: null, text: '' });
-  }
-}
-
+function addPollOptionToEdit() { if (editPollOptions.value.length < 5) editPollOptions.value.push({ id: null, text: '' }); }
 function removePollOptionFromEdit(index: number) {
-  if (editPollOptions.value.length <= 2) {
-    return;
-  }
+  if (editPollOptions.value.length <= 2) return;
   const optionToRemove = editPollOptions.value[index];
-  if (optionToRemove.id !== null) {
-    deletedOptionIds.value.push(optionToRemove.id);
-  }
+  if (optionToRemove.id !== null) deletedOptionIds.value.push(optionToRemove.id);
   editPollOptions.value.splice(index, 1);
 }
-
 function handleNewFiles(event: Event, type: 'image' | 'video') {
   const files = (event.target as HTMLInputElement).files;
   if (!files) return;
@@ -186,17 +168,14 @@ function handleNewFiles(event: Event, type: 'image' | 'video') {
   for (const file of Array.from(files)) targetArray.value.push(file);
   (event.target as HTMLInputElement).value = '';
 }
-
 function flagExistingMediaForRemoval(mediaId: number) {
   mediaToDeleteIds.value.push(mediaId);
   editableMedia.value = editableMedia.value.filter(m => m.id !== mediaId);
 }
-
 function removeNewFile(index: number, type: 'image' | 'video') {
   const targetArray = type === 'image' ? newImageFiles : newVideoFiles;
   targetArray.value.splice(index, 1);
 }
-
 function getObjectURL(file: File): string { return URL.createObjectURL(file); }
 
 async function handleUpdatePost() {
@@ -208,19 +187,12 @@ async function handleUpdatePost() {
     return;
   }
   const formData = new FormData();
-  if (editContent.value !== (props.post.content || '')) {
-    formData.append('content', editContent.value);
-  }
+  if (editContent.value !== (props.post.content || '')) formData.append('content', editContent.value);
   newImageFiles.value.forEach(file => formData.append('images', file));
   newVideoFiles.value.forEach(file => formData.append('videos', file));
-  if (mediaToDeleteIds.value.length > 0) {
-    formData.append('media_to_delete', JSON.stringify(mediaToDeleteIds.value));
-  }
+  if (mediaToDeleteIds.value.length > 0) formData.append('media_to_delete', JSON.stringify(mediaToDeleteIds.value));
   let hasChanges = false;
-  for (const _ of formData.entries()) {
-    hasChanges = true;
-    break;
-  }
+  for (const _ of formData.entries()) { hasChanges = true; break; }
   if (!hasChanges) {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     isEditing.value = false;
@@ -240,14 +212,8 @@ async function handleUpdatePost() {
 async function handleUpdatePoll() {
   localEditError.value = null;
   feedStore.updatePostError = null;
-  if (!editPollQuestion.value.trim()) {
-    localEditError.value = "Poll question cannot be empty.";
-    return;
-  }
-  if (editPollOptions.value.some(opt => !opt.text.trim())) {
-    localEditError.value = "Poll options cannot be empty.";
-    return;
-  }
+  if (!editPollQuestion.value.trim()) { localEditError.value = "Poll question cannot be empty."; return; }
+  if (editPollOptions.value.some(opt => !opt.text.trim())) { localEditError.value = "Poll options cannot be empty."; return; }
   const pollPayload = {
     question: editPollQuestion.value,
     options_to_update: editPollOptions.value.filter(opt => opt.id !== null),
@@ -257,25 +223,16 @@ async function handleUpdatePoll() {
   const formData = new FormData();
   formData.append('poll_data', JSON.stringify(pollPayload));
   const success = await feedStore.updatePost(props.post.id, props.post.post_type, formData);
-  if (success) {
-    isEditing.value = false;
-  } else {
-    localEditError.value = feedStore.updatePostError || 'Failed to update poll.';
-  }
+  if (success) isEditing.value = false;
+  else localEditError.value = feedStore.updatePostError || 'Failed to update poll.';
 }
 
 function linkifyContent(text: string | null | undefined): string {
   if (!text) return '';
   const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])|(\bwww\.[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
-
-  // THIS IS THE FIX: The new regex allows for periods and hyphens.
   const mentionRegex = /@([\w.-]+)/g;
-
   let linkedText = text.replace(urlRegex, url => `<a href="${url.startsWith('www.') ? 'http://' + url : url}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline">${url}</a>`);
-  linkedText = linkedText.replace(mentionRegex, (match, username) => {
-    const profileUrl = `/profile/${username}`;
-    return `<a href="${profileUrl}" class="font-semibold text-blue-600 hover:underline">${match}</a>`;
-  });
+  linkedText = linkedText.replace(mentionRegex, (match, username) => `<a href="/profile/${username}" class="font-semibold text-blue-600 hover:underline">${match}</a>`);
   return linkedText;
 }
 
@@ -287,20 +244,17 @@ async function handleCommentSubmit() {
 </script>
 
 <template>
-  <!-- Main article container with all final styles applied -->
   <article ref="postArticleRef" tabindex="-1"
     class="bg-white rounded-2xl shadow-sm mb-6 focus:outline-none border border-gray-100">
 
-    <!-- Final Header (Two-line layout) -->
+    <!-- Header -->
     <header class="flex items-start justify-between p-4">
       <div class="flex items-start">
         <router-link :to="{ name: 'profile', params: { username: post.author.username } }">
           <img :src="getAvatarUrl(post.author.picture, post.author.first_name, post.author.last_name)"
             alt="author avatar" class="w-11 h-11 rounded-full object-cover mr-4 bg-gray-200">
         </router-link>
-
         <div>
-          <!-- Line 1: Username and Group Name -->
           <div class="flex items-center gap-x-2">
             <router-link :to="{ name: 'profile', params: { username: post.author.username } }"
               class="font-semibold text-gray-900 hover:underline">{{ post.author.username }}</router-link>
@@ -312,16 +266,13 @@ async function handleCommentSubmit() {
               </router-link>
             </template>
           </div>
-          <!-- Line 2: Timestamp -->
           <p class="text-sm text-gray-500 mt-0.5">{{ formattedTimestamp }}</p>
         </div>
       </div>
-
-      <!-- Options Menu (Functionality preserved) -->
       <div v-if="isAuthenticated" class="relative" ref="optionsMenuRef">
         <button @click.stop="toggleOptionsMenu"
           class="p-2 rounded-full text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"><svg
-            class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+            class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
             <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z">
             </path>
           </svg></button>
@@ -364,7 +315,6 @@ async function handleCommentSubmit() {
     </header>
 
     <!-- Post Body & Media Section -->
-
     <div v-if="!isEditing" class="pb-3">
       <div v-if="post.content && !post.poll" class="px-4">
         <p class="text-gray-800 whitespace-pre-wrap" v-html="linkifyContent(post.content)"></p>
@@ -373,7 +323,6 @@ async function handleCommentSubmit() {
       <div v-if="post.media && post.media.length > 0" class="mt-3 px-4">
         <div class="relative">
           <template v-if="activeMedia">
-            <!-- Added bg-black for better presentation of various media sizes -->
             <video v-if="activeMedia.media_type === 'video'" controls
               class="w-full max-h-[70vh] object-contain rounded-xl bg-white" :key="activeMedia.id"
               :src="buildMediaUrl(activeMedia.file_url)"></video>
@@ -381,7 +330,6 @@ async function handleCommentSubmit() {
               class="w-full max-h-[70vh] object-contain rounded-xl bg-white">
           </template>
           <template v-if="hasMultipleMedia">
-            <!-- Improved button styles and icons -->
             <button @click="prevMedia"
               class="absolute left-2 top-1/2 -translate-y-1/2 bg-gray-900 bg-opacity-40 text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-opacity-60 transition-all duration-200"><svg
                 class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -394,15 +342,10 @@ async function handleCommentSubmit() {
               </svg></button>
           </template>
         </div>
-
-        <!-- ======================================================= -->
-        <!-- ==== THIS IS THE NEW THUMBNAIL GALLERY TO BE ADDED ==== -->
-        <!-- ======================================================= -->
         <div v-if="hasMultipleMedia" class="flex flex-wrap justify-center gap-2 mt-3">
           <div v-for="(mediaItem, index) in post.media" :key="`thumb-${mediaItem.id}`" @click="setActiveMedia(index)"
             class="cursor-pointer w-20 h-20 rounded-md overflow-hidden border-2 transition-all"
             :class="index === activeMediaIndex ? 'border-blue-500' : 'border-transparent hover:border-gray-400'">
-            <!-- Thumbnail for video shows a generic icon -->
             <div v-if="mediaItem.media_type === 'video'"
               class="w-full h-full bg-gray-800 flex items-center justify-center">
               <svg class="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -411,91 +354,105 @@ async function handleCommentSubmit() {
                 </path>
               </svg>
             </div>
-            <!-- Thumbnail for image -->
             <img v-else :src="buildMediaUrl(mediaItem.file_url)" class="w-full h-full object-cover">
           </div>
         </div>
-        <!-- ======================================================= -->
-        <!-- ============ END OF NEW THUMBNAIL GALLERY ============= -->
-        <!-- ======================================================= -->
-
       </div>
     </div>
 
-    <!-- Edit Mode Section (Functionality preserved) -->
+    <!-- Edit Mode Section -->
     <div v-if="localDeleteError" class="mx-4 mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md">{{
       localDeleteError }}</div>
     <div v-else-if="isEditing" class="px-4 pb-4">
+      <!-- FORM FOR EDITING A REGULAR TEXT/MEDIA POST -->
       <form v-if="!post.poll" @submit.prevent="handleUpdatePost" novalidate>
         <div v-if="localEditError" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md mb-4">{{
           localEditError }}</div>
+
         <MentionAutocomplete ref="editTextAreaRef" v-model="editContent" placeholder="Edit your post..." :rows="3"
           class="text-base" />
+
         <div class="mt-2 flex flex-wrap gap-2">
-          <div v-for="media in editableMedia" :key="`edit-${media.id}`" class="relative w-20 h-20"><span
-              v-if="media.media_type === 'video'"
-              class="w-full h-full bg-gray-200 flex items-center justify-center text-2xl text-gray-500 rounded-md">▶</span><img
-              v-else :src="buildMediaUrl(media.file_url)" class="w-full h-full object-cover rounded-md"><button
-              @click="flagExistingMediaForRemoval(media.id)" type="button"
+          <!-- Loop through existing media -->
+          <div v-for="media in editableMedia" :key="`edit-${media.id}`" class="relative w-20 h-20">
+            <span v-if="media.media_type === 'video'"
+              class="w-full h-full bg-gray-200 flex items-center justify-center text-2xl text-gray-500 rounded-md">▶</span>
+            <img v-else :src="buildMediaUrl(media.file_url)" class="w-full h-full object-cover rounded-md">
+            <button @click="flagExistingMediaForRemoval(media.id)" type="button"
               class="absolute top-1 right-1 bg-gray-800 bg-opacity-50 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-500">×</button>
           </div>
-          <div v-for="(file, index) in newImageFiles" :key="`new-img-${index}`" class="relative w-20 h-20"><img
-              :src="getObjectURL(file)" class="w-full h-full object-cover rounded-md"><button
-              @click="removeNewFile(index, 'image')" type="button"
+          <!-- Loop through new image files -->
+          <div v-for="(file, index) in newImageFiles" :key="`new-img-${index}`" class="relative w-20 h-20">
+            <img :src="getObjectURL(file)" class="w-full h-full object-cover rounded-md">
+            <button @click="removeNewFile(index, 'image')" type="button"
               class="absolute top-1 right-1 bg-gray-800 bg-opacity-50 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-500">×</button>
           </div>
+          <!-- Loop through new video files -->
           <div v-for="(file, index) in newVideoFiles" :key="`new-vid-${index}`"
             class="relative w-20 h-20 bg-gray-200 rounded-md flex flex-col items-center justify-center text-center p-1">
-            <span class="text-3xl">🎬</span><span class="text-xs text-gray-600 truncate w-full">{{ file.name
-              }}</span><button @click="removeNewFile(index, 'video')" type="button"
+            <span class="text-3xl">🎬</span>
+            <span class="text-xs text-gray-600 truncate w-full">{{ file.name }}</span>
+            <button @click="removeNewFile(index, 'video')" type="button"
               class="absolute top-1 right-1 bg-gray-800 bg-opacity-50 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-500">×</button>
           </div>
         </div>
+
         <div class="mt-4 flex justify-between items-center">
-          <div class="flex gap-4"><label for="add-images-edit"
-              class="text-gray-500 hover:text-blue-500 cursor-pointer"><svg class="h-6 w-6" fill="none"
-                viewBox="0 0 24 24" stroke="currentColor">
+          <div class="flex gap-4">
+            <label for="add-images-edit" class="text-gray-500 hover:text-blue-500 cursor-pointer"><svg class="h-6 w-6"
+                fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z">
                 </path>
-              </svg></label><input id="add-images-edit" type="file" @change="handleNewFiles($event, 'image')" multiple
-              accept="image/*" class="hidden"><label for="add-videos-edit"
-              class="text-gray-500 hover:text-blue-500 cursor-pointer"><svg class="h-6 w-6" fill="none"
-                viewBox="0 0 24 24" stroke="currentColor">
+              </svg></label>
+            <input id="add-images-edit" type="file" @change="handleNewFiles($event, 'image')" multiple accept="image/*"
+              class="hidden">
+            <label for="add-videos-edit" class="text-gray-500 hover:text-blue-500 cursor-pointer"><svg class="h-6 w-6"
+                fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z">
                 </path>
-              </svg></label><input id="add-videos-edit" type="file" @change="handleNewFiles($event, 'video')" multiple
-              accept="video/*" class="hidden"></div><button type="submit" :disabled="post.isUpdating"
+              </svg></label>
+            <input id="add-videos-edit" type="file" @change="handleNewFiles($event, 'video')" multiple accept="video/*"
+              class="hidden">
+          </div>
+          <button type="submit" :disabled="post.isUpdating"
             class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-full">Save Changes</button>
         </div>
       </form>
+
+      <!-- FORM FOR EDITING A POLL POST -->
       <form v-else @submit.prevent="handleUpdatePoll" novalidate>
         <div v-if="localEditError" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md mb-4">{{
           localEditError }}</div>
-        <div class="p-4 border border-gray-200 rounded-md bg-gray-50"><input type="text" v-model="editPollQuestion"
-            placeholder="Poll Question" class="w-full p-2 border border-gray-300 rounded-md mb-3" maxlength="255">
+
+        <div class="p-4 border border-gray-200 rounded-md bg-gray-50">
+          <input type="text" v-model="editPollQuestion" placeholder="Poll Question"
+            class="w-full p-2 border border-gray-300 rounded-md mb-3" maxlength="255">
           <div v-for="(option, index) in editPollOptions" :key="option.id || `new-${index}`"
-            class="flex items-center gap-2 mb-2"><input type="text" v-model="option.text"
-              :placeholder="`Option ${index + 1}`" class="flex-grow p-2 border border-gray-300 rounded-md"
-              maxlength="100"><button @click.prevent="removePollOptionFromEdit(index)"
-              :disabled="editPollOptions.length <= 2"
+            class="flex items-center gap-2 mb-2">
+            <input type="text" v-model="option.text" :placeholder="`Option ${index + 1}`"
+              class="flex-grow p-2 border border-gray-300 rounded-md" maxlength="100">
+            <button @click.prevent="removePollOptionFromEdit(index)" :disabled="editPollOptions.length <= 2"
               class="text-gray-400 hover:text-red-500 disabled:opacity-50 flex-shrink-0" type="button"><svg
                 class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M15 12H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-              </svg></button></div><button @click.prevent="addPollOptionToEdit" :disabled="editPollOptions.length >= 5"
+              </svg></button>
+          </div>
+          <button @click.prevent="addPollOptionToEdit" :disabled="editPollOptions.length >= 5"
             class="text-sm text-blue-500 hover:text-blue-700 disabled:opacity-50 mt-1" type="button">Add Option</button>
         </div>
-        <div class="mt-4 flex justify-end"><button type="submit" :disabled="post.isUpdating"
+
+        <div class="mt-4 flex justify-end">
+          <button type="submit" :disabled="post.isUpdating"
             class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-full disabled:bg-blue-300">{{
-              post.isUpdating ? 'Saving...' : 'Save Changes' }}</button></div>
+              post.isUpdating ? 'Saving...' : 'Save Changes' }}</button>
+        </div>
       </form>
     </div>
 
-    <!-- ======================================================= -->
-    <!-- ==== Final Actions Footer (WITH INSET BORDER) ======= -->
-    <!-- ======================================================= -->
+    <!-- Actions Footer -->
     <footer v-if="!isEditing" class="px-4 pt-1 pb-2">
       <div class="border-t border-gray-200 pt-3 flex items-center gap-x-6 text-gray-600">
         <button @click="toggleLike" :disabled="post.isLiking"
@@ -507,8 +464,8 @@ async function handleCommentSubmit() {
               d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.5l1.318-1.182a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z">
             </path>
           </svg>
-          <span class="text-sm font-medium">Like</span>
-          <span v-if="(post.like_count ?? 0) > 0" class="text-sm font-medium">{{ post.like_count }}</span>
+          <span class="text-sm font-medium">Like</span><span v-if="(post.like_count ?? 0) > 0"
+            class="text-sm font-medium">{{ post.like_count }}</span>
         </button>
         <button @click="toggleCommentDisplay"
           class="flex items-center gap-x-1.5 transition-colors duration-150 hover:text-blue-600">
@@ -517,8 +474,8 @@ async function handleCommentSubmit() {
               d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z">
             </path>
           </svg>
-          <span class="text-sm font-medium">Comment</span>
-          <span v-if="(post.comment_count ?? 0) > 0" class="text-sm font-medium">{{ post.comment_count }}</span>
+          <span class="text-sm font-medium">Comment</span><span v-if="(post.comment_count ?? 0) > 0"
+            class="text-sm font-medium">{{ post.comment_count }}</span>
         </button>
       </div>
     </footer>
@@ -528,9 +485,10 @@ async function handleCommentSubmit() {
       <div v-if="isLoadingComments">Loading...</div>
       <div v-else-if="commentError" class="text-red-600">Error: {{ commentError }}</div>
       <div v-else>
+        <!-- THIS IS THE LINE THAT NEEDS TO BE FIXED -->
         <CommentItem v-for="comment in commentsForThisPost" :key="comment.id" :comment="comment"
           :parentPostType="props.post.post_type" :parentObjectId="props.post.object_id"
-          :parentPostActualId="props.post.id" @report-content="reEmitReportEvent" />
+          :parentPostActualId="props.post.id" @report-content="handleCommentReport" />
         <p v-if="commentsForThisPost.length === 0" class="text-sm text-gray-500 py-4 text-center">No comments yet.</p>
       </div>
       <form v-if="isAuthenticated" @submit.prevent="handleCommentSubmit" class="mt-4 flex items-start gap-3">
@@ -546,6 +504,9 @@ async function handleCommentSubmit() {
         </div>
       </form>
     </section>
+
+    <!-- The Report Modal (already added in your code) -->
+    <ReportFormModal :is-open="isReportModalOpen" :target="reportTarget" @close="isReportModalOpen = false" />
 
   </article>
 </template>

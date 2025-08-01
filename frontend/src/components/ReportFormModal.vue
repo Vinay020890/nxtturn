@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
+import { useModerationStore } from '@/stores/moderation';
 
 const props = defineProps<{
   isOpen: boolean;
+  target: { ct_id: number; obj_id: number; } | null;
 }>();
 
-const emit = defineEmits<{
-  (e: 'close'): void;
-  (e: 'submit', payload: { reason: string; details: string }): void;
-}>();
+const emit = defineEmits(['close']);
+
+const moderationStore = useModerationStore();
 
 const selectedReason = ref('');
 const reportDetails = ref('');
-const error = ref('');
+const localValidationError = ref(''); // For form validation before submitting
 
 const reasonOptions = [
   { value: 'SPAM', label: 'Spam or Misleading' },
@@ -22,29 +23,47 @@ const reasonOptions = [
   { value: 'OTHER', label: 'Other' },
 ];
 
-const handleSubmit = () => {
-  error.value = '';
+const handleSubmit = async () => {
+  localValidationError.value = '';
   if (!selectedReason.value) {
-    error.value = 'Please select a reason for the report.';
+    localValidationError.value = 'Please select a reason for the report.';
     return;
   }
   if (selectedReason.value === 'OTHER' && !reportDetails.value.trim()) {
-    error.value = "Details are required when selecting 'Other'.";
+    localValidationError.value = "Details are required when selecting 'Other'.";
     return;
   }
-  emit('submit', { reason: selectedReason.value, details: reportDetails.value });
+  if (!props.target) {
+    localValidationError.value = "Cannot submit report: target is missing.";
+    return;
+  }
+
+  const success = await moderationStore.submitReport({
+    ct_id: props.target.ct_id,
+    obj_id: props.target.obj_id,
+    reason: selectedReason.value,
+    details: reportDetails.value,
+  });
+
+  if (success) {
+    setTimeout(() => {
+      handleClose();
+    }, 2500);
+  }
 };
 
 const handleClose = () => {
   emit('close');
+  setTimeout(() => {
+    moderationStore.resetReportState();
+  }, 300);
 };
 
-// Reset form when the modal is closed
 watch(() => props.isOpen, (newVal) => {
   if (!newVal) {
     selectedReason.value = '';
     reportDetails.value = '';
-    error.value = '';
+    localValidationError.value = '';
   }
 });
 </script>
@@ -58,7 +77,12 @@ watch(() => props.isOpen, (newVal) => {
           <button @click="handleClose" class="text-gray-400 hover:text-gray-600">×</button>
         </div>
 
-        <form @submit.prevent="handleSubmit" class="space-y-4">
+        <div v-if="moderationStore.submissionSuccess" class="text-center p-4 bg-green-100 text-green-700 rounded-md">
+          <p class="font-bold">Thank you!</p>
+          <p>Your report has been submitted successfully.</p>
+        </div>
+
+        <form v-else @submit.prevent="handleSubmit" class="space-y-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Reason for reporting:</label>
             <select v-model="selectedReason" class="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
@@ -80,16 +104,28 @@ watch(() => props.isOpen, (newVal) => {
             ></textarea>
           </div>
 
-          <div v-if="error" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-3 text-sm">
-            <p>{{ error }}</p>
+          <!-- THIS IS THE CORRECTED ERROR/FEEDBACK BLOCK WITH THE CLOSING TAG -->
+          <div v-if="localValidationError || moderationStore.submissionError"
+               class="p-3 text-sm rounded-md"
+               :class="{
+                 'bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800': moderationStore.submissionError?.includes('already reported'),
+                 'bg-red-100 border-l-4 border-red-500 text-red-700': localValidationError || !moderationStore.submissionError?.includes('already reported')
+               }">
+            <p class="font-bold" v-if="moderationStore.submissionError?.includes('already reported')">
+              Already Reported
+            </p>
+            <p>{{ localValidationError || moderationStore.submissionError }}</p>
+            <p v-if="moderationStore.submissionError?.includes('already reported')" class="mt-1 text-xs">
+              Our moderation team has been notified. Thank you for your vigilance.
+            </p>
           </div>
 
           <div class="pt-4 flex justify-end gap-3">
             <button type="button" @click="handleClose" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">
               Cancel
             </button>
-            <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
-              Submit Report
+            <button type="submit" :disabled="moderationStore.isSubmittingReport" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-300">
+              {{ moderationStore.isSubmittingReport ? 'Submitting...' : 'Submit Report' }}
             </button>
           </div>
         </form>

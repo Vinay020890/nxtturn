@@ -14,6 +14,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny, IsAuthenticate
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.pagination import PageNumberPagination, CursorPagination # NEW: Import CursorPagination
+from rest_framework.filters import SearchFilter
 
 from .models import (
     UserProfile, Follow, StatusPost, ForumCategory, Group, ForumPost,
@@ -165,6 +166,8 @@ class StatusPostListCreateView(generics.ListCreateAPIView):
     queryset = StatusPost.objects.select_related('author__profile', 'group__creator').prefetch_related('likes', 'media', 'poll__options', 'poll__votes').order_by('-created_at')
     serializer_class = StatusPostSerializer
     pagination_class = PageNumberPagination # KEEP: This view handles both list (paginated) and create (not paginated)
+    filter_backends = [SearchFilter]
+    search_fields = ['content', 'author__username']
 
     def get_permissions(self):
         if self.request.method == 'POST':

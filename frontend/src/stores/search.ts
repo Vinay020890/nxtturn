@@ -1,46 +1,39 @@
-// src/stores/search.ts
+// C:\Users\Vinay\Project\frontend\src\stores\search.ts
+
 import { ref } from 'vue';
 import { defineStore } from 'pinia';
 import axiosInstance from '@/services/axiosInstance';
 import type { User } from '@/stores/auth';
-import type { Post } from '@/stores/feed'; // <-- 1. IMPORT the Post type
 
-// --- Interface for API Responses ---
+// --- Interface for API Response ---
+// This store now only cares about user responses.
 interface PaginatedUserResponse {
   count: number;
   next: string | null;
   previous: string | null;
   results: User[];
 }
-// NEW: Interface for post search results
-interface PaginatedPostResponse {
-  count: number;
-  next: string | null;
-  previous: string | null;
-  results: Post[];
-}
 
 export const useSearchStore = defineStore('search', () => {
   // --- State ---
-  const searchQuery = ref(''); 
-  
-  // State for User Search (renamed for clarity)
+  // This store now only holds state for USER search results.
   const userResults = ref<User[]>([]);
   const isLoadingUsers = ref(false);
   const userError = ref<string | null>(null);
 
-  // NEW: State for Content/Post Search
-  const postResults = ref<Post[]>([]);
-  const isLoadingPosts = ref(false);
-  const postError = ref<string | null>(null);
-
   // --- Actions ---
 
-  // This is the old searchUsers, now private
-  async function _searchUsers(query: string) {
+  // We rename this action to `searchUsers` and make it public.
+  // This is its only job now.
+  async function searchUsers(query: string) {
+    if (!query.trim()) {
+        clearSearch();
+        return;
+    }
     isLoadingUsers.value = true;
     userError.value = null;
     try {
+      // Assuming your user search endpoint is /search/users/. If it's just /search/, adjust here.
       const response = await axiosInstance.get<PaginatedUserResponse>('/search/users/', {
         params: { q: query }
       });
@@ -52,63 +45,22 @@ export const useSearchStore = defineStore('search', () => {
       isLoadingUsers.value = false;
     }
   }
-  
-  // NEW: Action to search for posts
-  async function _searchPosts(query: string) {
-    isLoadingPosts.value = true;
-    postError.value = null;
-    try {
-      const response = await axiosInstance.get<PaginatedPostResponse>('/search/content/', {
-        params: { q: query }
-      });
-      postResults.value = response.data.results;
-    } catch (err: any) {
-      postError.value = err.response?.data?.detail || 'Failed to search for content.';
-      postResults.value = [];
-    } finally {
-      isLoadingPosts.value = false;
-    }
-  }
 
-  // NEW: Master search action that runs both searches
-  async function performSearch(query: string) {
-    if (!query.trim()) {
-      clearSearch();
-      return;
-    }
-    searchQuery.value = query;
-
-    // Run both searches concurrently for better performance
-    await Promise.all([
-      _searchUsers(query),
-      _searchPosts(query)
-    ]);
-  }
-
+  // A simple function to clear only the state managed by this store.
   function clearSearch() {
-    searchQuery.value = '';
     userResults.value = [];
-    postResults.value = [];
     userError.value = null;
-    postError.value = null;
   }
 
+  // --- Return only what this store is responsible for ---
   return {
-    // Shared State
-    searchQuery,
-
     // User Search State & Results
     userResults,
     isLoadingUsers,
     userError,
     
-    // Post Search State & Results
-    postResults,
-    isLoadingPosts,
-    postError,
-
     // Actions
-    performSearch,
+    searchUsers, // This is now the public action to call.
     clearSearch,
   };
 });

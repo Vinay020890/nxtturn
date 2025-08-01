@@ -6,21 +6,17 @@ import PostItem from '@/components/PostItem.vue';
 import { useProfileStore } from '@/stores/profile';
 import { useAuthStore } from '@/stores/auth';
 import { storeToRefs } from 'pinia';
-import { useModerationStore } from '@/stores/moderation';
-import ReportFormModal from '@/components/ReportFormModal.vue';
 
 const route = useRoute();
 const profileStore = useProfileStore();
 const authStore = useAuthStore();
-const moderationStore = useModerationStore();
-const { submissionError } = storeToRefs(moderationStore);
+
 const { 
   currentProfile, userPosts, isLoadingProfile, isLoadingPosts, 
   errorProfile, errorPosts, postsPagination, isFollowing, isLoadingFollow 
 } = storeToRefs(profileStore);
+
 const { currentUser, isAuthenticated } = storeToRefs(authStore);
-const isReportModalOpen = ref(false);
-const contentToReport = ref<{ content_type_id: number; object_id: number; } | null>(null);
 const selectedFile = ref<File | null>(null);
 const picturePreviewUrl = ref<string | null>(null);
 const isUploadingPicture = ref(false);
@@ -56,31 +52,6 @@ const handlePageChange = (page: number) => {
   loadProfileData(page);
 };
 
-function handleOpenReportModal(payload: { content_type: string, content_type_id: number, object_id: number }) {
-  contentToReport.value = {
-    content_type_id: payload.content_type_id,
-    object_id: payload.object_id,
-  };
-  isReportModalOpen.value = true;
-}
-
-async function handleReportSubmit(payload: { reason: string; details: string }) {
-  if (!contentToReport.value) return;
-  const success = await moderationStore.submitReport({
-    ct_id: contentToReport.value.content_type_id,
-    obj_id: contentToReport.value.object_id,
-    reason: payload.reason,
-    details: payload.details,
-  });
-  if (success) {
-    isReportModalOpen.value = false;
-    contentToReport.value = null;
-    alert('Thank you for your report. It has been submitted for review.');
-  } else {
-    alert(`Failed to submit report: ${submissionError.value || 'An unknown error occurred.'}`);
-  }
-}
-
 function handleFileChange(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0];
   if (file) {
@@ -99,8 +70,7 @@ async function uploadProfilePicture() {
     await profileStore.updateProfilePicture(username.value, selectedFile.value);
     selectedFile.value = null;
     picturePreviewUrl.value = null;
-  } catch (error: any)
- {
+  } catch (error: any) {
     uploadError.value = error.message || "Failed to upload picture.";
     selectedFile.value = null;
     picturePreviewUrl.value = null;
@@ -120,10 +90,8 @@ async function uploadProfilePicture() {
       <p>{{ errorProfile }}</p>
     </div>
 
-    <!-- This container now uses the grid system with sticky positioning for the left column -->
     <div v-else-if="currentProfile" class="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 grid grid-cols-12 gap-8 pt-6">
       
-      <!-- Column 1: The Profile Card. Added sticky positioning. -->
       <aside class="col-span-6 sticky top-6 self-start">
         <div class="bg-white rounded-lg shadow-md p-6">
           <div class="flex flex-col items-center text-center">
@@ -158,7 +126,6 @@ async function uploadProfilePicture() {
         </div>
       </aside>
 
-      <!-- Column 2: The User's Posts, spanning 6 columns to be identical to the feed -->
       <div class="col-span-6 min-w-0">
         <div v-if="isLoadingPosts && userPosts.length === 0" class="text-center p-10 text-gray-500">
           Loading posts...
@@ -171,7 +138,6 @@ async function uploadProfilePicture() {
             v-for="post in userPosts" 
             :key="post.id" 
             :post="post" 
-            @report-content="handleOpenReportModal" 
           />
         </div>
         <div v-else class="bg-white rounded-lg shadow-md p-10 text-center text-gray-500">
@@ -197,10 +163,8 @@ async function uploadProfilePicture() {
         </div>
       </div>
     </div>
-    <ReportFormModal 
-      :is-open="isReportModalOpen" 
-      @close="isReportModalOpen = false" 
-      @submit="handleReportSubmit" 
-    />
+
+    <!-- The ReportFormModal has been removed from here. PostItem now handles it. -->
+    
   </div>
 </template>

@@ -3,7 +3,6 @@ import { onMounted, onUnmounted, watch, ref, computed } from 'vue';
 import { RouterView, useRouter, RouterLink, useRoute } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useNotificationStore } from '@/stores/notification';
-import { useSearchStore } from '@/stores/search';
 import { storeToRefs } from 'pinia';
 import { debounce } from 'lodash-es';
 import { getAvatarUrl } from '@/utils/avatars';
@@ -11,38 +10,66 @@ import type { User } from '@/stores/auth';
 import type { Post } from '@/stores/feed';
 import eventBus from './services/eventBus';
 
+// --- 1. IMPORT BOTH SEARCH STORES ---
+import { useSearchStore } from '@/stores/search'; // The User Expert
+import { useFeedStore } from '@/stores/feed';     // The Post Expert
+
+// --- 2. INITIALIZE ALL STORES ---
 const authStore = useAuthStore();
 const notificationStore = useNotificationStore();
 const searchStore = useSearchStore();
+const feedStore = useFeedStore();
 const router = useRouter();
 const route = useRoute();
+
+// --- 3. GET STATE FROM THE CORRECT STORES ---
 const { currentUser } = storeToRefs(authStore);
-const { userResults, postResults, isLoadingUsers, isLoadingPosts } = storeToRefs(searchStore);
+
+// Get user search results from searchStore
+const { userResults, isLoadingUsers } = storeToRefs(searchStore);
+
+// Get post search results from feedStore
+const { searchResultsPosts: postResults, isLoadingSearchResults: isLoadingPosts } = storeToRefs(feedStore);
+
+// --- 4. LOCAL STATE for the dropdown ---
 const searchQuery = ref('');
 const showSearchDropdown = ref(false);
 const searchContainerRef = ref<HTMLDivElement | null>(null);
+
+// --- 5. COMPUTED PROPERTIES based on the new state ---
 const hasAnyResults = computed(() => userResults.value.length > 0 || postResults.value.length > 0);
 const isSearching = computed(() => isLoadingUsers.value || isLoadingPosts.value);
 
+// --- 6. ACTIONS ---
 function handleLogoClick(event: MouseEvent) {
   if (route.path === '/') {
     event.preventDefault(); 
     eventBus.emit('reset-feed-form');
   }
 }
+
 const handleFullSearchSubmit = () => {
   if (searchQuery.value.trim()) {
     showSearchDropdown.value = false;
     router.push({ name: 'search', query: { q: searchQuery.value.trim() } });
   }
 };
+
+// --- THIS IS THE KEY CHANGE ---
+// The debounced search now calls BOTH expert stores
 const debouncedSearch = debounce(async (query: string) => {
   if (query.length < 1) {
     searchStore.clearSearch();
+    feedStore.searchResultsPosts = []; // Manually clear post results
     return;
   }
-  await searchStore.performSearch(query);
+  // Tell each expert to do its job
+  await Promise.all([
+    searchStore.searchUsers(query),
+    feedStore.searchPosts(query)
+  ]);
 }, 300);
+
 const handleSearchInput = () => {
   if (searchQuery.value.trim()) {
     showSearchDropdown.value = true;
@@ -50,23 +77,30 @@ const handleSearchInput = () => {
   } else {
     showSearchDropdown.value = false;
     searchStore.clearSearch();
+    feedStore.searchResultsPosts = [];
   }
 };
+
 const selectUserAndNavigate = (user: User) => {
   showSearchDropdown.value = false;
   searchQuery.value = ''; 
   router.push({ name: 'profile', params: { username: user.username } });
 };
+
 const selectPostAndNavigate = (post: Post) => {
   showSearchDropdown.value = false;
   searchQuery.value = '';
+  // Assuming a route named 'single-post' exists
   router.push({ name: 'single-post', params: { postId: post.id } });
 };
+
 const closeSearchDropdownOnClickOutside = (event: MouseEvent) => {
   if (searchContainerRef.value && !searchContainerRef.value.contains(event.target as Node)) {
     showSearchDropdown.value = false;
   }
 };
+
+// --- LIFECYCLE AND WATCHERS (No changes needed here) ---
 watch(showSearchDropdown, (isOpen) => {
   if (isOpen) document.addEventListener('click', closeSearchDropdownOnClickOutside);
   else document.removeEventListener('click', closeSearchDropdownOnClickOutside);
@@ -87,18 +121,16 @@ const handleLogout = async () => { await authStore.logout(); };
 </script>
 
 <template>
+  <!-- The entire template remains the same as before. No changes needed here. -->
   <div class="h-screen flex flex-col bg-gray-50">
-    
     <header class="bg-white shadow-sm flex-shrink-0 z-20 sticky top-0">
       <nav class="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div class="flex items-center justify-between h-16">
-          
           <div class="flex-shrink-0">
             <RouterLink to="/" @click="handleLogoClick" class="text-2xl font-bold tracking-tight">
               <span class="bg-gradient-to-r from-blue-600 to-purple-500 bg-clip-text text-transparent">NxtTurn</span>
             </RouterLink>
           </div>
-
           <div class="flex-grow flex justify-center px-4" ref="searchContainerRef">
             <div class="relative w-full max-w-lg">
               <form @submit.prevent="handleFullSearchSubmit" v-if="authStore.isAuthenticated">
@@ -124,14 +156,13 @@ const handleLogout = async () => { await authStore.logout(); };
                   </template>
                   <template v-if="postResults.length > 0">
                     <li class="px-4 pt-2 pb-1 text-xs font-bold text-gray-500 uppercase border-t border-gray-100 mt-1">Posts</li>
-                    <li v-for="post in postResults.slice(0, 3)" :key="`post-${post.id}`"><a @click.prevent="selectPostAndNavigate(post)" href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 truncate">{{ post.content }}</a></li>
+                    <li v-for="post in postResults.slice(0, 3)" :key="`post-${post.id}`"><a @click.prevent="selectPostAndNavigate(post)" href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 truncate">{{ post.content || post.title }}</a></li>
                   </template>
                   <li v-if="!isSearching && hasAnyResults" class="border-t border-gray-200"><button @click="handleFullSearchSubmit" class="w-full text-left px-4 py-2 text-sm font-medium text-blue-600 hover:bg-gray-100">See all results for "{{ searchQuery }}"</button></li>
                 </ul>
               </div>
             </div>
           </div>
-
           <div class="flex items-center gap-4 flex-shrink-0">
             <template v-if="authStore.isAuthenticated">
               <a href="#" class="text-sm font-medium text-gray-600 hover:text-blue-500">Explore</a>
@@ -155,7 +186,6 @@ const handleLogout = async () => { await authStore.logout(); };
         </div>
       </nav>
     </header>
-
     <div class="flex-grow overflow-y-auto scrollbar-hide">
       <RouterView :key="route.fullPath" />
     </div>

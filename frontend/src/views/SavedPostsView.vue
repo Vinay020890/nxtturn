@@ -1,43 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { onMounted } from 'vue';
 import { onBeforeRouteLeave } from 'vue-router';
 import { useFeedStore } from '@/stores/feed';
 import PostItem from '@/components/PostItem.vue';
-import { storeToRefs } from 'pinia';
-import { useModerationStore } from '@/stores/moderation';
-import ReportFormModal from '@/components/ReportFormModal.vue';
 
 const feedStore = useFeedStore();
-const moderationStore = useModerationStore();
-const { submissionError } = storeToRefs(moderationStore);
-
-const isReportModalOpen = ref(false);
-const contentToReport = ref<{ content_type_id: number; object_id: number; } | null>(null);
-
-function handleOpenReportModal(payload: { content_type: string, content_type_id: number, object_id: number }) {
-  contentToReport.value = {
-    content_type_id: payload.content_type_id,
-    object_id: payload.object_id,
-  };
-  isReportModalOpen.value = true;
-}
-
-async function handleReportSubmit(payload: { reason: string; details: string }) {
-  if (!contentToReport.value) return;
-  const success = await moderationStore.submitReport({
-    ct_id: contentToReport.value.content_type_id,
-    obj_id: contentToReport.value.object_id,
-    reason: payload.reason,
-    details: payload.details,
-  });
-  if (success) {
-    isReportModalOpen.value = false;
-    contentToReport.value = null;
-    alert('Thank you for your report. It has been submitted for review.');
-  } else {
-    alert(`Failed to submit report: ${submissionError.value || 'An unknown error occurred.'}`);
-  }
-}
 
 async function fetchMoreSavedPosts() {
   await feedStore.fetchNextPageOfSavedPosts();
@@ -45,7 +12,10 @@ async function fetchMoreSavedPosts() {
 
 // Lifecycle Hooks
 onMounted(() => {
-  feedStore.fetchSavedPosts();
+  // Only fetch if the list is empty to prevent re-fetching on navigation
+  if (feedStore.savedPosts.length === 0) {
+    feedStore.fetchSavedPosts();
+  }
 });
 
 onBeforeRouteLeave((to, from) => {
@@ -82,7 +52,6 @@ onBeforeRouteLeave((to, from) => {
         v-for="post in feedStore.savedPosts"
         :key="post.id"
         :post="post"
-        @report-content="handleOpenReportModal"
       />
       
       <div v-if="feedStore.savedPostsNextPageUrl" class="flex justify-center py-4">
@@ -96,10 +65,7 @@ onBeforeRouteLeave((to, from) => {
       </div>
     </div>
 
-    <ReportFormModal 
-      :is-open="isReportModalOpen" 
-      @close="isReportModalOpen = false" 
-      @submit="handleReportSubmit"
-    />
+    <!-- The ReportFormModal has been removed from here. PostItem now handles it. -->
+    
   </div>
 </template>

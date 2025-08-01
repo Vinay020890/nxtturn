@@ -1,68 +1,78 @@
 <script setup lang="ts">
-import { ref, onUnmounted, watch, computed } from 'vue';
-import { useSearchStore } from '@/stores/search';
-import { storeToRefs } from 'pinia';
-import { useRoute, useRouter } from 'vue-router'; // <-- Import useRouter
+import { ref, watch, computed } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { debounce } from 'lodash-es';
-import PostItem from '@/components/PostItem.vue'; // <-- 1. IMPORT PostItem
-import { getAvatarUrl } from '@/utils/avatars'; // <-- Import avatar utility
 
-const searchStore = useSearchStore();
+// --- 1. IMPORT BOTH STORES ---
+import { useSearchStore } from '@/stores/search'; // For Users
+import { useFeedStore } from '@/stores/feed';     // For Posts
+
+// --- 2. IMPORT COMPONENTS AND UTILS ---
+import PostItem from '@/components/PostItem.vue';
+import { getAvatarUrl } from '@/utils/avatars';
+
+// --- 3. INITIALIZE STORES AND ROUTER ---
 const route = useRoute();
-const router = useRouter(); // <-- Initialize router
+const router = useRouter();
+const searchStore = useSearchStore();
+const feedStore = useFeedStore();
 
-// --- 2. UPDATE to use new store properties ---
-const { 
-  searchQuery,
-  userResults, 
-  isLoadingUsers, 
-  userError,
-  postResults,
-  isLoadingPosts,
-  postError
-} = storeToRefs(searchStore);
-
+// --- 4. LOCAL STATE ---
 const localQuery = ref((route.query.q as string) || '');
-const activeTab = ref<'users' | 'posts'>('users'); // State for the active tab
+const activeTab = ref<'users' | 'posts'>('users');
 
-// --- 3. Initial Search on Page Load ---
+// --- 5. CONNECT TO STORE STATE WITH COMPUTED PROPERTIES ---
+// User-related data from the searchStore
+const userResults = computed(() => searchStore.userResults);
+const isLoadingUsers = computed(() => searchStore.isLoadingUsers);
+const userError = computed(() => searchStore.userError);
+
+// Post-related data from the feedStore (using the new state we created)
+const postResults = computed(() => feedStore.searchResultsPosts);
+const isLoadingPosts = computed(() => feedStore.isLoadingSearchResults);
+const postError = computed(() => feedStore.searchError);
+
+// --- 6. THE MASTER SEARCH ACTION ---
+// This function now calls both stores to get all search results.
+const performSearch = (query: string) => {
+  if (query.trim()) {
+    // This assumes your user search store has a 'searchUsers' action.
+    // If it's named differently (like 'performSearch'), use that name.
+    searchStore.searchUsers(query); 
+    
+    // This calls the new action we created in feed.ts
+    feedStore.searchPosts(query);
+  } else {
+    // Clear results if query is empty
+    searchStore.clearSearch(); // Assuming this clears user results
+    feedStore.searchResultsPosts = []; // Manually clear post results
+  }
+};
+
+// --- 7. UI LOGIC (No major changes needed here) ---
+// Initial Search on Page Load
 if (localQuery.value) {
-  // Call the new master search action
-  searchStore.performSearch(localQuery.value);
+  performSearch(localQuery.value);
 }
 
-// --- 4. Watch for URL Query Changes ---
+// Watch for URL Query Changes (e.g., from navbar search)
 watch(() => route.query.q, (newQuery) => {
   const queryStr = (newQuery as string) || '';
   if (localQuery.value !== queryStr) {
     localQuery.value = queryStr;
-    searchStore.performSearch(queryStr);
+    performSearch(queryStr);
   }
 });
 
-// --- 5. Debounced Search from Input ---
+// Debounced Search from this page's input
 const debouncedSearch = debounce((query: string) => {
-  // Update the URL to reflect the search query
   router.push({ name: 'search', query: { q: query } });
-  // The watcher above will trigger the actual search
 }, 500);
 
 const handleInput = (event: Event) => {
   const query = (event.target as HTMLInputElement).value;
-  localQuery.value = query;
-  if (query.trim()) {
-    debouncedSearch(query);
-  } else {
-    // If input is cleared, clear the results and URL
-    searchStore.clearSearch();
-    router.push({ name: 'search' });
-  }
+  debouncedSearch(query);
 };
-
-onUnmounted(() => {
-  // Optional: you might want to keep search results when navigating away and back
-  // searchStore.clearSearch();
-});
 </script>
 
 <template>
@@ -73,7 +83,7 @@ onUnmounted(() => {
     <div class="relative mb-6">
       <input 
         type="text"
-        v-model="localQuery"
+        :value="localQuery"
         @input="handleInput"
         placeholder="Search for users or content..."
         class="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-full shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -103,7 +113,7 @@ onUnmounted(() => {
 
     <!-- Search Results Section -->
     <div>
-      <!-- Users Tab Content -->
+      <!-- Users Tab Content (This part should continue working as before) -->
       <div v-if="activeTab === 'users'">
         <div v-if="isLoadingUsers" class="text-center py-6 text-gray-500">Searching for users...</div>
         <div v-else-if="userError" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4"><p>{{ userError }}</p></div>
@@ -118,17 +128,18 @@ onUnmounted(() => {
             </router-link>
           </li>
         </ul>
-        <div v-else-if="searchQuery" class="text-center py-6 text-gray-500">No users found for "{{ searchQuery }}".</div>
+        <div v-else-if="localQuery" class="text-center py-6 text-gray-500">No users found for "{{ localQuery }}".</div>
       </div>
 
-      <!-- Posts Tab Content -->
+      <!-- Posts Tab Content (This part is now wired to feedStore) -->
       <div v-if="activeTab === 'posts'">
         <div v-if="isLoadingPosts" class="text-center py-6 text-gray-500">Searching for posts...</div>
         <div v-else-if="postError" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4"><p>{{ postError }}</p></div>
         <div v-else-if="postResults.length > 0" class="space-y-6">
+          <!-- This will now work correctly, including likes, edits, etc. -->
           <PostItem v-for="post in postResults" :key="post.id" :post="post" />
         </div>
-        <div v-else-if="searchQuery" class="text-center py-6 text-gray-500">No posts found for "{{ searchQuery }}".</div>
+        <div v-else-if="localQuery" class="text-center py-6 text-gray-500">No posts found for "{{ localQuery }}".</div>
       </div>
     </div>
   </div>
