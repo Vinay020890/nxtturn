@@ -44,7 +44,7 @@ const directReplies = computed(() => {
 // --- 2. CREATE THE HANDLER METHOD ---
 function handleReportClick() {
   if (typeof props.comment.comment_content_type_id !== 'number') return;
-  
+
   emit('report-content', {
     content_type: 'comment', // Hardcoded as this component is always a comment
     content_type_id: props.comment.comment_content_type_id,
@@ -124,67 +124,60 @@ async function handleToggleCommentLike() {
 
 <template>
   <div class="flex items-start gap-3 py-3 border-b border-gray-200 last:border-b-0">
-    <img 
-      :src="getAvatarUrl(comment.author.picture, comment.author.first_name, comment.author.last_name)" 
-      alt="comment author avatar" 
-      class="w-8 h-8 rounded-full object-cover flex-shrink-0 bg-gray-200"
-     >
+    <img :src="getAvatarUrl(comment.author.picture, comment.author.first_name, comment.author.last_name)"
+      alt="comment author avatar" class="w-8 h-8 rounded-full object-cover flex-shrink-0 bg-gray-200">
     <div class="flex-grow">
       <div class="bg-gray-100 rounded-lg p-3">
         <div class="flex items-baseline justify-between">
           <span class="font-bold text-sm text-gray-800">{{ props.comment.author.username }}</span>
-          <span v-if="!isEditing" class="text-xs text-gray-500">{{ format(new Date(props.comment.created_at), 'MMM d') }}</span>
+          <span v-if="!isEditing" class="text-xs text-gray-500">{{ format(new Date(props.comment.created_at), 'MMM d')
+            }}</span>
         </div>
-        <div v-if="!isEditing" class="text-sm text-gray-700 mt-1 whitespace-pre-wrap" v-html="linkifyContent(props.comment.content)"></div>
+        <div v-if="!isEditing" class="text-sm text-gray-700 mt-1 whitespace-pre-wrap"
+          v-html="linkifyContent(props.comment.content)"></div>
         <form v-else @submit.prevent="saveEdit" class="mt-1">
-          <MentionAutocomplete
-            v-model="editableContent"
-            placeholder="Edit your comment..."
-            :rows="2"
-            class="text-sm"
-          />
+          <MentionAutocomplete v-model="editableContent" placeholder="Edit your comment..." :rows="2" class="text-sm" />
           <div class="flex justify-end gap-2 mt-2">
-            <button @click="toggleEditMode(false)" type="button" class="text-xs font-semibold text-gray-600 px-3 py-1 rounded-full hover:bg-gray-200">Cancel</button>
-            <button type="submit" class="text-xs font-semibold text-white bg-blue-500 px-3 py-1 rounded-full hover:bg-blue-600">Save</button>
+            <button @click="toggleEditMode(false)" type="button"
+              class="text-xs font-semibold text-gray-600 px-3 py-1 rounded-full hover:bg-gray-200">Cancel</button>
+            <button type="submit"
+              class="text-xs font-semibold text-white bg-blue-500 px-3 py-1 rounded-full hover:bg-blue-600">Save</button>
           </div>
         </form>
       </div>
       <!-- 3. ADD THE REPORT BUTTON TO THE TEMPLATE -->
       <div v-if="!isEditing" class="flex items-center gap-4 mt-1 px-3 text-xs font-semibold text-gray-500">
-        <button @click="handleToggleCommentLike" class="hover:underline" :class="{'text-blue-600 font-bold': props.comment.is_liked_by_user}">Like ({{ props.comment.like_count ?? 0 }})</button>
+        <button @click="handleToggleCommentLike" class="hover:underline"
+          :class="{ 'text-blue-600 font-bold': props.comment.is_liked_by_user }">Like ({{ props.comment.like_count ?? 0
+          }})</button>
         <button v-if="canReplyToThisComment" @click="toggleReplyForm" class="hover:underline">Reply</button>
         <button v-if="isCommentAuthor" @click="toggleEditMode(true)" class="hover:underline">Edit</button>
         <button v-if="isCommentAuthor" @click="deleteComment" class="hover:underline text-red-500">Delete</button>
         <!-- This is the new button -->
-        <button v-if="authStore.isAuthenticated && !isCommentAuthor" @click="handleReportClick" class="hover:underline">Report</button>
+        <button v-if="authStore.isAuthenticated && !isCommentAuthor" @click="handleReportClick"
+          class="hover:underline">Report</button>
       </div>
       <!-- END OF ADDITION -->
       <div v-if="showReplyForm" class="mt-2">
         <form @submit.prevent="submitReply">
-          <MentionAutocomplete
-            v-model="replyContent"
-            placeholder="Write a reply... Mention with @"
-            :rows="2"
-            class="text-sm"
-          />
+          <MentionAutocomplete v-model="replyContent" placeholder="Write a reply... Mention with @" :rows="2"
+            class="text-sm" />
           <div v-if="replyError" class="text-red-600 text-xs mt-1">{{ replyError }}</div>
           <div class="flex justify-end gap-2 mt-2">
-            <button @click="toggleReplyForm" type="button" class="text-xs font-semibold text-gray-600 px-3 py-1 rounded-full hover:bg-gray-200">Cancel</button>
-            <button type="submit" :disabled="isSubmittingReply" class="text-xs font-semibold text-white bg-blue-500 px-3 py-1 rounded-full hover:bg-blue-600 disabled:bg-blue-300">{{ isSubmittingReply ? 'Replying...' : 'Reply' }}</button>
+            <button @click="toggleReplyForm" type="button"
+              class="text-xs font-semibold text-gray-600 px-3 py-1 rounded-full hover:bg-gray-200">Cancel</button>
+            <button type="submit" :disabled="isSubmittingReply"
+              class="text-xs font-semibold text-white bg-blue-500 px-3 py-1 rounded-full hover:bg-blue-600 disabled:bg-blue-300">{{
+                isSubmittingReply ? 'Replying...' : 'Reply' }}</button>
           </div>
         </form>
       </div>
       <div v-if="directReplies.length > 0" class="mt-3 pl-3 border-l-2 border-gray-200">
         <!-- The re-emit logic will be added to PostItem, which renders this component -->
-        <CommentItem
-          v-for="reply in directReplies"
-          :key="reply.id"
-          :comment="reply"
-          :parentPostType="props.parentPostType"
-          :parentObjectId="props.parentObjectId"
-          :parentPostActualId="props.parentPostActualId"
-          :currentDepth="effectiveDepth + 1"
-        />
+        <CommentItem v-for="reply in directReplies" :key="reply.id" :comment="reply"
+          :parentPostType="props.parentPostType" :parentObjectId="props.parentObjectId"
+          :parentPostActualId="props.parentPostActualId" :currentDepth="effectiveDepth + 1"
+          @report-content="emit('report-content', $event)" />
       </div>
     </div>
   </div>

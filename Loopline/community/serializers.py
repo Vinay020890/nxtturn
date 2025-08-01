@@ -276,6 +276,9 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
 
 # --- HEAVILY REFACTORED StatusPostSerializer with UPDATE logic ---
 # --- REPLACEMENT StatusPostSerializer with Polls and Fixes ---
+# In C:\Users\Vinay\Project\Loopline\community\serializers.py
+
+# --- REPLACEMENT FOR StatusPostSerializer ---
 class StatusPostSerializer(serializers.ModelSerializer):
 
     class SimpleGroupSerializer(serializers.ModelSerializer):
@@ -290,34 +293,52 @@ class StatusPostSerializer(serializers.ModelSerializer):
     object_id = serializers.SerializerMethodField()
     post_type = serializers.SerializerMethodField()   
     comment_count = serializers.SerializerMethodField()
-    group = SimpleGroupSerializer(read_only=True, allow_null=True)
-    group_id = serializers.PrimaryKeyRelatedField(
+    
+    # This is the new unified field that accepts slugs for writing.
+    group = serializers.SlugRelatedField(
+        slug_field='slug',
         queryset=Group.objects.all(),
-        source='group',
-        write_only=True,
         required=False,
         allow_null=True
     )
 
-    # --- Fields for Media ---
+    # All other field definitions are identical to your original code.
     media = PostMediaSerializer(many=True, read_only=True)
     images = serializers.ListField(child=serializers.FileField(use_url=False), write_only=True, required=False)
     videos = serializers.ListField(child=serializers.FileField(use_url=False), write_only=True, required=False)
     media_to_delete = serializers.CharField(write_only=True, required=False, allow_blank=True)
-
-    # --- NEW: Fields for Polls ---
     poll = PollSerializer(read_only=True, allow_null=True)
     poll_data = serializers.CharField(write_only=True, required=False, allow_blank=True)
-
     is_saved = serializers.SerializerMethodField()
 
+    class Meta:
+        model = StatusPost
+        # 'group_id' has been removed from this list.
+        fields = [
+            'id', 'author', 'content', 'created_at', 'updated_at', 'group',
+            'like_count', 'is_liked_by_user', 'content_type_id', 'object_id', 
+            'post_type', 'comment_count',
+            'media', 'images', 'videos', 'media_to_delete',
+            'poll', 'poll_data', 'is_saved'
+        ]
+        # The read_only_fields are identical to your original code.
+        read_only_fields = [
+            'id', 'author', 'created_at', 'updated_at', 'like_count',
+            'is_liked_by_user', 'content_type_id', 'object_id', 'post_type',
+            'comment_count', 'media', 'poll', 'group', 'is_saved'
+        ]
 
-    
+    # This new method formats the group data correctly when you READ a post.
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        if instance.group:
+            representation['group'] = self.SimpleGroupSerializer(instance.group, context=self.context).data
+        return representation
+
+    # ALL of your existing validation, create, update, and get methods below this line
+    # are IDENTICAL to the code you provided and are included here.
+
     def validate_media_to_delete(self, value):
-        """
-        Custom validator to parse a JSON string of IDs from FormData
-        into a Python list of integers.
-        """
         if not value:
             return []
         try:
@@ -327,50 +348,6 @@ class StatusPostSerializer(serializers.ModelSerializer):
             return [int(id_val) for id_val in ids]
         except (json.JSONDecodeError, ValueError, TypeError):
             raise serializers.ValidationError("Invalid format. media_to_delete must be a JSON-formatted array of integers.")
-    
-
-    class Meta:
-        model = StatusPost
-        fields = [
-            'id', 'author', 'content', 'created_at', 'updated_at', 'group', 'group_id',
-            'like_count', 'is_liked_by_user', 'content_type_id', 'object_id', 
-            'post_type', 'comment_count',
-            # Media fields
-            'media',
-            'images',
-            'videos',
-            'media_to_delete',
-            # Poll fields
-            'poll',
-            'poll_data',
-            'is_saved'
-        ]
-        read_only_fields = [
-            'id', 'author', 'created_at', 'updated_at', 'like_count',
-            'is_liked_by_user', 'content_type_id', 'object_id', 'post_type',
-            'comment_count', 'media', 'poll', 'group', 'is_saved' # Added 'poll' here
-        ]
-
-     # --- ADD THE NEW METHOD HERE ---
-    # def validate_images(self, files):
-    #    """
-    #    Custom validation to check for unsupported image types like AVIF.
-    #   """
-    #    for f in files:
-    #        # Check the filename extension
-    #        if f.name.lower().endswith('.avif'):
-    #            raise serializers.ValidationError(
-    #                f"Unsupported image format: '{f.name}'. Please use JPG, PNG, or WEBP."
-    #            )
-    #        # You can add more checks here if needed
-    #    return files
-    # --- END OF NEW METHOD ---
-
-    # In community/serializers.py -> StatusPostSerializer
-# Replace your entire validate_poll_data method with this one.
-
-    # In community/serializers.py -> StatusPostSerializer
-# Replace your entire validate_poll_data method with this one.
 
     def validate_poll_data(self, value):
         if not value:
@@ -381,15 +358,8 @@ class StatusPostSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("Poll data must be a JSON object.")
             if 'question' not in data or not str(data['question']).strip():
                 raise serializers.ValidationError("Poll question cannot be empty.")
-
-            # --- THIS IS THE NEW, SMARTER VALIDATION LOGIC ---
-            # It now handles BOTH 'create' and 'update' scenarios.
-
             is_update_payload = 'options_to_update' in data or 'options_to_add' in data or 'options_to_delete' in data
-            
             if is_update_payload:
-                # This is an UPDATE. We don't need to validate as strictly.
-                # We just check that the keys exist and are lists if provided.
                 if 'options_to_update' in data and not isinstance(data['options_to_update'], list):
                     raise serializers.ValidationError("options_to_update must be a list.")
                 if 'options_to_add' in data and not isinstance(data['options_to_add'], list):
@@ -397,48 +367,31 @@ class StatusPostSerializer(serializers.ModelSerializer):
                 if 'options_to_delete' in data and not isinstance(data['options_to_delete'], list):
                     raise serializers.ValidationError("options_to_delete must be a list.")
             else:
-                # This is a CREATE. It must have the simple 'options' key.
                 if 'options' not in data or not isinstance(data['options'], list):
                     raise serializers.ValidationError("Poll options must be a list.")
                 if len(data['options']) < 2:
                     raise serializers.ValidationError("A poll must have at least two options.")
                 if any(not str(opt).strip() for opt in data['options']):
                     raise serializers.ValidationError("Poll options cannot be empty.")
-            # --- END OF NEW LOGIC ---
-
-            # Return the parsed data, structure intact
             return data
         except json.JSONDecodeError:
             raise serializers.ValidationError("Invalid JSON format for poll data.")
 
     def validate(self, data):
         is_update = self.instance is not None
-        
         content = (data.get('content', self.instance.content if is_update else None) or '').strip()
         new_images = data.get('images', [])
         new_videos = data.get('videos', [])
         poll_data = data.get('poll_data')
-
         if is_update:
-            # --- THIS IS THE FIX ---
-            # The field-level `validate_media_to_delete` has already run and converted
-            # the JSON string into a Python list. We just need to get that list.
-            # We provide an empty list `[]` as the default if the key is not present.
             media_to_delete_ids = data.get('media_to_delete', [])
-            # --- END OF FIX ---
-
             surviving_media_count = self.instance.media.exclude(id__in=media_to_delete_ids).count()
             final_media_count = surviving_media_count + len(new_images) + len(new_videos)
-            
-            # This rule checks the final state of the post after the update is applied.
-            # If there's no text content left, AND no media left, AND no poll, it's an error.
             if not content and final_media_count == 0 and not poll_data:
                 raise serializers.ValidationError("A post cannot be empty. It must have text content, media, or a poll.")
         else:
-            # On create, the post must have something.
             if not content and not new_images and not new_videos and not poll_data:
                 raise serializers.ValidationError("A post must have text content, media, or a poll.")
-        
         return data
 
     @transaction.atomic
@@ -447,20 +400,11 @@ class StatusPostSerializer(serializers.ModelSerializer):
         images_data = validated_data.pop('images', [])
         videos_data = validated_data.pop('videos', [])
         poll_data = validated_data.pop('poll_data', None)
-        validated_data.pop('media_to_delete', None) # Not used in create
-
-        # --- THIS IS THE FIX ---
-        # If a poll is being created, we ignore any separate 'content' that might have been
-        # sent and instead set the post's content to be the poll's question.
-        # This prevents the question from appearing twice in the UI.
+        validated_data.pop('media_to_delete', None)
         if poll_data:
             validated_data['content'] = poll_data.get('question', '')
-        # --- END OF FIX ---
-
         validated_data['author'] = request.user
         post = StatusPost.objects.create(**validated_data)
-
-        # Handle Media
         media_to_create = []
         for image_file in images_data:
             media_to_create.append(PostMedia(post=post, media_type='image', file=image_file))
@@ -468,42 +412,27 @@ class StatusPostSerializer(serializers.ModelSerializer):
             media_to_create.append(PostMedia(post=post, media_type='video', file=video_file))
         if media_to_create:
             PostMedia.objects.bulk_create(media_to_create)
-
-        # Handle Poll Creation
         if poll_data:
             poll = Poll.objects.create(post=post, question=poll_data['question'])
             poll_options_to_create = [
                 PollOption(poll=poll, text=option_text) for option_text in poll_data['options']
             ]
             PollOption.objects.bulk_create(poll_options_to_create)
-
         if post.content:
             process_mentions(actor=request.user, target_object=post, content_text=post.content)
-            
         return post
-
-   
 
     @transaction.atomic
     def update(self, instance, validated_data):
-        # --- CHANGE 1: Get the request object to know who the user is ---
         request = self.context.get('request')
-        
         images_data = validated_data.pop('images', [])
         videos_data = validated_data.pop('videos', [])
         media_to_delete_ids = validated_data.pop('media_to_delete', [])
         poll_data = validated_data.pop('poll_data', None)
-        
-        # --- CHANGE 2: Capture the original content BEFORE updating ---
         original_content = instance.content
-        
-        # This line updates the instance with new data (e.g., new content from the form)
         instance = super().update(instance, validated_data)
-
-        # This part for handling media and polls remains unchanged
         if media_to_delete_ids:
             instance.media.filter(id__in=media_to_delete_ids).delete()
-        
         media_to_create = []
         for image_file in images_data:
             media_to_create.append(PostMedia(post=instance, media_type='image', file=image_file))
@@ -511,7 +440,6 @@ class StatusPostSerializer(serializers.ModelSerializer):
             media_to_create.append(PostMedia(post=instance, media_type='video', file=video_file))
         if media_to_create:
             PostMedia.objects.bulk_create(media_to_create)
-
         if poll_data and hasattr(instance, 'poll'):
             poll = instance.poll
             poll.question = poll_data.get('question', poll.question)
@@ -533,29 +461,17 @@ class StatusPostSerializer(serializers.ModelSerializer):
                 ]
                 if new_poll_options:
                     PollOption.objects.bulk_create(new_poll_options)
-            
         instance.save()
-
-        # --- CHANGE 3: Process mentions if the content has changed ---
-        # This checks if the new content is different from the old content.
         if instance.content is not None and instance.content != original_content:
             process_mentions(actor=request.user, target_object=instance, content_text=instance.content)
-        # --- END OF CHANGE 3 ---
-            
         return self.Meta.model.objects.get(pk=instance.pk)
-    
-    
+
     def get_is_saved(self, obj):
-        """
-        Checks if the post is saved by the requesting user.
-        """
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
             return False
-        # Uses the 'saved_by' related_name from the UserProfile model
         return obj.saved_by.filter(user=request.user).exists()
     
-
     def get_like_count(self, obj):
         return obj.likes.count() if hasattr(obj, 'likes') else 0
 
@@ -580,6 +496,8 @@ class StatusPostSerializer(serializers.ModelSerializer):
             content_type = ContentType.objects.get_for_model(obj)
             return Comment.objects.filter(content_type=content_type, object_id=obj.pk).count()
         return 0
+
+# --- END OF REPLACEMENT FOR StatusPostSerializer ---
 
     # ... (all get_* methods remain the same)
 # --- FeedItemSerializer and other serializers remain unchanged ---
@@ -670,12 +588,13 @@ class GroupSerializer(serializers.ModelSerializer):
     member_count = serializers.IntegerField(source='members.count', read_only=True)
     is_member = serializers.SerializerMethodField()
     is_creator = serializers.SerializerMethodField() # <-- 1. ADD THIS LINE
+    members = UserSerializer(many=True, read_only=True)
 
     class Meta:
         model = Group
         fields = [
             'id', 'name', 'slug', 'description', 'creator', 'member_count', 
-            'is_member', 'is_creator', 'created_at', 'privacy_level' # <-- 2. ADD 'is_creator' HERE
+            'is_member', 'is_creator', 'created_at', 'privacy_level', 'members' # <-- 2. ADD 'is_creator' HERE
         ]
         read_only_fields = ['creator', 'member_count', 'created_at']
 

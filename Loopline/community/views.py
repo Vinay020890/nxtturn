@@ -25,7 +25,7 @@ from .serializers import (
     GroupSerializer, CommentSerializer, ConversationSerializer, # Removed FeedItemSerializer as it's not directly used in views
     MessageSerializer, MessageCreateSerializer, NotificationSerializer, ReportSerializer
 )
-from .permissions import IsOwnerOrReadOnly, IsGroupMember, IsCreatorOrReadOnly
+from .permissions import IsOwnerOrReadOnly, IsGroupMember, IsCreatorOrReadOnly,IsGroupCreator
 
 User = get_user_model()
 
@@ -316,15 +316,15 @@ class GroupRetrieveAPIView(generics.RetrieveUpdateDestroyAPIView):
 class GroupMembershipView(APIView):
     permission_classes = [IsAuthenticated]
     
-    def post(self, request, group_id, format=None):
-        group = get_object_or_404(Group, pk=group_id)
+    def post(self, request, slug, format=None):
+        group = get_object_or_404(Group, slug=slug)
         if group.members.filter(pk=request.user.pk).exists():
             return Response({"detail": "You are already a member."}, status=status.HTTP_400_BAD_REQUEST)
         group.members.add(request.user)
         return Response({"detail": f"Joined group '{group.name}'."}, status=status.HTTP_200_OK)
 
-    def delete(self, request, group_id, format=None):
-        group = get_object_or_404(Group, pk=group_id)
+    def delete(self, request, slug, format=None):
+        group = get_object_or_404(Group, slug=slug)
         user = request.user
 
         # --- THIS IS THE NEW SAFETY CHECK ---
@@ -347,9 +347,12 @@ class GroupPostListView(generics.ListAPIView):
     pagination_class = PostCursorPagination # NEW: Use cursor pagination here
 
     def get_queryset(self):
-        group_id = self.kwargs.get('group_id')
+        # This line DEFINES the variable 'group_slug' by getting it from the URL
+        group_slug = self.kwargs.get('slug')
+        
+        # This line USES the 'group_slug' variable we just defined
         return StatusPost.objects.filter(
-            group__id=group_id
+            group__slug=group_slug
         ).select_related(
             'author__profile', 
             'group'
@@ -524,3 +527,63 @@ class MarkAllNotificationsAsReadAPIView(APIView):
     def post(self, request, format=None):
         updated_count = request.user.notifications_received.filter(is_read=False).update(is_read=True)
         return Response({"detail": f"{updated_count} notification(s) marked as read."})
+    
+# ==================================
+# Group Management Views (New Section)
+# ==================================
+
+class GroupTransferOwnershipView(APIView):
+    """
+    API view to transfer the ownership of a group from the creator to another member.
+    """
+    # NOTE: You will need to add IsGroupCreator to your imports at the top of the file
+    # from .permissions import IsOwnerOrReadOnly, IsGroupMember, IsCreatorOrReadOnly, IsGroupCreator
+    permission_classes = [IsGroupCreator] 
+
+    def post(self, request, *args, **kwargs):
+        # The IsGroupCreator permission already verified that the request.user is the creator
+        # and that the group exists.
+        
+        group_slug = self.kwargs.get('slug')
+        group = get_object_or_404(Group, slug=group_slug) # Using get_object_or_404 is safer
+
+        new_owner_id = request.data.get('new_owner_id')
+
+        # 1. --- Basic Validation ---
+        if not new_owner_id:
+            return Response(
+                {"detail": "A new owner ID must be provided."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            new_owner = User.objects.get(pk=new_owner_id)
+        except User.DoesNotExist:
+            return Response(
+                {"detail": "The selected user does not exist."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # 2. --- Business Logic Validation ---
+        # Check if the new owner is the current creator
+        if new_owner == group.creator:
+            return Response(
+                {"detail": "You cannot transfer ownership to yourself."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Check if the new owner is actually a member of the group
+        if not group.members.filter(pk=new_owner.pk).exists():
+            return Response(
+                {"detail": "The selected user is not a member of this group."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 3. --- Perform the Transfer ---
+        group.creator = new_owner
+        group.save()
+
+        return Response(
+            {"detail": f"Ownership successfully transferred to {new_owner.username}."},
+            status=status.HTTP_200_OK
+        )

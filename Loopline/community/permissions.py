@@ -90,3 +90,29 @@ class IsCreatorOrReadOnly(permissions.BasePermission):
         # Write permissions (DELETE, PUT, PATCH) are only allowed to the creator of the group.
         # This assumes the object 'obj' is a Group instance.
         return obj.creator == request.user
+    
+
+class IsGroupCreator(permissions.BasePermission):
+    """
+    Custom permission to only allow the creator of a group to perform an action.
+    This permission checks the group based on a 'slug' from the URL kwargs.
+    """
+    message = "You must be the creator of this group to perform this action."
+
+    def has_permission(self, request, view):
+        # Retrieve the group slug from the URL
+        group_slug = view.kwargs.get('slug')
+        if not group_slug:
+            return False
+
+        # Find the group
+        try:
+            group = Group.objects.get(slug=group_slug)
+        except Group.DoesNotExist:
+            return False # No group found, deny access.
+
+        # Check if the authenticated user is the creator of the group
+        if request.user and request.user.is_authenticated:
+            return group.creator == request.user
+        
+        return False

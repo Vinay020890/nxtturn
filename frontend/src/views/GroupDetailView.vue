@@ -9,6 +9,7 @@ import CreatePostForm from '@/components/CreatePostForm.vue';
 import PostItem from '@/components/PostItem.vue';
 import { useModerationStore } from '@/stores/moderation';
 import ReportFormModal from '@/components/ReportFormModal.vue';
+import TransferOwnershipModal from '@/components/TransferOwnershipModal.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -20,6 +21,7 @@ const moderationStore = useModerationStore();
 const { submissionError } = storeToRefs(moderationStore);
 const isReportModalOpen = ref(false);
 const contentToReport = ref<{ content_type_id: number; object_id: number; } | null>(null);
+const isTransferModalOpen = ref(false);
 function handleOpenReportModal(payload: { content_type: string, content_type_id: number, object_id: number }) {
   contentToReport.value = {
     content_type_id: payload.content_type_id,
@@ -47,6 +49,8 @@ const {
   currentGroup, groupPosts, isLoadingGroup, groupError, isJoiningLeaving,
   joinLeaveError, isLoadingGroupPosts, groupPostsNextCursor, isDeletingGroup,
   deleteGroupError,
+  isTransferringOwnership,
+  transferOwnershipError,
 } = storeToRefs(groupStore);
 const { isAuthenticated, currentUser } = storeToRefs(authStore);
 const loadMoreGroupPostsTrigger = ref<HTMLElement | null>(null);
@@ -104,7 +108,7 @@ onBeforeRouteLeave((to, from) => {
 });
 
 onUnmounted(() => {
-    document.removeEventListener('click', closeOnClickOutside, true);
+  document.removeEventListener('click', closeOnClickOutside, true);
 });
 
 watch(() => route.params.slug, async (newSlug, oldSlug) => { // Watch the 'slug' param
@@ -120,7 +124,7 @@ watch(() => route.params.slug, async (newSlug, oldSlug) => { // Watch the 'slug'
 // --- NO CHANGES IN THIS SECTION ---
 async function handleJoinGroup() {
   if (!currentGroup.value) return;
-  const success = await groupStore.joinGroup(currentGroup.value.id);
+  const success = await groupStore.joinGroup(currentGroup.value.slug);
   if (success) {
   } else {
     alert(`Failed to join group: ${joinLeaveError.value || 'Unknown error'}`);
@@ -128,26 +132,43 @@ async function handleJoinGroup() {
 }
 async function handleLeaveGroup() {
   if (!currentGroup.value) return;
-  const success = await groupStore.leaveGroup(currentGroup.value.id);
+  const success = await groupStore.leaveGroup(currentGroup.value.slug);
   if (success) {
   } else {
     alert(`Failed to leave group: ${joinLeaveError.value || 'Unknown error'}`);
   }
 }
 function handleTransferOwnership() {
-  alert('Placeholder: The "Transfer Ownership" feature will be built next.');
+  // First, close the three-dots menu
+  showOptionsMenu.value = false;
+  // Then, open the transfer modal
+  isTransferModalOpen.value = true;
 }
 async function handleDeleteGroup() {
-    if (!currentGroup.value) return;
-    if (confirm(`Are you sure you want to permanently delete the group "${currentGroup.value.name}"? This action cannot be undone.`)) {
-        const success = await groupStore.deleteGroup(currentGroup.value.id);
-        if (success) {
-            alert('Group deleted successfully.');
-            router.push({ name: 'group-list' }); 
-        } else {
-            alert(`Failed to delete group: ${deleteGroupError.value || 'An unknown error occurred.'}`);
-        }
+  if (!currentGroup.value) return;
+  if (confirm(`Are you sure you want to permanently delete the group "${currentGroup.value.name}"? This action cannot be undone.`)) {
+    const success = await groupStore.deleteGroup(currentGroup.value.slug);
+    if (success) {
+      alert('Group deleted successfully.');
+      router.push({ name: 'group-list' });
+    } else {
+      alert(`Failed to delete group: ${deleteGroupError.value || 'An unknown error occurred.'}`);
     }
+  }
+}
+async function handleConfirmTransfer(newOwnerId: number) {
+  if (!currentGroup.value) return;
+
+  const success = await groupStore.transferOwnership(currentGroup.value.slug, newOwnerId);
+
+  if (success) {
+    isTransferModalOpen.value = false;
+    alert('Ownership transferred successfully. The page will now update.');
+    // The page will automatically update because the store action re-fetches group details.
+  } else {
+    // Display the error from the store
+    alert(`Failed to transfer ownership: ${transferOwnershipError.value || 'An unknown error occurred.'}`);
+  }
 }
 // --- END OF UNCHANGED SECTION ---
 </script>
@@ -178,33 +199,43 @@ async function handleDeleteGroup() {
           <!-- REPLACEMENT: The entire button container is replaced with this new structure -->
           <div class="flex-shrink-0 ml-4 flex space-x-2">
             <!-- Regular Join/Leave button is always visible if not the creator -->
-            <button
-              v-if="isAuthenticated && currentGroup && !isGroupCreator"
-              @click="currentGroup.is_member ? handleLeaveGroup() : handleJoinGroup()"
-              :disabled="isJoiningLeaving"
+            <button v-if="isAuthenticated && currentGroup && !isGroupCreator"
+              @click="currentGroup.is_member ? handleLeaveGroup() : handleJoinGroup()" :disabled="isJoiningLeaving"
               :class="[
-                  'px-6 py-2 rounded-full font-semibold transition-colors duration-200',
-                  currentGroup.is_member 
-                    ? 'bg-gray-200 text-gray-800 hover:bg-gray-300' 
-                    : 'bg-blue-600 text-white hover:bg-blue-700',
-                  isJoiningLeaving ? 'opacity-50 cursor-not-allowed' : ''
-              ]"
-            >
+                'px-6 py-2 rounded-full font-semibold transition-colors duration-200',
+                currentGroup.is_member
+                  ? 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                  : 'bg-blue-600 text-white hover:bg-blue-700',
+                isJoiningLeaving ? 'opacity-50 cursor-not-allowed' : ''
+              ]">
               {{ isJoiningLeaving ? 'Processing...' : (currentGroup.is_member ? 'Leave Group' : 'Join Group') }}
             </button>
 
             <!-- Creator's Options Menu (Three Dots) -->
             <div v-if="isAuthenticated && isGroupCreator" class="relative" ref="optionsMenuRef">
               <!-- The Three Dots Button -->
-              <button @click.stop="toggleOptionsMenu" class="p-2 rounded-full text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path></svg>
+              <button @click.stop="toggleOptionsMenu"
+                class="p-2 rounded-full text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                  <path
+                    d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z">
+                  </path>
+                </svg>
               </button>
 
               <!-- The Dropdown Menu -->
-              <div v-if="showOptionsMenu" class="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-10">
+              <div v-if="showOptionsMenu"
+                class="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-10">
                 <div class="py-1" role="menu" aria-orientation="vertical">
-                  <a href="#" @click.prevent="handleTransferOwnership" class="text-gray-700 block px-4 py-2 text-sm hover:bg-gray-100" role="menuitem">Transfer Ownership</a>
-                  <a href="#" @click.prevent="handleDeleteGroup" class="text-red-700 block px-4 py-2 text-sm hover:bg-red-50" role="menuitem">Delete Group</a>
+                  <a href="#" @click.prevent="handleTransferOwnership"
+                    class="text-gray-700 block px-4 py-2 text-sm hover:bg-gray-100" role="menuitem">Transfer
+                    Ownership</a>
+
+                  <a href="#" @click.prevent="handleTransferOwnership"
+                    class="text-gray-700 block px-4 py-2 text-sm hover:bg-gray-100" role="menuitem">Leave Group</a>
+
+                  <a href="#" @click.prevent="handleDeleteGroup"
+                    class="text-red-700 block px-4 py-2 text-sm hover:bg-red-50" role="menuitem">Delete Group</a>
                 </div>
               </div>
             </div>
@@ -229,7 +260,7 @@ async function handleDeleteGroup() {
 
       <!-- Create Post Form Section -->
       <div v-if="currentGroup.is_member" class="mb-8">
-        <CreatePostForm :group-id="currentGroup.id" />
+        <CreatePostForm :group-slug="currentGroup.slug" />
       </div>
       <div v-else-if="isAuthenticated && !currentGroup.is_member"
         class="bg-white p-6 rounded-lg shadow-md mb-8 text-center text-gray-500">
@@ -265,6 +296,11 @@ async function handleDeleteGroup() {
     </div>
 
     <ReportFormModal :is-open="isReportModalOpen" @close="isReportModalOpen = false" @submit="handleReportSubmit" />
+
+    <!-- Transfer Ownership Modal -->
+    <TransferOwnershipModal v-if="currentGroup && currentUser" :is-open="isTransferModalOpen"
+      :members="currentGroup.members" :creator-id="currentUser.id" :is-submitting="isTransferringOwnership"
+      @close="isTransferModalOpen = false" @submit="handleConfirmTransfer" />
 
   </div>
 </template>
