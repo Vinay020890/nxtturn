@@ -4,7 +4,7 @@ import type { Poll, PollOption } from '@/stores/feed';
 import { useFeedStore } from '@/stores/feed';
 import { useAuthStore } from '@/stores/auth';
 
-const props = defineProps<{ poll: Poll }>();
+const props = defineProps<{ poll: Poll; postId: number; }>();
 
 const feedStore = useFeedStore();
 const authStore = useAuthStore();
@@ -29,7 +29,7 @@ async function handleVote(optionId: number) {
   isVoting.value = true;
   try {
     // The store now handles all the complex logic of changing vs. retracting.
-    await feedStore.castVote(props.poll.id, optionId);
+    await feedStore.castVote(props.postId, props.poll.id, optionId);
   } finally {
     isVoting.value = false;
   }

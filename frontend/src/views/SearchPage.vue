@@ -6,6 +6,7 @@ import { debounce } from 'lodash-es';
 // --- 1. IMPORT BOTH STORES ---
 import { useSearchStore } from '@/stores/search'; // For Users
 import { useFeedStore } from '@/stores/feed';     // For Posts
+import { useGroupStore } from '@/stores/group';
 
 // --- 2. IMPORT COMPONENTS AND UTILS ---
 import PostItem from '@/components/PostItem.vue';
@@ -16,10 +17,11 @@ const route = useRoute();
 const router = useRouter();
 const searchStore = useSearchStore();
 const feedStore = useFeedStore();
+const groupStore = useGroupStore();
 
 // --- 4. LOCAL STATE ---
 const localQuery = ref((route.query.q as string) || '');
-const activeTab = ref<'users' | 'posts'>('users');
+const activeTab = ref<'users' | 'posts' | 'groups'>('users');
 
 // --- 5. CONNECT TO STORE STATE WITH COMPUTED PROPERTIES ---
 // User-related data from the searchStore
@@ -32,20 +34,26 @@ const postResults = computed(() => feedStore.searchResultsPosts);
 const isLoadingPosts = computed(() => feedStore.isLoadingSearchResults);
 const postError = computed(() => feedStore.searchError);
 
+const groupResults = computed(() => groupStore.groupSearchResults);
+const isLoadingGroups = computed(() => groupStore.isLoadingGroupSearch);
+const groupError = computed(() => groupStore.groupSearchError);
+
 // --- 6. THE MASTER SEARCH ACTION ---
 // This function now calls both stores to get all search results.
 const performSearch = (query: string) => {
   if (query.trim()) {
     // This assumes your user search store has a 'searchUsers' action.
     // If it's named differently (like 'performSearch'), use that name.
-    searchStore.searchUsers(query); 
-    
+    searchStore.searchUsers(query);
+
     // This calls the new action we created in feed.ts
     feedStore.searchPosts(query);
+    groupStore.searchGroups(query);
   } else {
     // Clear results if query is empty
     searchStore.clearSearch(); // Assuming this clears user results
     feedStore.searchResultsPosts = []; // Manually clear post results
+    groupStore.groupSearchResults = [];
   }
 };
 
@@ -81,33 +89,35 @@ const handleInput = (event: Event) => {
 
     <!-- Search Input Bar -->
     <div class="relative mb-6">
-      <input 
-        type="text"
-        :value="localQuery"
-        @input="handleInput"
-        placeholder="Search for users or content..."
-        class="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-full shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
+      <input type="text" :value="localQuery" @input="handleInput" placeholder="Search for users or content..."
+        class="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-full shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
       <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24"
+          stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
       </div>
     </div>
-    
+
     <!-- Tabs for Users and Posts -->
     <div class="border-b border-gray-200 mb-6">
       <nav class="-mb-px flex space-x-8" aria-label="Tabs">
-        <button 
-          @click="activeTab = 'users'"
-          :class="['whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm', activeTab === 'users' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300']"
-        >
+        <button @click="activeTab = 'users'"
+          :class="['whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm', activeTab === 'users' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300']">
           Users
         </button>
-        <button 
-          @click="activeTab = 'posts'"
-          :class="['whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm', activeTab === 'posts' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300']"
-        >
+        <button @click="activeTab = 'posts'"
+          :class="['whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm', activeTab === 'posts' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300']">
           Posts
         </button>
+
+        <!-- ADD THIS NEW BUTTON FOR GROUPS -->
+        <button @click="activeTab = 'groups'"
+          :class="['whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm', activeTab === 'groups' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300']">
+          Groups
+        </button>
+
       </nav>
     </div>
 
@@ -116,11 +126,15 @@ const handleInput = (event: Event) => {
       <!-- Users Tab Content (This part should continue working as before) -->
       <div v-if="activeTab === 'users'">
         <div v-if="isLoadingUsers" class="text-center py-6 text-gray-500">Searching for users...</div>
-        <div v-else-if="userError" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4"><p>{{ userError }}</p></div>
+        <div v-else-if="userError" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4">
+          <p>{{ userError }}</p>
+        </div>
         <ul v-else-if="userResults.length > 0" class="bg-white rounded-lg shadow-md divide-y divide-gray-200">
           <li v-for="user in userResults" :key="user.id">
-            <router-link :to="{ name: 'profile', params: { username: user.username } }" class="flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors">
-              <img :src="getAvatarUrl(user.picture, user.first_name, user.last_name)" alt="avatar" class="w-12 h-12 rounded-full object-cover bg-gray-200 flex-shrink-0">
+            <router-link :to="{ name: 'profile', params: { username: user.username } }"
+              class="flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors">
+              <img :src="getAvatarUrl(user.picture, user.first_name, user.last_name)" alt="avatar"
+                class="w-12 h-12 rounded-full object-cover bg-gray-200 flex-shrink-0">
               <div class="flex-grow">
                 <p class="font-bold text-gray-800">{{ user.first_name }} {{ user.last_name }}</p>
                 <p class="text-sm text-gray-500">@{{ user.username }}</p>
@@ -134,13 +148,44 @@ const handleInput = (event: Event) => {
       <!-- Posts Tab Content (This part is now wired to feedStore) -->
       <div v-if="activeTab === 'posts'">
         <div v-if="isLoadingPosts" class="text-center py-6 text-gray-500">Searching for posts...</div>
-        <div v-else-if="postError" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4"><p>{{ postError }}</p></div>
+        <div v-else-if="postError" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4">
+          <p>{{ postError }}</p>
+        </div>
         <div v-else-if="postResults.length > 0" class="space-y-6">
           <!-- This will now work correctly, including likes, edits, etc. -->
           <PostItem v-for="post in postResults" :key="post.id" :post="post" />
         </div>
         <div v-else-if="localQuery" class="text-center py-6 text-gray-500">No posts found for "{{ localQuery }}".</div>
       </div>
+
+      <!-- ADD THIS ENTIRE NEW SECTION FOR GROUP RESULTS -->
+      <div v-if="activeTab === 'groups'">
+        <!-- Show a "Searching..." message while loading -->
+        <div v-if="isLoadingGroups" class="text-center py-6 text-gray-500">Searching for groups...</div>
+
+        <!-- Show an error message if something went wrong -->
+        <div v-else-if="groupError" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4">
+          <p>{{ groupError }}</p>
+        </div>
+
+        <!-- Show the list of groups if we have results -->
+        <ul v-else-if="groupResults.length > 0" class="bg-white rounded-lg shadow-md divide-y divide-gray-200">
+          <li v-for="group in groupResults" :key="group.id">
+            <router-link :to="{ name: 'group-detail', params: { slug: group.slug } }"
+              class="block p-4 hover:bg-gray-50 transition-colors">
+              <p class="font-bold text-gray-800">{{ group.name }}</p>
+              <!-- ADD THIS LINE TO SHOW THE SLUG -->
+              <p class="text-sm text-gray-500">{{ group.slug }}</p>
+              <p class="text-sm text-gray-600 mt-1 truncate">{{ group.description }}</p>
+              <p class="text-xs text-gray-500 mt-2">{{ group.member_count }} members</p>
+            </router-link>
+          </li>
+        </ul>
+
+        <!-- Show a "No groups found" message if the search returned nothing -->
+        <div v-else-if="localQuery" class="text-center py-6 text-gray-500">No groups found for "{{ localQuery }}".</div>
+      </div>
+
     </div>
   </div>
 </template>

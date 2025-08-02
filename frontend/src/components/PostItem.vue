@@ -260,7 +260,7 @@ async function handleCommentSubmit() {
               class="font-semibold text-gray-900 hover:underline">{{ post.author.username }}</router-link>
             <template v-if="post.group && !hideGroupContext">
               <span class="text-blue-500 text-xs">▶</span>
-              <router-link :to="{ name: 'group-detail-page', params: { slug: post.group.slug } }"
+              <router-link :to="{ name: 'group-detail', params: { slug: post.group.slug } }"
                 class="font-semibold text-gray-500 hover:underline">
                 {{ post.group.name }}
               </router-link>
@@ -319,7 +319,7 @@ async function handleCommentSubmit() {
       <div v-if="post.content && !post.poll" class="px-4">
         <p class="text-gray-800 whitespace-pre-wrap" v-html="linkifyContent(post.content)"></p>
       </div>
-      <PollDisplay v-if="post.poll" :poll="post.poll" />
+      <PollDisplay v-if="post.poll" :poll="post.poll" :post-id="post.id" />
       <div v-if="post.media && post.media.length > 0" class="mt-3 px-4">
         <div class="relative">
           <template v-if="activeMedia">

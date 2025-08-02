@@ -26,7 +26,7 @@ function openCreateGroupModal() {
 
 function handleGroupCreated(newGroup: Group) {
   isCreateGroupModalOpen.value = false;
-  router.push({ name: 'group-detail-page', params: { slug: newGroup.slug } });
+  router.push({ name: 'group-detail', params: { slug: newGroup.slug } });
 }
 
 function loadMoreGroups() {
@@ -61,7 +61,7 @@ function loadMoreGroups() {
     <!-- Group List -->
     <div v-else-if="allGroups && allGroups.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div v-for="group in allGroups" :key="group.id" class="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow">
-        <router-link :to="{ name: 'group-detail-page', params: { slug: group.slug } }" class="block">
+        <router-link :to="{ name: 'group-detail', params: { slug: group.slug } }" class="block">
           <h2 class="text-xl font-bold text-gray-900 hover:text-blue-600 transition-colors">{{ group.name }}</h2>
           <p class="text-sm text-gray-500 -mt-1">@{{ group.slug }}</p>
           <p class="text-gray-600 mt-2 text-sm">{{ group.description }}</p>

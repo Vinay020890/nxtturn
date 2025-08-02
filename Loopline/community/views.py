@@ -294,8 +294,12 @@ class GroupListView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticatedOrReadOnly]
     pagination_class = StandardResultsSetPagination # KEEP: Offset pagination for group discovery
 
+    filter_backends = [SearchFilter]
+    search_fields = ['name', 'description','slug']
+
     def get_queryset(self):
         return Group.objects.select_related('creator__profile').prefetch_related('members').all()
+    
     
     def get_serializer_context(self):
         """

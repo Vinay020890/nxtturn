@@ -66,6 +66,10 @@ export const useGroupStore = defineStore('group', () => {
   const isTransferringOwnership = ref(false)
   const transferOwnershipError = ref<string | null>(null)
 
+  const groupSearchResults = ref<Group[]>([])
+  const isLoadingGroupSearch = ref(false)
+  const groupSearchError = ref<string | null>(null)
+
   function $reset() {
     currentGroup.value = null
     groupPosts.value = []
@@ -110,6 +114,25 @@ export const useGroupStore = defineStore('group', () => {
   }
 
   // --- Actions ---
+  async function searchGroups(query: string) {
+    if (!query.trim()) {
+      groupSearchResults.value = [];
+      return;
+    }
+    isLoadingGroupSearch.value = true;
+    groupSearchError.value = null;
+    try {
+      const response = await axiosInstance.get<PaginatedGroupResponse>(`/groups/?search=${query}`);
+      // The backend returns a paginated response, so we need the .results
+      groupSearchResults.value = response.data.results;
+    } catch (err: any) {
+      console.error('Error searching groups:', err);
+      groupSearchError.value = err.response?.data?.detail || 'Failed to search for groups.';
+      groupSearchResults.value = []; // Clear results on error
+    } finally {
+      isLoadingGroupSearch.value = false;
+    }
+  }
 
   async function fetchGroupDetails(groupSlug: string) {
     // <-- Parameter changed to string slug
@@ -374,6 +397,9 @@ export const useGroupStore = defineStore('group', () => {
     deleteGroupError,
     isTransferringOwnership,
     transferOwnershipError,
+    groupSearchResults,
+    isLoadingGroupSearch,
+    groupSearchError,
 
     // Actions
     fetchGroupDetails,
@@ -388,6 +414,7 @@ export const useGroupStore = defineStore('group', () => {
     // ADDITION: New Action
     deleteGroup,
     transferOwnership,
+    searchGroups,
 
     $reset,
 

@@ -155,6 +155,7 @@ async function handleConfirmTransfer(newOwnerId: number) {
         <div class="flex justify-between items-start">
           <div>
             <h1 class="text-3xl font-bold text-gray-900">{{ currentGroup.name }}</h1>
+            <p class="text-md text-gray-500 mt-1">@{{ currentGroup.slug }}</p>
             <p class="text-gray-600 mt-2">{{ currentGroup.description }}</p>
           </div>
           <div class="flex-shrink-0 ml-4 flex space-x-2">

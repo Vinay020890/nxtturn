@@ -173,11 +173,11 @@ export const useFeedStore = defineStore('feed', () => {
       // Define an interface for the expected paginated response object.
       // It might be a simple array or a paginated object. Let's assume paginated.
       interface SearchPostResponse {
-        results: Post[];
+        results: Post[]
       }
-      
+
       const response = await axiosInstance.get<SearchPostResponse>(`/posts/?search=${query}`)
-      
+
       // Access the .results array from the response data
       searchResultsPosts.value = response.data.results.map((post) => ({
         ...post,
@@ -316,7 +316,15 @@ export const useFeedStore = defineStore('feed', () => {
       if (err.response && err.response.data) {
         const errorData = err.response.data
         if (typeof errorData === 'object' && errorData !== null) {
-          const errorKeys = ['images','videos','content','poll_data','detail','non_field_errors','group',]
+          const errorKeys = [
+            'images',
+            'videos',
+            'content',
+            'poll_data',
+            'detail',
+            'non_field_errors',
+            'group',
+          ]
           const firstErrorKey = errorKeys.find((key) => errorData[key])
           if (firstErrorKey) {
             const errorValue = errorData[firstErrorKey]
@@ -365,7 +373,7 @@ export const useFeedStore = defineStore('feed', () => {
       if (postToUpdate) postToUpdate.isLiking = false
     }
   }
-  
+
   function incrementCommentCount(postId: number, postType: string) {
     const postToUpdate = findPostInAnyList(postId)
     if (postToUpdate) {
@@ -381,23 +389,23 @@ export const useFeedStore = defineStore('feed', () => {
   }
 
   async function deletePost(postId: number, postType: string): Promise<boolean> {
-    const postToDelete = findPostInAnyList(postId);
+    const postToDelete = findPostInAnyList(postId)
     if (postToDelete) {
-        postToDelete.isDeleting = true;
+      postToDelete.isDeleting = true
     }
 
     try {
       await axiosInstance.delete(`/posts/${postId}/`)
       mainFeedPosts.value = mainFeedPosts.value.filter((p) => p.id !== postId)
       savedPosts.value = savedPosts.value.filter((p) => p.id !== postId)
-      
-      const groupStore = useGroupStore();
+
+      const groupStore = useGroupStore()
       groupStore.groupPosts = groupStore.groupPosts.filter((p) => p.id !== postId)
 
-      const profileStore = useProfileStore();
+      const profileStore = useProfileStore()
       profileStore.userPosts = profileStore.userPosts.filter((p) => p.id !== postId)
 
-      searchResultsPosts.value = searchResultsPosts.value.filter(p => p.id !== postId);
+      searchResultsPosts.value = searchResultsPosts.value.filter((p) => p.id !== postId)
 
       if (singlePost.value && singlePost.value.id === postId) {
         singlePost.value = null
@@ -407,7 +415,7 @@ export const useFeedStore = defineStore('feed', () => {
       deletePostError.value = err.response?.data?.detail || err.message || 'Failed to delete post.'
       console.error('FeedStore: Error deleting post:', err)
       if (postToDelete) {
-        postToDelete.isDeleting = false;
+        postToDelete.isDeleting = false
       }
       return false
     }
@@ -441,22 +449,19 @@ export const useFeedStore = defineStore('feed', () => {
     }
   }
 
-  async function castVote(pollId: number, optionId: number): Promise<void> {
-    const postToUpdate = mainFeedPosts.value.find(p => p.poll?.id === pollId) ||
-                       savedPosts.value.find(p => p.poll?.id === pollId) ||
-                       useGroupStore().groupPosts.find(p => p.poll?.id === pollId) ||
-                       useProfileStore().userPosts.find(p => p.poll?.id === pollId) ||
-                       searchResultsPosts.value.find(p => p.poll?.id === pollId) ||
-                       (singlePost.value?.poll?.id === pollId ? singlePost.value : null);
+  async function castVote(postId: number, pollId: number, optionId: number): Promise<void> {
+    // Use our central helper to find the post, no matter where it is
+    const postToUpdate = findPostInAnyList(postId)
 
     if (!postToUpdate || !postToUpdate.poll) {
-      console.warn(`castVote: Post with poll ID ${pollId} not found in any active store.`)
+      console.warn(`castVote: Post with ID ${postId} or its poll not found in any active store.`)
+      // We can still try to send the vote to the API as a fallback
       try {
-        await axiosInstance.post<Post>(`/polls/${pollId}/options/${optionId}/vote/`)
-      } catch(err) {
-          console.error('castVote: API call failed for non-local poll.', err);
+        await axiosInstance.post(`/polls/${pollId}/options/${optionId}/vote/`)
+      } catch (err) {
+        console.error('castVote: API call failed for non-local poll.', err)
       }
-      return;
+      return
     }
 
     const poll = postToUpdate.poll
@@ -465,11 +470,11 @@ export const useFeedStore = defineStore('feed', () => {
     const originalPollState = JSON.parse(JSON.stringify(poll))
 
     if (previousVoteId !== null) {
-      const prevOption = poll.options.find(o => o.id === previousVoteId)
+      const prevOption = poll.options.find((o) => o.id === previousVoteId)
       if (prevOption) prevOption.vote_count--
     }
     if (!isRetracting) {
-      const newOption = poll.options.find(o => o.id === optionId)
+      const newOption = poll.options.find((o) => o.id === optionId)
       if (newOption) newOption.vote_count++
     }
     if (isRetracting) {
