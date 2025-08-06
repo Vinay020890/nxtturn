@@ -183,7 +183,7 @@ const removePollOption = (index: number) => {
 </script>
 
 <template>
-  <div class="bg-white p-4 rounded-lg shadow-md mb-8">
+  <div class="bg-white p-4 rounded-lg shadow-md">
     <form @submit.prevent="handleSubmit" novalidate>
       <div class="flex items-start gap-4">
         <img :src="getAvatarUrl(currentUser?.picture, currentUser?.first_name, currentUser?.last_name)"

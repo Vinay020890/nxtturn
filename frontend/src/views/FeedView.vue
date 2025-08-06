@@ -50,32 +50,47 @@ onBeforeRouteLeave((to, from) => {
 <template>
   <div class="max-w-4xl mx-auto">
     
-    <CreatePostForm :key="createPostFormKey" />
+    <!-- 
+      THIS IS THE FINAL STRUCTURE:
+      1. The outer div uses space-y-6 to create a larger gap between its direct children:
+         - The CreatePostForm
+         - The block of posts below it.
+    -->
+    <div class="space-y-6">
+      
+      <CreatePostForm :key="createPostFormKey" />
 
-    <div v-if="feedStore.isLoadingMainFeed && feedStore.mainFeedPosts.length === 0" class="text-center p-8 text-gray-500">
-      Loading feed...
-    </div>
+      <!-- Loading/Error/Empty states are now direct children of the outer container -->
+      <div v-if="feedStore.isLoadingMainFeed && feedStore.mainFeedPosts.length === 0" class="text-center p-8 text-gray-500">
+        Loading feed...
+      </div>
 
-    <div v-if="feedStore.mainFeedError" class="bg-red-100 border border-red-300 text-red-700 px-4 py-3 rounded-md text-center p-8" role="alert">
-      Error loading feed: {{ feedStore.mainFeedError }}
-    </div>
-
-    <div v-if="feedStore.mainFeedPosts.length > 0" class="mt-4 flex flex-col gap-6">
-      <PostItem 
-        v-for="post in feedStore.mainFeedPosts" 
-        :key="post.id" 
-        :post="post"
-      />
-    </div>
-    
-    <div v-if="!feedStore.isLoadingMainFeed && feedStore.mainFeedPosts.length === 0 && !feedStore.mainFeedError" class="text-center p-8 text-gray-500">
-      Your feed is empty. Follow some users or create a post!
-    </div>
-    
-    <div v-if="feedStore.mainFeedNextCursor" ref="loadMoreTrigger" class="h-10"></div>
-    
-    <div v-if="feedStore.isLoadingMainFeed && feedStore.mainFeedPosts.length > 0" class="text-center p-4 text-gray-500">
-      Loading more posts...
+      <div v-if="feedStore.mainFeedError" class="bg-red-100 border border-red-300 text-red-700 px-4 py-3 rounded-md text-center p-8" role="alert">
+        Error loading feed: {{ feedStore.mainFeedError }}
+      </div>
+      
+      <!-- 
+        2. This inner div wraps ONLY the posts and uses space-y-4.
+           This creates the tighter, uniform gap *between* each PostItem.
+      -->
+      <div v-if="feedStore.mainFeedPosts.length > 0" class="space-y-4">
+        <PostItem 
+          v-for="post in feedStore.mainFeedPosts" 
+          :key="post.id" 
+          :post="post"
+        />
+      </div>
+      
+      <div v-if="!feedStore.isLoadingMainFeed && feedStore.mainFeedPosts.length === 0 && !feedStore.mainFeedError" class="text-center p-8 text-gray-500">
+        Your feed is empty. Follow some users or create a post!
+      </div>
+      
+      <!-- Infinite scroll triggers are also direct children -->
+      <div v-if="feedStore.mainFeedNextCursor" ref="loadMoreTrigger" class="h-10"></div>
+      
+      <div v-if="feedStore.isLoadingMainFeed && feedStore.mainFeedPosts.length > 0" class="text-center p-4 text-gray-500">
+        Loading more posts...
+      </div>
     </div>
     
   </div>

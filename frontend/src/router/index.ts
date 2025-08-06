@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router';
 import 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import CommunityLayout from '@/layouts/CommunityLayout.vue';
+import ProfileLayout from '@/layouts/ProfileLayout.vue'; // This is the correct layout for the profile page
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -13,6 +14,7 @@ declare module 'vue-router' {
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
+    // --- ROUTE GROUP 1: Uses the 3-Column Community Layout ---
     {
       path: '/',
       component: CommunityLayout,
@@ -27,12 +29,20 @@ const router = createRouter({
         { path: 'posts/:postId', name: 'single-post', component: () => import('@/views/SinglePostView.vue') }
       ]
     },
+    // --- ROUTE GROUP 2: Uses the 2-Column Profile Layout ---
     {
-      path: '/profile/:username',
-      name: 'profile',
-      component: () => import('@/views/ProfileView.vue'),
-      meta: { requiresAuth: false } 
+      path: '/profile', 
+      component: ProfileLayout, // Use the correct, existing ProfileLayout
+      meta: { requiresAuth: true },
+      children: [
+        { 
+          path: ':username',
+          name: 'profile', 
+          component: () => import('@/views/ProfileView.vue')
+        }
+      ]
     },
+    // --- Non-Layout Routes (Login/Register) ---
     { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue'), meta: { requiresGuest: true } },
     { path: '/register', name: 'register', component: () => import('@/views/RegisterView.vue'), meta: { requiresGuest: true } }
   ],

@@ -8,3 +8,44 @@ img {
   -ms-user-select: none; /* IE10+/Edge */
   user-select: none; /* Standard */
 }
+
+/*
+  ======================================================================
+  Custom Scrollbar Styles (Subtle Version)
+  ======================================================================
+*/
+
+/* 1. The scrollbar "track" (the background) remains transparent */
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 2. The scrollbar "thumb" (the part you drag) remains transparent by default */
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 2px; /* A tighter radius for a thinner bar */
+  border: 1px solid transparent;
+  background-clip: content-box;
+}
+
+/* 
+   FIX #1: Changed width from 10px to 5px to make it much thinner.
+*/
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+
+/* 
+   FIX #2: Changed the hover color to a lighter, more transparent gray.
+   slate-200 is lighter and less distracting than slate-300.
+*/
+.custom-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: #e2e8f0; /* slate-200 */
+}
+
+/* 
+   Updated the active/drag color to be the previous, slightly darker hover color.
+*/
+.custom-scrollbar:hover::-webkit-scrollbar-thumb:hover {
+  background: #cbd5e1; /* slate-300 */
+}

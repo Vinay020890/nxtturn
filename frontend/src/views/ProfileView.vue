@@ -104,17 +104,25 @@ async function uploadProfilePicture() {
 
 <template>
   <div>
-    <div v-if="isLoadingProfile || (!currentProfile && !errorProfile)" class="text-center p-10 text-gray-500">
+    <div v-if="isLoadingProfile || (!currentProfile && !errorProfile)" class="text-center p-10 text-gray-500 pt-20">
       Loading profile...
     </div>
     
-    <div v-else-if="errorProfile" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md m-4">
+    <div v-else-if="errorProfile" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md m-4 mt-20">
       <p>{{ errorProfile }}</p>
     </div>
 
-    <div v-else-if="currentProfile" class="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 grid grid-cols-12 gap-8 pt-6">
+    <!-- 
+      FIX #1: Changed pt-6 to pt-20 to push the container down below the navbar.
+      The grid structure itself is now restored to your original design.
+    -->
+    <div v-else-if="currentProfile" class="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 grid grid-cols-12 gap-6 pt-20">
       
-      <aside class="col-span-6 sticky top-6 self-start">
+      <!-- 
+        FIX #2: Changed sticky top-6 to top-20 to match the new navbar height.
+        RESTORED: The col-span-6 is back to your original value.
+      -->
+      <aside class="col-span-6 sticky top-20 self-start">
         <div class="bg-white rounded-lg shadow-md p-6">
           <div class="flex flex-col items-center text-center">
             <div class="relative w-32 h-32 mb-4">
@@ -148,6 +156,9 @@ async function uploadProfilePicture() {
         </div>
       </aside>
 
+      <!-- 
+        RESTORED: The col-span-6 for the post box section is back to your original value.
+      -->
       <div class="col-span-6 min-w-0">
         <div v-if="isLoadingPosts && userPosts.length === 0" class="text-center p-10 text-gray-500">
           Loading posts...
@@ -155,7 +166,7 @@ async function uploadProfilePicture() {
         <div v-else-if="errorPosts" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md">
           {{ errorPosts }}
         </div>
-        <div v-else-if="userPosts.length > 0" class="space-y-6">
+        <div v-else-if="userPosts.length > 0" class="space-y-4">
           <PostItem 
             v-for="post in userPosts" 
             :key="post.id" 
@@ -166,8 +177,6 @@ async function uploadProfilePicture() {
           This user hasn't posted anything yet.
         </div>
         
-        <!-- REMOVED the old pagination buttons -->
-        <!-- ADDED the new infinite scroll trigger and loading indicator -->
         <div v-if="userPostsNextPageUrl" ref="loadMoreTrigger" class="h-10"></div>
         <div v-if="isLoadingPosts && userPosts.length > 0" class="text-center p-4 text-gray-500">
           Loading more posts...

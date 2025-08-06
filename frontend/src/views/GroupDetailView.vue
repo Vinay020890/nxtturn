@@ -140,7 +140,8 @@ async function handleConfirmTransfer(newOwnerId: number) {
 </script>
 
 <template>
-  <div class="max-w-4xl mx-auto p-4">
+  <!-- FIX: Removed the "p-4" class from this top-level container -->
+  <div class="max-w-4xl mx-auto">
     <div v-if="isLoadingGroup && !currentGroup" class="text-center py-10 text-gray-500">
       <p>Loading group...</p>
     </div>
@@ -216,7 +217,7 @@ async function handleConfirmTransfer(newOwnerId: number) {
 
       <main class="mt-8">
         <h2 class="text-2xl font-semibold text-gray-800 mb-4">Group Feed</h2>
-        <div v-if="groupPosts.length > 0" class="space-y-6">
+        <div v-if="groupPosts.length > 0" class="space-y-4">
           <PostItem 
             v-for="post in groupPosts" 
             :key="post.id" 
@@ -233,8 +234,6 @@ async function handleConfirmTransfer(newOwnerId: number) {
         </div>
       </main>
     </div>
-
-    <!-- The ReportFormModal has been removed. PostItem handles this internally. -->
 
     <TransferOwnershipModal v-if="currentGroup && currentUser" :is-open="isTransferModalOpen"
       :members="currentGroup.members" :creator-id="currentUser.id" :is-submitting="isTransferringOwnership"

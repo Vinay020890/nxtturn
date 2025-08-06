@@ -22,7 +22,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="max-w-4xl mx-auto p-4">
+  <!-- FIX: Removed the "p-4" class from this top-level container -->
+  <div class="max-w-4xl mx-auto">
     <div v-if="isLoadingSinglePost" class="text-center py-10 text-gray-500">
       Loading post...
     </div>

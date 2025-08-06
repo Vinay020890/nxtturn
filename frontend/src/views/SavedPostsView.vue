@@ -25,7 +25,7 @@ onBeforeRouteLeave((to, from) => {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-4">
     <!-- Header card for the title -->
     <div class="bg-white rounded-lg shadow-sm p-4 md:p-6 border border-gray-200">
       <div class="flex items-center justify-between">
@@ -47,7 +47,7 @@ onBeforeRouteLeave((to, from) => {
       <p>Click the bookmark icon on any post to save it for later!</p>
     </div>
 
-    <div v-else class="space-y-6">
+    <div v-else class="space-y-4">
       <PostItem
         v-for="post in feedStore.savedPosts"
         :key="post.id"
