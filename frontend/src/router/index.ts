@@ -2,7 +2,8 @@ import { createRouter, createWebHistory } from 'vue-router';
 import 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import CommunityLayout from '@/layouts/CommunityLayout.vue';
-import ProfileLayout from '@/layouts/ProfileLayout.vue'; // This is the correct layout for the profile page
+import ProfileLayout from '@/layouts/ProfileLayout.vue';
+import ExploreLayout from '@/layouts/ExploreLayout.vue'; // <-- Import the new layout
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -29,10 +30,10 @@ const router = createRouter({
         { path: 'posts/:postId', name: 'single-post', component: () => import('@/views/SinglePostView.vue') }
       ]
     },
-    // --- ROUTE GROUP 2: Uses the 2-Column Profile Layout ---
+    // --- ROUTE GROUP 2: Uses the Profile Layout ---
     {
       path: '/profile', 
-      component: ProfileLayout, // Use the correct, existing ProfileLayout
+      component: ProfileLayout,
       meta: { requiresAuth: true },
       children: [
         { 
@@ -40,6 +41,15 @@ const router = createRouter({
           name: 'profile', 
           component: () => import('@/views/ProfileView.vue')
         }
+      ]
+    },
+    // --- THIS IS THE NEW ROUTE FOR THE EXPLORE HUB ---
+    {
+      path: '/explore',
+      component: ExploreLayout,
+      meta: { requiresAuth: true },
+      children: [
+        { path: '', name: 'explore', component: () => import('@/views/ExploreView.vue') }
       ]
     },
     // --- Non-Layout Routes (Login/Register) ---
