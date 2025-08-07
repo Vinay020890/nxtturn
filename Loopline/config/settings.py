@@ -33,6 +33,7 @@ else:
 
 # --- APPLICATION DEFINITION ---
 INSTALLED_APPS = [
+    'channels',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -71,6 +72,7 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = 'config.urls'
 WSGI_APPLICATION = 'config.wsgi.application'
+ASGI_APPLICATION = 'config.asgi.application'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -186,3 +188,12 @@ else:
 # You might need to add 'django.contrib.staticfiles.finders.FileSystemFinder'
 # and 'django.contrib.staticfiles.finders.AppDirectoriesFinder' to STATICFILES_FINDERS
 # if you had custom static file serving setup previously.
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("127.0.0.1", 6379)],
+        },
+    },
+}
