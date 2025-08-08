@@ -1,9 +1,9 @@
-// src/stores/auth.ts
+// C:\Users\Vinay\Project\frontend\src\stores\auth.ts
 
 import { ref, computed } from 'vue';
 import { defineStore } from 'pinia';
 import axiosInstance from '@/services/axiosInstance';
-import router from '@/router';
+// import router from '@/router'; // <-- CRITICAL: This top-level import is removed to break the circular dependency.
 
 // Define the shape of the User object. This now matches what our API returns.
 export interface User {
@@ -19,7 +19,7 @@ export interface User {
 interface RegistrationData {
   email?: string;
   username?: string;
-  password?: string; // Corrected from password1
+  password?: string;
   password2?: string;
 }
 
@@ -28,7 +28,7 @@ export const useAuthStore = defineStore('auth', () => {
   // --- State ---
   const authToken = ref<string | null>(localStorage.getItem('authToken') || null);
   const currentUser = ref<User | null>(null);
-  const isLoading = ref<boolean>(false); // <-- 1. ADD isLoading STATE
+  const isLoading = ref<boolean>(false);
 
   // --- Getters ---
   const isAuthenticated = computed(() => !!authToken.value);
@@ -52,9 +52,14 @@ export const useAuthStore = defineStore('auth', () => {
     currentUser.value = user;
   }
 
-  // Corrected login action with loading state
+  function updateCurrentUserPicture(newPictureUrl: string) {
+    if (currentUser.value) {
+      currentUser.value.picture = newPictureUrl;
+    }
+  }
+
   async function login(credentials: { username: string; password: any }) {
-    isLoading.value = true; // <-- 2a. SET isLoading to true
+    isLoading.value = true;
     try {
       const response = await axiosInstance.post('/auth/login/', credentials);
       if (response.data && response.data.key) {
@@ -70,7 +75,7 @@ export const useAuthStore = defineStore('auth', () => {
       console.error('Store login action failed:', error);
       throw error;
     } finally {
-      isLoading.value = false; // <-- 2b. ALWAYS set isLoading to false
+      isLoading.value = false;
     }
   }
 
@@ -81,7 +86,12 @@ export const useAuthStore = defineStore('auth', () => {
       console.error('Backend logout call failed (proceeding with client logout):', error);
     } finally {
       setToken(null);
-      router.push('/login');
+      
+      // --- THE FIX ---
+      // Dynamically import the router only when it's needed.
+      const router = (await import('@/router')).default;
+      await router.push('/login');
+      // --- END OF FIX ---
     }
   }
 
@@ -93,13 +103,12 @@ export const useAuthStore = defineStore('auth', () => {
       else setUser(null);
     } catch (error: any) {
       console.error('Failed to fetch user profile:', error);
-      if (error.response && error.response.status === 401) logout();
+      if (error.response && error.response.status === 401) await logout(); // ensure logout is awaited
       else setUser(null);
     }
   }
 
   async function register(registrationData: RegistrationData) {
-      // You can add loading state here too if you want
       isLoading.value = true;
       try {
         await axiosInstance.post('/auth/registration/', registrationData);
@@ -123,7 +132,7 @@ export const useAuthStore = defineStore('auth', () => {
     currentUser,
     isAuthenticated,
     userDisplay,
-    isLoading, // <-- 3. RETURN isLoading
+    isLoading,
     setToken,
     setUser,
     login,
@@ -131,5 +140,6 @@ export const useAuthStore = defineStore('auth', () => {
     fetchUserProfile,
     register,
     initializeAuth,
+    updateCurrentUserPicture,
   };
 });

@@ -52,9 +52,13 @@ const markOneAsRead = async (notificationId: number) => {
 };
 
 async function handleMarkAllAsRead() {
+
+  console.log("--- DEBUG: Inspecting the 'notificationStore' object right before the crash ---");
+  console.log(notificationStore); // <-- THIS IS THE CRITICAL LINE
+  
   if (isMarkingAllRead.value) return;
   isMarkingAllRead.value = true;
-  await notificationStore.markAllNotificationsAsRead();
+  await notificationStore.markAllAsRead();
   isMarkingAllRead.value = false;
 }
 

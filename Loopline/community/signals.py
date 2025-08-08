@@ -5,6 +5,10 @@ from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 # Import the UserProfile model from models.py in the same directory
 from .models import UserProfile, Like, StatusPost, Notification, Comment
+from .serializers import NotificationSerializer
+
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 
 # Get the currently active User model (best practice)
 
@@ -37,19 +41,32 @@ def create_like_notification(sender, instance, created, **kwargs):
 
             # Prevent self-notification
             if status_post_author != liker:
-                Notification.objects.create(
+                notification = Notification.objects.create(
                     recipient=status_post_author,
                     actor=liker,
-                    verb="liked", 
+                    verb="liked your post", # Using the more descriptive verb
                     notification_type=Notification.LIKE,
                     
-                    action_object_content_type=ContentType.objects.get_for_model(instance), # The Like instance
-                    action_object_object_id=instance.pk,
-                    
-                    target_content_type=ContentType.objects.get_for_model(liked_object), # The StatusPost
-                    target_object_object_id=liked_object.pk
-                )
+                    action_object=instance,     # Use the direct GenericForeignKey field
+                    target=liked_object         # Use the direct GenericForeignKey field
+)
                 print(f"Notification created: {liker.username} liked {status_post_author.username}'s status post (ID: {liked_object.pk})")
+
+                # --- START: ADD THIS MISSING BLOCK ---
+                # 2. Send the real-time message
+                serializer = NotificationSerializer(notification) # Use the 'notification' variable we just created
+                channel_layer = get_channel_layer()
+                message_data = {
+                    'type': 'send_notification',
+                    'message': { 
+                        'type': 'new_notification',
+                        'payload': serializer.data
+                    }
+                }
+                group_name = f'notifications_{status_post_author.id}'
+                async_to_sync(channel_layer.group_send)(group_name, message_data)
+                print(f"!!! REAL-TIME: Sent FULL notification to group {group_name} !!!")
+                # --- END: ADD THIS MISSING BLOCK ---
         # else:
             # print(f"Like created on a non-StatusPost object: {type(liked_object)}") # For debugging other types
 # ---- END OF NEW SIGNAL HANDLER ----

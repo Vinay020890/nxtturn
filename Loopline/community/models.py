@@ -5,8 +5,8 @@ from django.contrib.postgres.fields import ArrayField
 from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
-from django.db.models.signals import post_save
-from django.dispatch import receiver
+#from django.db.models.signals import post_save
+#from django.dispatch import receiver
 from django.utils.text import slugify
 
 User = settings.AUTH_USER_MODEL
@@ -402,10 +402,10 @@ class Report(models.Model):
     def __str__(self):
         return f"Report by {self.reporter.username} on {self.content_object} ({self.get_reason_display()})"
 
-@receiver(post_save, sender=User)
-def create_user_profile(sender, instance, created, **kwargs):
-    if created:
-        UserProfile.objects.create(user=instance)
+# @receiver(post_save, sender=User)
+#def create_user_profile(sender, instance, created, **kwargs):
+#    if created:
+#        UserProfile.objects.create(user=instance)
 
 # The save_user_profile signal is commented out as it's often redundant.
 # @receiver(post_save, sender=User)

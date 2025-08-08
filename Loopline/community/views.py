@@ -9,6 +9,9 @@ from django.db.models import Q, Count, Value, CharField, Case, When
 from django.db import transaction
 from django.utils import timezone
 
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
+
 from rest_framework import generics, status, views, serializers, permissions
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
@@ -195,14 +198,30 @@ class StatusPostRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView)
 # ==================================
 # Like View
 # ==================================
+# community/views.py
+
 class LikeToggleAPIView(APIView):
     permission_classes = [IsAuthenticated]
+
     def post(self, request, *args, **kwargs):
-        content_type = get_object_or_404(ContentType, pk=kwargs.get('content_type_id'))
-        target_object = get_object_or_404(content_type.model_class(), pk=kwargs.get('object_id'))
-        like, created = Like.objects.get_or_create(user=request.user, content_type=content_type, object_id=target_object.id)
+        content_type_id = kwargs.get('content_type_id')
+        object_id = kwargs.get('object_id')
+        
+        content_type = get_object_or_404(ContentType, pk=content_type_id)
+        target_object = get_object_or_404(content_type.model_class(), pk=object_id)
+
+        like, created = Like.objects.get_or_create(
+            user=request.user, 
+            content_type=content_type, 
+            object_id=target_object.id
+        )
+
         if not created:
+            # If 'created' is False, the like already existed, so we delete it (unlike).
             like.delete()
+        # The 'else' block is now empty. A Django signal is responsible for creating
+        # the notification and sending the real-time message. This prevents duplicates.
+
         return Response({"liked": created, "like_count": target_object.likes.count()}, status=status.HTTP_200_OK)
     
 # ==================================
@@ -521,8 +540,22 @@ class UnreadNotificationCountAPIView(APIView):
     permission_classes = [IsAuthenticated]
     def get(self, request, format=None):
         return Response({'unread_count': request.user.notifications_received.filter(is_read=False).count()})
+    
+class MarkNotificationAsReadAPIView(APIView):
+    permission_classes = [IsAuthenticated]
 
-class MarkNotificationsAsReadAPIView(APIView):
+    def post(self, request, pk, format=None):
+        notification = get_object_or_404(request.user.notifications_received, pk=pk)
+        
+        if not notification.is_read:
+            notification.is_read = True
+            notification.save()
+        
+        new_unread_count = request.user.notifications_received.filter(is_read=False).count()
+        
+        return Response({'unread_count': new_unread_count}, status=status.HTTP_200_OK)
+
+class MarkMultipleNotificationsAsReadAPIView(APIView):
     permission_classes = [IsAuthenticated]
     def post(self, request, format=None):
         ids = request.data.get('notification_ids', [])

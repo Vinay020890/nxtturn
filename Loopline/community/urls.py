@@ -47,7 +47,12 @@ urlpatterns = [
     # --- Notifications ---
     path('notifications/', views.NotificationListAPIView.as_view(), name='notification-list'),
     path('notifications/unread-count/', views.UnreadNotificationCountAPIView.as_view(), name='notification-unread-count'),
-    path('notifications/mark-as-read/', views.MarkNotificationsAsReadAPIView.as_view(), name='notifications-mark-as-read'),
+    
+    # --- THIS IS THE NEW URL FOR A SINGLE NOTIFICATION ---
+    path('notifications/<int:pk>/mark-as-read/', views.MarkNotificationAsReadAPIView.as_view(), name='notification-mark-as-read'),
+    # ---------------------------------------------------
+
+    path('notifications/mark-as-read/', views.MarkMultipleNotificationsAsReadAPIView.as_view(), name='notifications-mark-as-read'), # This handles bulk marking
     path('notifications/mark-all-as-read/', views.MarkAllNotificationsAsReadAPIView.as_view(), name='notifications-mark-all-as-read'),
    
     # --- Private Messaging ---

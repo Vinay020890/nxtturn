@@ -26,6 +26,9 @@ const showComments = ref(false);
 const newCommentContent = ref('');
 const localDeleteError = ref<string | null>(null);
 
+// --- *** NEW: ADD LOCAL LOADING STATE FOR LIKE ACTION *** ---
+const isLiking = ref(false);
+
 // --- State for Media Gallery Display ---
 const activeMediaIndex = ref(0);
 watch(() => props.post.id, () => { activeMediaIndex.value = 0; });
@@ -108,7 +111,15 @@ function toggleCommentDisplay() {
 
 async function toggleLike() {
   if (!isAuthenticated.value) return alert('Please login to like posts.');
-  await feedStore.toggleLike(props.post.id, props.post.post_type, props.post.content_type_id, props.post.object_id);
+  if (isLiking.value) return; // Prevents double-clicks if the button is somehow clicked again
+
+  isLiking.value = true; // Immediately disable the button
+  try {
+    // This is the same line you had before
+    await feedStore.toggleLike(props.post.id, props.post.post_type, props.post.content_type_id, props.post.object_id);
+  } finally {
+    isLiking.value = false; // Re-enable the button when the action is complete
+  }
 }
 
 async function toggleSave() {
@@ -317,7 +328,7 @@ async function handleCommentSubmit() {
     <!-- Post Body & Media Section -->
     <div v-if="!isEditing" class="pb-3">
       <div v-if="post.content && !post.poll" class="px-4">
-        <p class="text-gray-800 whitespace-pre-wrap" v-html="linkifyContent(post.content)"></p>
+        <p class="text-gray-800 whitespace-pre-wrap break-words" v-html="linkifyContent(post.content)"></p>
       </div>
       <PollDisplay v-if="post.poll" :poll="post.poll" :post-id="post.id" />
       <div v-if="post.media && post.media.length > 0" class="mt-3 px-4">
@@ -455,8 +466,8 @@ async function handleCommentSubmit() {
     <!-- Actions Footer -->
     <footer v-if="!isEditing" class="px-4 pt-1 pb-2">
       <div class="border-t border-gray-200 pt-3 flex items-center gap-x-6 text-gray-600">
-        <button @click="toggleLike" :disabled="post.isLiking"
-          class="flex items-center gap-x-1.5 transition-colors duration-150 hover:text-red-500"
+        <button @click="toggleLike" :disabled="isLiking"
+          class="flex items-center gap-x-1.5 transition-colors duration-150 hover:text-red-500 disabled:opacity-50"
           :class="{ 'text-red-500 font-semibold': post.is_liked_by_user }">
           <svg class="h-5 w-5" :fill="post.is_liked_by_user ? 'currentColor' : 'none'" viewBox="0 0 24 24"
             stroke="currentColor">
