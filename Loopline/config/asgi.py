@@ -11,7 +11,9 @@ django_asgi_app = get_asgi_application()
 
 # NOW that Django is initialized, it is safe to import our other code.
 from channels.routing import ProtocolTypeRouter, URLRouter
-from channels.auth import AuthMiddlewareStack
+
+from community.middleware import TokenAuthMiddleware
+
 import community.routing
 
 application = ProtocolTypeRouter({
@@ -19,7 +21,7 @@ application = ProtocolTypeRouter({
     "http": django_asgi_app,
 
     # WebSocket requests are now handled safely.
-    "websocket": AuthMiddlewareStack(
+    "websocket": TokenAuthMiddleware(
         URLRouter(
             community.routing.websocket_urlpatterns
         )
