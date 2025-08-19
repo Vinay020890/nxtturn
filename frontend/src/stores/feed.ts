@@ -291,6 +291,35 @@ export const useFeedStore = defineStore('feed', () => {
     }
   }
 
+  // ADD THIS ENTIRE NEW ACTION TO YOUR STORE
+
+  async function ensureFullPostData(postId: number) {
+    // 1. Check if the 'singlePost' is already the correct, full post.
+    // We check for 'comment_count' as a sign of a "full" object.
+    if (
+      singlePost.value &&
+      singlePost.value.id === postId &&
+      typeof singlePost.value.comment_count !== 'undefined'
+    ) {
+      console.log(`FeedStore: Post ${postId} is already loaded and complete. No fetch needed.`)
+      return
+    }
+
+    // 2. Check if a full post object exists in any other list (e.g., the main feed).
+    const existingPost = findPostInAnyList(postId)
+    if (existingPost && typeof existingPost.comment_count !== 'undefined') {
+      console.log(
+        `FeedStore: Found complete post ${postId} in another list. Using it. No fetch needed.`,
+      )
+      singlePost.value = existingPost
+      return
+    }
+
+    // 3. If no complete post is found, then we must fetch it.
+    console.log(`FeedStore: Post ${postId} is missing or incomplete. Fetching from API.`)
+    await fetchPostById(postId)
+  }
+
   async function createPost(postData: FormData): Promise<Post | null> {
     isCreatingPost.value = true
     createPostError.value = null
@@ -343,6 +372,8 @@ export const useFeedStore = defineStore('feed', () => {
     }
   }
 
+  // REPLACE the entire toggleLike function with this new version
+
   async function toggleLike(
     postId: number,
     postType: string,
@@ -356,21 +387,41 @@ export const useFeedStore = defineStore('feed', () => {
       return
     }
     if (postToUpdate.isLiking) return
+
+    // --- Start of logic ---
     postToUpdate.isLiking = true
     const originalIsLiked = postToUpdate.is_liked_by_user
     const originalLikeCount = postToUpdate.like_count
+
+    // Optimistically update the UI
     postToUpdate.is_liked_by_user = !postToUpdate.is_liked_by_user
     postToUpdate.like_count += postToUpdate.is_liked_by_user ? 1 : -1
+
     try {
-      const response = await axiosInstance.post<Post>(`/content/${contentTypeId}/${objectId}/like/`)
-      Object.assign(postToUpdate, response.data, { isLiking: false })
+      const response = await axiosInstance.post<{ liked: boolean; like_count: number }>(
+        `/content/${contentTypeId}/${objectId}/like/`,
+      )
+
+      // Update with authoritative data from the server
+      postToUpdate.is_liked_by_user = response.data.liked
+      postToUpdate.like_count = response.data.like_count
+
+      // --- THIS IS THE FIX ---
+      // Also, synchronize the singlePost state if it's the same post
+      if (singlePost.value && singlePost.value.id === postId) {
+        singlePost.value.is_liked_by_user = response.data.liked
+        singlePost.value.like_count = response.data.like_count
+        console.log(`Synchronized singlePost state for post ID ${postId}`)
+      }
+      // --- END OF FIX ---
     } catch (err: any) {
       console.error('FeedStore: Error toggling like:', err)
+      // Revert optimistic update on failure
       postToUpdate.is_liked_by_user = originalIsLiked
       postToUpdate.like_count = originalLikeCount
       mainFeedError.value = err.response?.data?.detail || err.message || 'Failed to toggle like.'
     } finally {
-      if (postToUpdate) postToUpdate.isLiking = false
+      postToUpdate.isLiking = false
     }
   }
 
@@ -562,6 +613,7 @@ export const useFeedStore = defineStore('feed', () => {
     updatePost,
     castVote,
     toggleSavePost,
+    ensureFullPostData,
     $reset,
     resetMainFeedState,
     resetSavedPostsState,

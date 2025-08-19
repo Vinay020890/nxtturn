@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { watch, onUnmounted } from 'vue'; // <-- 1. Import 'onUnmounted'
 import { useRoute } from 'vue-router';
 import { useFeedStore } from '@/stores/feed';
 import { storeToRefs } from 'pinia';
@@ -8,17 +8,28 @@ import PostItem from '@/components/PostItem.vue';
 const route = useRoute();
 const feedStore = useFeedStore();
 
-// Get the specific state we need for this view from the feedStore
 const { singlePost, isLoadingSinglePost, singlePostError } = storeToRefs(feedStore);
 
-// When the component mounts, get the postId from the URL and fetch the post
-onMounted(() => {
-  const postId = Number(route.params.postId);
-  if (postId) {
-    // We will create this 'fetchPostById' action in the next step
-    feedStore.fetchPostById(postId);
-  }
+// This watcher is the single source of truth for loading data for this page.
+watch(
+  () => route.params.postId,
+  (newPostId) => {
+    if (newPostId) {
+      feedStore.ensureFullPostData(Number(newPostId));
+    }
+  },
+  { immediate: true }
+);
+
+// --- THIS IS THE FIX ---
+// 2. Add the onUnmounted hook to clean up the store state.
+// This runs automatically whenever the user navigates away from this page.
+onUnmounted(() => {
+  feedStore.singlePost = null;
+  feedStore.singlePostError = null;
+  console.log('SinglePostView unmounted. Cleared singlePost state.');
 });
+// --- END OF FIX ---
 </script>
 
 <template>
