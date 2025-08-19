@@ -135,8 +135,7 @@ export const useFeedStore = defineStore('feed', () => {
     console.log('Saved posts state has been reset.')
   }
 
-  // --- Actions ---
-
+  // --- Helper Functions ---
   function findPostInAnyList(postId: number): Post | undefined {
     const groupStore = useGroupStore()
     const profileStore = useProfileStore()
@@ -160,8 +159,70 @@ export const useFeedStore = defineStore('feed', () => {
     }
     return undefined
   }
+  
+  // --- NEW: CENTRALIZED UPDATE ACTION ---
+  function applyPostUpdate(postId: number, updates: Partial<Post>) {
+    const groupStore = useGroupStore();
+    const profileStore = useProfileStore();
 
-  // --- THIS IS THE CORRECTED SEARCH ACTION ---
+    const listsToUpdate = [
+      mainFeedPosts.value,
+      savedPosts.value,
+      groupStore.groupPosts,
+      profileStore.userPosts,
+      searchResultsPosts.value,
+    ];
+
+    for (const list of listsToUpdate) {
+      if (list && Array.isArray(list)) {
+        const index = list.findIndex(p => p.id === postId);
+        if (index !== -1) {
+          list[index] = { ...list[index], ...updates };
+        }
+      }
+    }
+
+    if (singlePost.value && singlePost.value.id === postId) {
+      singlePost.value = { ...singlePost.value, ...updates };
+    }
+  }
+
+
+  // --- Actions ---
+   // --- NEW ACTION TO FIX PROFILE PICTURE BUG ---
+  // --- THIS FUNCTION IS MODIFIED TO BE MORE REACTIVE ---
+  function updateAuthorDetailsInAllPosts(authorId: number, updates: Partial<PostAuthor>) {
+    const profileStore = useProfileStore();
+    const groupStore = useGroupStore();
+
+    const updateList = (list: Post[]) => {
+      return list.map(post => {
+        if (post.author.id === authorId) {
+          // Create a new post object with the updated author info
+          return {
+            ...post,
+            author: { ...post.author, ...updates }
+          };
+        }
+        return post;
+      });
+    };
+
+    // Re-assign the entire array to trigger reactivity
+    mainFeedPosts.value = updateList(mainFeedPosts.value);
+    savedPosts.value = updateList(savedPosts.value);
+    profileStore.userPosts = updateList(profileStore.userPosts); // This is the key line for the bug
+    groupStore.groupPosts = updateList(groupStore.groupPosts);
+    searchResultsPosts.value = updateList(searchResultsPosts.value);
+
+    if (singlePost.value && singlePost.value.author.id === authorId) {
+      singlePost.value = {
+        ...singlePost.value,
+        author: { ...singlePost.value.author, ...updates }
+      };
+    }
+  }
+
   async function searchPosts(query: string) {
     if (!query) {
       searchResultsPosts.value = []
@@ -170,15 +231,11 @@ export const useFeedStore = defineStore('feed', () => {
     isLoadingSearchResults.value = true
     searchError.value = null
     try {
-      // Define an interface for the expected paginated response object.
-      // It might be a simple array or a paginated object. Let's assume paginated.
       interface SearchPostResponse {
         results: Post[]
       }
 
       const response = await axiosInstance.get<SearchPostResponse>(`/posts/?search=${query}`)
-
-      // Access the .results array from the response data
       searchResultsPosts.value = response.data.results.map((post) => ({
         ...post,
         isLiking: false,
@@ -291,32 +348,21 @@ export const useFeedStore = defineStore('feed', () => {
     }
   }
 
-  // ADD THIS ENTIRE NEW ACTION TO YOUR STORE
-
   async function ensureFullPostData(postId: number) {
-    // 1. Check if the 'singlePost' is already the correct, full post.
-    // We check for 'comment_count' as a sign of a "full" object.
     if (
       singlePost.value &&
       singlePost.value.id === postId &&
       typeof singlePost.value.comment_count !== 'undefined'
     ) {
-      console.log(`FeedStore: Post ${postId} is already loaded and complete. No fetch needed.`)
       return
     }
 
-    // 2. Check if a full post object exists in any other list (e.g., the main feed).
     const existingPost = findPostInAnyList(postId)
     if (existingPost && typeof existingPost.comment_count !== 'undefined') {
-      console.log(
-        `FeedStore: Found complete post ${postId} in another list. Using it. No fetch needed.`,
-      )
       singlePost.value = existingPost
       return
     }
 
-    // 3. If no complete post is found, then we must fetch it.
-    console.log(`FeedStore: Post ${postId} is missing or incomplete. Fetching from API.`)
     await fetchPostById(postId)
   }
 
@@ -345,15 +391,7 @@ export const useFeedStore = defineStore('feed', () => {
       if (err.response && err.response.data) {
         const errorData = err.response.data
         if (typeof errorData === 'object' && errorData !== null) {
-          const errorKeys = [
-            'images',
-            'videos',
-            'content',
-            'poll_data',
-            'detail',
-            'non_field_errors',
-            'group',
-          ]
+          const errorKeys = ['images', 'videos', 'content', 'poll_data', 'detail', 'non_field_errors', 'group']
           const firstErrorKey = errorKeys.find((key) => errorData[key])
           if (firstErrorKey) {
             const errorValue = errorData[firstErrorKey]
@@ -372,8 +410,7 @@ export const useFeedStore = defineStore('feed', () => {
     }
   }
 
-  // REPLACE the entire toggleLike function with this new version
-
+  // --- REFACTORED to use applyPostUpdate ---
   async function toggleLike(
     postId: number,
     postType: string,
@@ -381,68 +418,59 @@ export const useFeedStore = defineStore('feed', () => {
     objectId: number,
   ) {
     const postToUpdate = findPostInAnyList(postId)
+    if (!postToUpdate || postToUpdate.isLiking) return
 
-    if (!postToUpdate) {
-      console.warn(`toggleLike: Post with ID ${postId} not found in any active store.`)
-      return
+    const originalState = {
+      is_liked_by_user: postToUpdate.is_liked_by_user,
+      like_count: postToUpdate.like_count,
     }
-    if (postToUpdate.isLiking) return
+    
+    applyPostUpdate(postId, { isLiking: true })
 
-    // --- Start of logic ---
-    postToUpdate.isLiking = true
-    const originalIsLiked = postToUpdate.is_liked_by_user
-    const originalLikeCount = postToUpdate.like_count
-
-    // Optimistically update the UI
-    postToUpdate.is_liked_by_user = !postToUpdate.is_liked_by_user
-    postToUpdate.like_count += postToUpdate.is_liked_by_user ? 1 : -1
+    // Optimistic UI update
+    const newLikeCount = originalState.like_count + (originalState.is_liked_by_user ? -1 : 1)
+    applyPostUpdate(postId, {
+      is_liked_by_user: !originalState.is_liked_by_user,
+      like_count: newLikeCount
+    })
 
     try {
       const response = await axiosInstance.post<{ liked: boolean; like_count: number }>(
         `/content/${contentTypeId}/${objectId}/like/`,
       )
-
-      // Update with authoritative data from the server
-      postToUpdate.is_liked_by_user = response.data.liked
-      postToUpdate.like_count = response.data.like_count
-
-      // --- THIS IS THE FIX ---
-      // Also, synchronize the singlePost state if it's the same post
-      if (singlePost.value && singlePost.value.id === postId) {
-        singlePost.value.is_liked_by_user = response.data.liked
-        singlePost.value.like_count = response.data.like_count
-        console.log(`Synchronized singlePost state for post ID ${postId}`)
-      }
-      // --- END OF FIX ---
+      // Authoritative update from server
+      applyPostUpdate(postId, {
+        is_liked_by_user: response.data.liked,
+        like_count: response.data.like_count,
+      })
     } catch (err: any) {
       console.error('FeedStore: Error toggling like:', err)
-      // Revert optimistic update on failure
-      postToUpdate.is_liked_by_user = originalIsLiked
-      postToUpdate.like_count = originalLikeCount
-      mainFeedError.value = err.response?.data?.detail || err.message || 'Failed to toggle like.'
+      // Revert on failure
+      applyPostUpdate(postId, originalState)
+      mainFeedError.value = err.response?.data?.detail || 'Failed to toggle like.'
     } finally {
-      postToUpdate.isLiking = false
+      applyPostUpdate(postId, { isLiking: false })
     }
   }
 
   function incrementCommentCount(postId: number, postType: string) {
     const postToUpdate = findPostInAnyList(postId)
     if (postToUpdate) {
-      postToUpdate.comment_count = (postToUpdate.comment_count || 0) + 1
+      applyPostUpdate(postId, { comment_count: (postToUpdate.comment_count || 0) + 1 });
     }
   }
 
   function decrementCommentCount(postId: number, postType: string) {
     const postToUpdate = findPostInAnyList(postId)
     if (postToUpdate && postToUpdate.comment_count) {
-      postToUpdate.comment_count = Math.max(0, postToUpdate.comment_count - 1)
+      applyPostUpdate(postId, { comment_count: Math.max(0, postToUpdate.comment_count - 1) });
     }
   }
 
   async function deletePost(postId: number, postType: string): Promise<boolean> {
     const postToDelete = findPostInAnyList(postId)
     if (postToDelete) {
-      postToDelete.isDeleting = true
+      applyPostUpdate(postId, { isDeleting: true });
     }
 
     try {
@@ -466,7 +494,7 @@ export const useFeedStore = defineStore('feed', () => {
       deletePostError.value = err.response?.data?.detail || err.message || 'Failed to delete post.'
       console.error('FeedStore: Error deleting post:', err)
       if (postToDelete) {
-        postToDelete.isDeleting = false
+        applyPostUpdate(postId, { isDeleting: false });
       }
       return false
     }
@@ -479,7 +507,7 @@ export const useFeedStore = defineStore('feed', () => {
   ): Promise<boolean> {
     const postToUpdate = findPostInAnyList(postId)
     if (postToUpdate) {
-      postToUpdate.isUpdating = true
+      applyPostUpdate(postId, { isUpdating: true });
     }
 
     if (!postToUpdate) {
@@ -489,37 +517,30 @@ export const useFeedStore = defineStore('feed', () => {
     try {
       const response = await axiosInstance.patch<Post>(`/posts/${postId}/`, formData)
       const updatedData = { ...response.data, isUpdating: false, isLiking: postToUpdate.isLiking }
-      Object.assign(postToUpdate, updatedData)
+      applyPostUpdate(postId, updatedData);
       return true
     } catch (err: any) {
       updatePostError.value = err.response?.data?.detail || 'Failed to update post.'
       console.error('FeedStore: Error updating post:', err)
       return false
     } finally {
-      if (postToUpdate) postToUpdate.isUpdating = false
+      if (postToUpdate) applyPostUpdate(postId, { isUpdating: false });
     }
   }
 
   async function castVote(postId: number, pollId: number, optionId: number): Promise<void> {
-    // Use our central helper to find the post, no matter where it is
     const postToUpdate = findPostInAnyList(postId)
-
     if (!postToUpdate || !postToUpdate.poll) {
-      console.warn(`castVote: Post with ID ${postId} or its poll not found in any active store.`)
-      // We can still try to send the vote to the API as a fallback
-      try {
-        await axiosInstance.post(`/polls/${pollId}/options/${optionId}/vote/`)
-      } catch (err) {
-        console.error('castVote: API call failed for non-local poll.', err)
-      }
+      console.warn(`castVote: Post with ID ${postId} or its poll not found.`)
       return
     }
 
     const poll = postToUpdate.poll
-    const previousVoteId = poll.user_vote
-    const isRetracting = previousVoteId === optionId
     const originalPollState = JSON.parse(JSON.stringify(poll))
 
+    // Optimistic UI update logic...
+    const previousVoteId = poll.user_vote
+    const isRetracting = previousVoteId === optionId
     if (previousVoteId !== null) {
       const prevOption = poll.options.find((o) => o.id === previousVoteId)
       if (prevOption) prevOption.vote_count--
@@ -532,49 +553,60 @@ export const useFeedStore = defineStore('feed', () => {
       poll.total_votes--
       poll.user_vote = null
     } else {
-      if (previousVoteId === null) {
-        poll.total_votes++
-      }
+      if (previousVoteId === null) poll.total_votes++
       poll.user_vote = optionId
     }
+
     try {
-      let response
       const apiUrl = `/polls/${pollId}/options/${optionId}/vote/`
-      if (isRetracting) {
-        response = await axiosInstance.delete<Post>(apiUrl)
-      } else {
-        response = await axiosInstance.post<Post>(apiUrl)
-      }
-      const updatedPostData = response.data
-      Object.assign(postToUpdate, updatedPostData)
+      const response = isRetracting
+        ? await axiosInstance.delete<Post>(apiUrl)
+        : await axiosInstance.post<Post>(apiUrl)
+      applyPostUpdate(postId, response.data);
     } catch (err: any) {
       console.error('FeedStore: Failed to cast/retract vote:', err)
       mainFeedError.value = err.response?.data?.detail || 'Failed to update vote.'
-      Object.assign(postToUpdate.poll, originalPollState)
+      applyPostUpdate(postId, { poll: originalPollState });
     }
   }
 
+  // --- REFACTORED to use applyPostUpdate ---
   async function toggleSavePost(postId: number): Promise<void> {
     const postToUpdate = findPostInAnyList(postId)
-
     if (!postToUpdate) {
-      console.warn(`toggleSavePost: Post with ID ${postId} not found in any active store.`)
+      console.warn(`toggleSavePost: Post with ID ${postId} not found.`)
       return
     }
+    
     const originalIsSaved = postToUpdate.is_saved
-    postToUpdate.is_saved = !postToUpdate.is_saved
+
+    // Optimistic UI update for all instances
+    applyPostUpdate(postId, { is_saved: !originalIsSaved })
+
     try {
       const response = await axiosInstance.post<Post>(`/posts/${postId}/save/`)
-      const updatedPost = response.data
-      Object.assign(postToUpdate, updatedPost)
-      if (!updatedPost.is_saved) {
-        savedPosts.value = savedPosts.value.filter((p) => p.id !== updatedPost.id)
+      const updatedPostFromServer = response.data
+      
+      // Authoritative update for all instances
+      applyPostUpdate(postId, { is_saved: updatedPostFromServer.is_saved })
+
+      // Now, manage the savedPosts list separately based on the authoritative response
+      if (updatedPostFromServer.is_saved) {
+        // Add to saved list if it's not already there
+        const existsInSaved = savedPosts.value.some(p => p.id === postId)
+        if (!existsInSaved) {
+          savedPosts.value.unshift(postToUpdate) // Use the locally available full object
+        }
+      } else {
+        // Remove from saved list
+        savedPosts.value = savedPosts.value.filter(p => p.id !== postId)
       }
+
     } catch (err: any) {
       console.error(`FeedStore: Error toggling save status for post ID ${postId}:`, err)
-      mainFeedError.value =
-        err.response?.data?.detail || err.message || 'Failed to toggle save status.'
-      postToUpdate.is_saved = originalIsSaved
+      // Revert on failure
+      applyPostUpdate(postId, { is_saved: originalIsSaved })
+      mainFeedError.value = err.response?.data?.detail || 'Failed to toggle save status.'
     }
   }
 
@@ -617,5 +649,6 @@ export const useFeedStore = defineStore('feed', () => {
     $reset,
     resetMainFeedState,
     resetSavedPostsState,
+    updateAuthorDetailsInAllPosts,
   }
 })

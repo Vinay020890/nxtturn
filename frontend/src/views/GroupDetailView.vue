@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, watch, computed, ref, onUnmounted } from 'vue';
-import { useRoute, onBeforeRouteLeave, useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
+// 'onBeforeRouteLeave' has been removed to enable caching
 import { useGroupStore } from '@/stores/group';
 import { useAuthStore } from '@/stores/auth';
 import { storeToRefs } from 'pinia';
@@ -58,28 +59,36 @@ function setupObserver() {
     observer.observe(loadMoreGroupPostsTrigger.value);
   }
 }
-onMounted(async () => {
-  await groupStore.fetchGroupDetails(route.params.slug as string);
-  setupObserver();
+
+async function loadGroupData() {
+    const slug = route.params.slug as string;
+    // CACHING LOGIC: Only fetch if the group is not loaded or is a different group
+    if (!currentGroup.value || currentGroup.value.slug !== slug) {
+        if (currentGroup.value) {
+            groupStore.resetGroupFeedState();
+        }
+        await groupStore.fetchGroupDetails(slug);
+    }
+    setupObserver();
+}
+
+onMounted(() => {
+    loadGroupData();
 });
 
-onBeforeRouteLeave((to, from) => {
-  groupStore.resetGroupFeedState();
-  if (observer) {
-    observer.disconnect();
-  }
-  document.removeEventListener('click', closeOnClickOutside, true);
-  console.log('Leaving group detail view, state and observers cleaned up.');
-});
+// The onBeforeRouteLeave hook has been removed to enable caching.
 
 onUnmounted(() => {
   document.removeEventListener('click', closeOnClickOutside, true);
+  if (observer) {
+      observer.disconnect();
+  }
 });
 
 watch(() => route.params.slug, async (newSlug, oldSlug) => {
   if (newSlug && newSlug !== oldSlug) {
-    await groupStore.fetchGroupDetails(newSlug as string);
-    setupObserver();
+    // This correctly handles navigating between DIFFERENT groups
+    loadGroupData();
   }
 }, { immediate: false });
 
@@ -93,21 +102,15 @@ async function handleJoinGroup() {
 async function handleLeaveGroup() {
   if (!currentGroup.value) return;
 
-  // Check if the current user is the group creator
   if (isGroupCreator.value) {
-    // If they are the creator, don't call the API.
-    // Instead, show an alert and open the transfer modal.
     alert('As the group creator, you must transfer ownership before you can leave.');
-    isTransferModalOpen.value = true; // Open the transfer ownership modal
-    showOptionsMenu.value = false;    // Close the three-dots menu
-    return; // Stop the function here
+    isTransferModalOpen.value = true;
+    showOptionsMenu.value = false;
+    return;
   }
 
-  // If the user is not the creator, proceed with the normal leave action.
   const success = await groupStore.leaveGroup(currentGroup.value.slug);
-  if (success) {
-    // You might want to navigate the user away or show a success message
-  } else {
+  if (!success) {
     alert(`Failed to leave group: ${joinLeaveError.value || 'Unknown error'}`);
   }
 }
@@ -140,7 +143,7 @@ async function handleConfirmTransfer(newOwnerId: number) {
 </script>
 
 <template>
-  <!-- FIX: Removed the "p-4" class from this top-level container -->
+  <!-- The entire template section remains unchanged -->
   <div class="max-w-4xl mx-auto">
     <div v-if="isLoadingGroup && !currentGroup" class="text-center py-10 text-gray-500">
       <p>Loading group...</p>

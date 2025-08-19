@@ -13,7 +13,7 @@ const authStore = useAuthStore();
 
 const { 
   currentProfile, userPosts, isLoadingProfile, isLoadingPosts, 
-  errorProfile, errorPosts, userPostsNextPageUrl, // Use the new next page URL state
+  errorProfile, errorPosts, userPostsNextPageUrl,
   isFollowing, isLoadingFollow 
 } = storeToRefs(profileStore);
 
@@ -25,15 +25,13 @@ const uploadError = ref<string |null>(null);
 const username = computed(() => route.params.username as string || '');
 const isOwnProfile = computed(() => isAuthenticated.value && currentUser.value?.username === username.value);
 
-// --- NEW INFINITE SCROLL LOGIC ---
 const loadMoreTrigger = ref<HTMLElement | null>(null);
 let observer: IntersectionObserver | null = null;
 
 const setupObserver = () => {
-  if (observer) observer.disconnect(); // Clean up old observer
+  if (observer) observer.disconnect();
 
   observer = new IntersectionObserver((entries) => {
-    // If the trigger is visible and there's a next page, fetch it
     if (entries[0].isIntersecting && userPostsNextPageUrl.value && !isLoadingPosts.value) {
       profileStore.fetchNextPageOfUserPosts(username.value);
     }
@@ -46,12 +44,17 @@ const setupObserver = () => {
 
 const loadProfileData = async () => {
   if (username.value) {
-    // These now run in parallel for a faster initial load
-    await Promise.all([
-        profileStore.fetchProfile(username.value),
-        profileStore.fetchUserPosts(username.value)
-    ]);
-    // After data is loaded, set up the observer
+    // Only fetch if the profile is not already loaded or is for a different user
+    if (!currentProfile.value || currentProfile.value.user.username !== username.value) {
+      // Clear previous user's data ONLY if we're loading a different profile
+      if (currentProfile.value) {
+          profileStore.clearProfileData();
+      }
+      await Promise.all([
+          profileStore.fetchProfile(username.value),
+          profileStore.fetchUserPosts(username.value)
+      ]);
+    }
     setupObserver();
   }
 };
@@ -62,17 +65,17 @@ onMounted(() => {
 
 watch(username, (newUsername, oldUsername) => {
   if (newUsername && newUsername !== oldUsername) {
+    // This correctly handles navigation between DIFFERENT profiles.
     profileStore.clearProfileData();
     loadProfileData();
   }
 });
 
 onUnmounted(() => {
-  if (observer) observer.disconnect(); // Disconnect observer on component leave
-  profileStore.clearProfileData();
+  if (observer) observer.disconnect();
+  // THE FIX: The line `profileStore.clearProfileData()` has been removed from here.
+  // This will preserve the profile data in the store when navigating away.
 });
-
-// The handlePageChange function is no longer needed.
 
 function handleFileChange(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0];
@@ -112,16 +115,8 @@ async function uploadProfilePicture() {
       <p>{{ errorProfile }}</p>
     </div>
 
-    <!-- 
-      FIX #1: Changed pt-6 to pt-20 to push the container down below the navbar.
-      The grid structure itself is now restored to your original design.
-    -->
     <div v-else-if="currentProfile" class="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 grid grid-cols-12 gap-6 pt-20">
       
-      <!-- 
-        FIX #2: Changed sticky top-6 to top-20 to match the new navbar height.
-        RESTORED: The col-span-6 is back to your original value.
-      -->
       <aside class="col-span-6 sticky top-20 self-start">
         <div class="bg-white rounded-lg shadow-md p-6">
           <div class="flex flex-col items-center text-center">
@@ -156,9 +151,6 @@ async function uploadProfilePicture() {
         </div>
       </aside>
 
-      <!-- 
-        RESTORED: The col-span-6 for the post box section is back to your original value.
-      -->
       <div class="col-span-6 min-w-0">
         <div v-if="isLoadingPosts && userPosts.length === 0" class="text-center p-10 text-gray-500">
           Loading posts...

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
-import { onBeforeRouteLeave } from 'vue-router';
+// 'onBeforeRouteLeave' has been removed to enable caching.
 import { useGroupStore } from '@/stores/group';
 import { storeToRefs } from 'pinia';
 import { useRouter } from 'vue-router';
@@ -13,12 +13,13 @@ const { allGroups, isLoadingAllGroups, allGroupsError, allGroupsHasNextPage } = 
 const isCreateGroupModalOpen = ref(false);
 
 onMounted(() => {
-  groupStore.fetchGroups();
+  // CACHING LOGIC: Only fetch the list if it's empty.
+  if (allGroups.value.length === 0) {
+    groupStore.fetchGroups();
+  }
 });
 
-onBeforeRouteLeave((to, from) => {
-  groupStore.resetAllGroupsState();
-});
+// The onBeforeRouteLeave hook has been removed.
 
 function openCreateGroupModal() {
   isCreateGroupModalOpen.value = true;

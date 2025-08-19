@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
-import { onBeforeRouteLeave } from 'vue-router';
+// The import for 'onBeforeRouteLeave' has been correctly removed.
 import { useFeedStore } from '@/stores/feed';
 import PostItem from '@/components/PostItem.vue';
 
@@ -12,16 +12,14 @@ async function fetchMoreSavedPosts() {
 
 // Lifecycle Hooks
 onMounted(() => {
-  // Only fetch if the list is empty to prevent re-fetching on navigation
+  // This logic now correctly enables caching.
+  // It only fetches from the API if the savedPosts list is empty.
   if (feedStore.savedPosts.length === 0) {
     feedStore.fetchSavedPosts();
   }
 });
 
-onBeforeRouteLeave((to, from) => {
-  feedStore.resetSavedPostsState();
-  console.log('Leaving saved posts view, state cleaned up.');
-});
+// The onBeforeRouteLeave hook has been completely removed to stop the state from being cleared.
 </script>
 
 <template>
@@ -64,8 +62,6 @@ onBeforeRouteLeave((to, from) => {
         </button>
       </div>
     </div>
-
-    <!-- The ReportFormModal has been removed from here. PostItem now handles it. -->
     
   </div>
 </template>
