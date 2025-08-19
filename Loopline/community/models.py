@@ -256,11 +256,13 @@ class Notification(models.Model):
     COMMENT = 'comment'
     REPLY = 'reply'
     MENTION = 'mention'
+    FOLLOW = 'follow'
     NOTIFICATION_TYPE_CHOICES = [
         (LIKE, 'Like on your Post'),
         (COMMENT, 'Comment on your Post'),
         (REPLY, 'Reply to your Comment'),
         (MENTION, 'Mention in a Post/Comment'),
+        (FOLLOW, 'New Follower'),
     ]
     notification_type = models.CharField(max_length=50, choices=NOTIFICATION_TYPE_CHOICES, blank=True, null=True)
     action_object_content_type = models.ForeignKey(ContentType, related_name='notification_action_object', on_delete=models.CASCADE, null=True, blank=True)

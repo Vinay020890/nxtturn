@@ -3,7 +3,8 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.conf import settings
-from .models import UserProfile, Like, StatusPost, Notification, Comment
+from .models import UserProfile, Follow, Like, StatusPost, Notification, Comment
+
 from .serializers import NotificationSerializer
 
 from channels.layers import get_channel_layer
@@ -112,3 +113,29 @@ def create_comment_notification(sender, instance, created, **kwargs):
             )
             print(f"Notification (Comment): Created for {post_author.username}")
             send_realtime_notification(notification)
+
+@receiver(post_save, sender=Follow)
+def create_follow_notification(sender, instance, created, **kwargs):
+    """
+    Create a notification when a Follow object is created.
+    """
+    if not created:
+        return
+
+    followed_user = instance.following
+    follower = instance.follower
+
+    # Prevent self-notification (though your model constraint should already prevent this)
+    if followed_user != follower:
+        # 1. Create the database notification
+        notification = Notification.objects.create(
+            recipient=followed_user,
+            actor=follower,
+            verb="started following you",
+            notification_type='follow', # We will need to add 'follow' to the model choices
+            action_object=instance # The Follow instance itself
+        )
+        print(f"Notification (Follow): Created for {followed_user.username}")
+
+        # 2. Send the real-time message
+        send_realtime_notification(notification)

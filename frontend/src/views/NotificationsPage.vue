@@ -122,6 +122,7 @@ onMounted(() => {
                 <span v-if="notification.notification_type === 'like'"> liked your post.</span>
                 <span v-else-if="notification.notification_type === 'comment'"> commented on your post.</span>
                 <span v-else-if="notification.notification_type === 'reply'"> replied to your comment.</span>
+                <span v-else-if="notification.notification_type === 'follow'"> started following you.</span>
                 <span v-else-if="notification.notification_type === 'mention'"> mentioned you in a 
                   <span class="font-semibold">{{ notification.target?.type.replace('statuspost', 'post') || 'post' }}</span>.
                 </span>
