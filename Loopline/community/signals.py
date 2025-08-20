@@ -37,58 +37,36 @@ def parse_mentions(text):
 
 
 # --- SIGNAL HANDLERS ---
+# --- FIX: Added a unique `dispatch_uid` to every receiver to prevent duplicate signal registrations ---
 
-@receiver(post_save, sender=User)
+@receiver(post_save, sender=User, dispatch_uid="create_user_profile_signal")
 def create_or_update_user_profile(sender, instance, created, **kwargs):
     if created:
         UserProfile.objects.get_or_create(user=instance)
 
-@receiver(post_save, sender=Like)
+@receiver(post_save, sender=Like, dispatch_uid="create_like_notification_signal")
 def create_like_notification(sender, instance, created, **kwargs):
-    """
-    Handles notifications for likes on Posts, Comments, and Replies.
-    """
-    if not created:
-        return
-
-    liked_object = instance.content_object
-    liker = instance.user
-    recipient = None
-    verb = ""
-    target = None
+    if not created: return
+    liked_object, liker, recipient, verb, target = instance.content_object, instance.user, None, "", None
 
     if isinstance(liked_object, StatusPost):
-        # Case 1: Liking a Post
         recipient = liked_object.author
         verb = "liked your post"
         target = liked_object
-
     elif isinstance(liked_object, Comment):
-        # Case 2: Liking a Comment OR a Reply
         recipient = liked_object.author
-        target = liked_object.content_object # The "target" is the post the comment is on
-
+        target = liked_object.content_object
         if liked_object.parent:
-            # It's a like on a REPLY
             verb = "liked your reply"
         else:
-            # It's a like on a top-level COMMENT
             verb = "liked your comment"
 
-    # Ensure a user isn't notified of their own action
     if recipient and recipient != liker:
-        notification = Notification.objects.create(
-            recipient=recipient,
-            actor=liker,
-            verb=verb,
-            notification_type=Notification.LIKE,
-            action_object=instance,
-            target=target
-        )
+        notification = Notification.objects.create(recipient=recipient, actor=liker, verb=verb, notification_type=Notification.LIKE, action_object=instance, target=target)
         print(f"Notification (Like): Created for {recipient.username} with verb: '{verb}'")
         send_realtime_notification(notification)
 
-@receiver(post_save, sender=Follow)
+@receiver(post_save, sender=Follow, dispatch_uid="create_follow_notification_signal")
 def create_follow_notification(sender, instance, created, **kwargs):
     if not created: return
     followed_user, follower = instance.following, instance.follower
@@ -97,29 +75,24 @@ def create_follow_notification(sender, instance, created, **kwargs):
         print(f"Notification (Follow): Created for {followed_user.username}")
         send_realtime_notification(notification)
 
-@receiver(post_save, sender=StatusPost)
+@receiver(post_save, sender=StatusPost, dispatch_uid="post_mention_notification_signal")
 def create_mention_notification_for_post(sender, instance, created, **kwargs):
-    """Handles mentions in new StatusPost objects."""
     if created and instance.content:
         mentioned_users = parse_mentions(instance.content)
         for user in mentioned_users:
             if user != instance.author:
-                notification = Notification.objects.create(
-                    recipient=user,
-                    actor=instance.author,
-                    verb="mentioned you in a post",
-                    notification_type=Notification.MENTION,
-                    action_object=instance,
-                    target=instance
-                )
+                notification = Notification.objects.create(recipient=user, actor=instance.author, verb="mentioned you in a post", notification_type=Notification.MENTION, action_object=instance, target=instance)
                 print(f"Notification (Mention in Post): Created for {user.username}")
                 send_realtime_notification(notification)
 
-@receiver(post_save, sender=Comment)
+# PASTE THIS NEW FUNCTION INTO your signals.py file
+
+@receiver(post_save, sender=Comment, dispatch_uid="comment_notification_signal")
 def handle_new_comment_notifications(sender, instance, created, **kwargs):
     """
     A single, unified handler for all new comment notifications.
-    It handles mentions, replies, and top-level comments, preventing duplicates.
+    It handles mentions (in comments AND replies), replies, and top-level comments,
+    preventing duplicate notifications.
     """
     if not created:
         return
@@ -127,20 +100,26 @@ def handle_new_comment_notifications(sender, instance, created, **kwargs):
     commenter = instance.author
     notified_users = {commenter} # Use a set for efficient duplicate checking
 
-    # --- 1. Handle Mentions First ---
+    # --- 1. Handle Mentions First (Now with reply detection) ---
     if instance.content:
         mentioned_users = parse_mentions(instance.content)
         for user in mentioned_users:
             if user not in notified_users:
+                
+                # --- THIS IS THE FIX ---
+                # Check if the comment is a reply to generate the correct verb
+                mention_verb = "mentioned you in a reply" if instance.parent else "mentioned you in a comment"
+                # --- END OF FIX ---
+
                 notification = Notification.objects.create(
                     recipient=user,
                     actor=commenter,
-                    verb="mentioned you in a comment",
+                    verb=mention_verb, # Use the correct verb
                     notification_type=Notification.MENTION,
                     action_object=instance,
                     target=instance.content_object
                 )
-                print(f"Notification (Mention): Created for {user.username}")
+                print(f"Notification (Mention): Created for {user.username} with verb: '{mention_verb}'")
                 send_realtime_notification(notification)
                 notified_users.add(user)
 
