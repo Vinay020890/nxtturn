@@ -1,8 +1,5 @@
 // C:\Users\Vinay\Project\frontend\src\services\notificationService.ts
 
-// The problematic top-level import has been removed.
-// import { useNotificationStore } from '@/stores/notification';
-
 class NotificationService {
   private socket: WebSocket | null = null;
   private isConnecting: boolean = false;
@@ -24,21 +21,23 @@ class NotificationService {
       this.isConnecting = false;
       return;
     }
+    
+    // --- THIS IS THE FIX ---
+    // The hardcoded 'localhost' is replaced with the environment variable.
+    const baseUrl = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000/ws/';
+    const url = `${baseUrl}notifications/?token=${authToken}`;
+    console.log(`Service: Attempting to connect to WebSocket at: ${url}`); // Added for easier debugging
+    // --- END OF FIX ---
 
-    const url = `ws://localhost:8000/ws/notifications/?token=${authToken}`;
     this.socket = new WebSocket(url);
 
     this.socket.onopen = () => {
       console.log("✅ Service: WebSocket connection established successfully.");
-      this.isConnecting = false; // Release the lock
+      this.isConnecting = false;
     };
 
-    // --- FIX APPLIED HERE ---
-    // The onmessage handler is now an async function.
-    // The store is imported dynamically only when a message is received, breaking the circular dependency.
     this.socket.onmessage = async (event) => {
       try {
-        // Dynamically import the store *inside* the function that needs it.
         const { useNotificationStore } = await import('@/stores/notification');
         const store = useNotificationStore();
         
@@ -50,17 +49,16 @@ class NotificationService {
           console.error("Service: Error processing message or importing store:", e);
       }
     };
-    // --- END OF FIX ---
 
     this.socket.onclose = () => {
       console.log("Service: WebSocket connection closed.");
       this.socket = null;
-      this.isConnecting = false; // Release the lock
+      this.isConnecting = false;
     };
 
     this.socket.onerror = (error) => {
       console.error("Service: WebSocket error:", error);
-      this.isConnecting = false; // Release the lock
+      this.isConnecting = false;
     };
   }
 
@@ -72,5 +70,4 @@ class NotificationService {
   }
 }
 
-// The singleton instance is exported as before.
 export const notificationService = new NotificationService();
