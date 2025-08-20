@@ -45,15 +45,47 @@ def create_or_update_user_profile(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender=Like)
 def create_like_notification(sender, instance, created, **kwargs):
-    if not created: return
-    liked_object, liker, recipient, verb, target = instance.content_object, instance.user, None, "", None
-    if isinstance(liked_object, (StatusPost, Comment)):
+    """
+    Handles notifications for likes on Posts, Comments, and Replies.
+    """
+    if not created:
+        return
+
+    liked_object = instance.content_object
+    liker = instance.user
+    recipient = None
+    verb = ""
+    target = None
+
+    if isinstance(liked_object, StatusPost):
+        # Case 1: Liking a Post
         recipient = liked_object.author
-        verb = "liked your post" if isinstance(liked_object, StatusPost) else "liked your comment"
+        verb = "liked your post"
         target = liked_object
+
+    elif isinstance(liked_object, Comment):
+        # Case 2: Liking a Comment OR a Reply
+        recipient = liked_object.author
+        target = liked_object.content_object # The "target" is the post the comment is on
+
+        if liked_object.parent:
+            # It's a like on a REPLY
+            verb = "liked your reply"
+        else:
+            # It's a like on a top-level COMMENT
+            verb = "liked your comment"
+
+    # Ensure a user isn't notified of their own action
     if recipient and recipient != liker:
-        notification = Notification.objects.create(recipient=recipient, actor=liker, verb=verb, notification_type=Notification.LIKE, action_object=instance, target=target)
-        print(f"Notification (Like): Created for {recipient.username}")
+        notification = Notification.objects.create(
+            recipient=recipient,
+            actor=liker,
+            verb=verb,
+            notification_type=Notification.LIKE,
+            action_object=instance,
+            target=target
+        )
+        print(f"Notification (Like): Created for {recipient.username} with verb: '{verb}'")
         send_realtime_notification(notification)
 
 @receiver(post_save, sender=Follow)
