@@ -241,10 +241,44 @@ class NotificationSerializer(serializers.ModelSerializer):
     actor = UserSerializer(read_only=True)
     target = GenericRelatedObjectSerializer(read_only=True, allow_null=True)
     action_object = GenericRelatedObjectSerializer(read_only=True, allow_null=True)
+    
+    # --- 1. ADD THIS NEW FIELD ---
+    context_snippet = serializers.SerializerMethodField()
+
     class Meta:
         model = Notification
-        fields = ['id', 'actor', 'verb', 'notification_type', 'target', 'action_object', 'timestamp', 'is_read']
+        # --- 2. ADD 'context_snippet' TO THE FIELDS LIST ---
+        fields = ['id', 'actor', 'verb', 'notification_type', 'target', 'action_object', 'timestamp', 'is_read', 'context_snippet']
         read_only_fields = fields 
+
+    # --- 3. ADD THIS ENTIRE NEW METHOD INSIDE THE CLASS ---
+    def get_context_snippet(self, obj: Notification) -> str | None:
+        """
+        Generates a short preview of the content related to the notification.
+        - For comments/replies, it shows the comment's own text.
+        - For likes/mentions, it shows the text of the post/comment being targeted.
+        - For follows, it returns None as there is no text content.
+        """
+        source_object = None
+        # For new comments or replies, the content is on the action_object.
+        if obj.notification_type in ['comment', 'reply']:
+            source_object = obj.action_object
+        # For likes or mentions, the content is on the target object.
+        elif obj.notification_type in ['like', 'mention']:
+            source_object = obj.target
+
+        # Check if the source object exists and has a 'content' attribute.
+        if source_object and hasattr(source_object, 'content') and source_object.content:
+            content = str(source_object.content)
+            # Truncate the content to a reasonable preview length
+            truncate_at = 75
+            if len(content) > truncate_at:
+                # Add quotes for a nice visual style in the UI
+                return f'"{content[:truncate_at]}..."'
+            return f'"{content}"'
+
+        # Return None if no relevant text content is found (e.g., for 'follow' notifications)
+        return None 
 
 class UserProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)

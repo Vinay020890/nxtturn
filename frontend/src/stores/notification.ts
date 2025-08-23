@@ -23,6 +23,7 @@ export interface Notification {
   action_object: NotificationRelatedObject | null
   timestamp: string
   is_read: boolean
+  context_snippet: string | null 
 }
 export interface PaginatedNotificationResponse {
   count: number

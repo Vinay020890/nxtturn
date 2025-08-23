@@ -75,6 +75,8 @@ export const useFeedStore = defineStore('feed', () => {
   const mainFeedNextCursor = ref<string | null>(null)
   const isLoadingMainFeed = ref(false)
   const mainFeedError = ref<string | null>(null)
+  const isRefreshingMainFeed = ref(false)
+  const newPostsFromRefresh = ref<Post[]>([])
 
   const savedPosts = ref<Post[]>([])
   const savedPostsNextPageUrl = ref<string | null>(null)
@@ -124,6 +126,8 @@ export const useFeedStore = defineStore('feed', () => {
     mainFeedNextCursor.value = null
     isLoadingMainFeed.value = false
     mainFeedError.value = null
+    isRefreshingMainFeed.value = false // <-- ADD THIS
+    newPostsFromRefresh.value = [] // <-- ADD THIS
     console.log('Main feed state has been reset.')
   }
 
@@ -281,6 +285,69 @@ export const useFeedStore = defineStore('feed', () => {
       console.error('FeedStore: Error fetching main feed:', err)
     } finally {
       isLoadingMainFeed.value = false
+    }
+  }
+
+  // --- NEW: Action to show the new posts ---
+  function showNewPosts() {
+    mainFeedPosts.value.unshift(...newPostsFromRefresh.value)
+    newPostsFromRefresh.value = []
+  }
+
+  // --- NEW: Smart Refresh Action ---
+    // --- THIS IS THE CORRECTED VERSION ---
+  async function refreshMainFeed() {
+    if (isRefreshingMainFeed.value) return;
+
+    // Use the main loader for the initial fetch, but not for silent refreshes.
+    const isInitialLoad = mainFeedPosts.value.length === 0;
+    if (isInitialLoad) {
+      isLoadingMainFeed.value = true;
+    }
+    isRefreshingMainFeed.value = true;
+    mainFeedError.value = null;
+
+    try {
+      const authStore = useAuthStore();
+      if (!authStore.isAuthenticated) return;
+
+      const response = await axiosInstance.get<CursorPaginatedResponse>('/feed/');
+      const freshPosts = response.data.results;
+
+      if (isInitialLoad) {
+        // --- INITIAL LOAD LOGIC ---
+        // On the very first load, put posts directly into the main feed.
+        mainFeedPosts.value = freshPosts;
+        newPostsFromRefresh.value = []; // Ensure this is empty
+      } else {
+        // --- BACKGROUND REFRESH LOGIC ---
+        const existingPostIds = new Set(mainFeedPosts.value.map(p => p.id));
+        const genuinelyNewPosts = freshPosts.filter(p => !existingPostIds.has(p.id));
+
+        if (genuinelyNewPosts.length > 0) {
+          newPostsFromRefresh.value = genuinelyNewPosts;
+        }
+
+        const freshPostsMap = new Map(freshPosts.map(p => [p.id, p]));
+        mainFeedPosts.value = mainFeedPosts.value.map(oldPost => {
+          const freshVersion = freshPostsMap.get(oldPost.id);
+          return freshVersion ? freshVersion : oldPost;
+        });
+      }
+
+      // Always update the cursor
+      mainFeedNextCursor.value = response.data.next;
+
+    } catch (err: any) {
+      console.error('FeedStore: Error refreshing main feed:', err);
+      if (isInitialLoad) {
+        mainFeedError.value = err.response?.data?.detail || 'Failed to load feed.';
+      }
+    } finally {
+      isRefreshingMainFeed.value = false;
+      if (isInitialLoad) {
+        isLoadingMainFeed.value = false;
+      }
     }
   }
 
@@ -621,6 +688,8 @@ export const useFeedStore = defineStore('feed', () => {
   return {
     // State
     mainFeedPosts,
+    isRefreshingMainFeed, // <-- ADD THIS
+    newPostsFromRefresh,
     mainFeedNextCursor,
     isLoadingMainFeed,
     mainFeedError,
@@ -658,5 +727,7 @@ export const useFeedStore = defineStore('feed', () => {
     resetMainFeedState,
     resetSavedPostsState,
     updateAuthorDetailsInAllPosts,
+    refreshMainFeed,      // <-- ADD THIS
+    showNewPosts,
   }
 })
