@@ -6,7 +6,7 @@ from django.dispatch import receiver
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from .models import UserProfile, Follow, Like, StatusPost, Notification, Comment
-from .serializers import NotificationSerializer
+from .serializers import NotificationSerializer, StatusPostSerializer, LivePostSerializer
 
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
@@ -19,7 +19,7 @@ def send_realtime_notification(notification_instance):
     """Serializes and sends a notification to the correct user group."""
     serializer = NotificationSerializer(notification_instance)
     channel_layer = get_channel_layer()
-    group_name = f'notifications_{notification_instance.recipient.id}'
+    group_name = f'user_{notification_instance.recipient.id}'
     message_data = {
         'type': 'send_notification',
         'message': {'type': 'new_notification', 'payload': serializer.data}
@@ -156,3 +156,33 @@ def handle_new_comment_notifications(sender, instance, created, **kwargs):
             print(f"Notification (Comment): Created for {post_author.username}")
             send_realtime_notification(notification)
             notified_users.add(post_author)
+
+# PASTE THIS NEW FUNCTION AT THE BOTTOM OF signals.py
+@receiver(post_save, sender=StatusPost, dispatch_uid="live_post_to_followers_signal")
+def send_live_post_to_followers(sender, instance, created, **kwargs):
+    if not created:
+        return
+
+    author = instance.author
+    followers = Follow.objects.filter(following=author).select_related('follower')
+    
+    if not followers:
+        print(f"Live Post: Author {author.username} has no followers. No message sent.")
+        return
+
+    # REPLACE IT WITH THIS
+    serializer = LivePostSerializer(instance)
+    channel_layer = get_channel_layer()
+    message_data = {
+        'type': 'send_live_post',
+        'message': {
+            'type': 'new_post',
+            'payload': serializer.data
+        }
+    }
+
+    for follow_relation in followers:
+        follower = follow_relation.follower
+        group_name = f'user_{follower.id}'
+        async_to_sync(channel_layer.group_send)(group_name, message_data)
+        print(f"!!! REAL-TIME (New Post): Sent post ID {instance.id} to group {group_name} for user {follower.username} !!!")

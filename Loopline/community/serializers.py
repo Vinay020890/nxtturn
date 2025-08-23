@@ -533,6 +533,50 @@ class StatusPostSerializer(serializers.ModelSerializer):
 
 # --- END OF REPLACEMENT FOR StatusPostSerializer ---
 
+# --- THIS IS THE CORRECTED VERSION ---
+class LivePostSerializer(serializers.ModelSerializer):
+    """
+    A lightweight serializer specifically for pushing new posts over WebSockets.
+    It does NOT depend on a request context, making it safe for use in signals.
+    """
+    author = UserSerializer(read_only=True)
+    media = PostMediaSerializer(many=True, read_only=True)
+    poll = PollSerializer(read_only=True, allow_null=True)
+    group = StatusPostSerializer.SimpleGroupSerializer(read_only=True)
+    
+    content_type_id = serializers.SerializerMethodField()
+    object_id = serializers.SerializerMethodField()
+    post_type = serializers.SerializerMethodField()
+
+    # --- THIS IS THE FIX ---
+    # We explicitly define these as simple fields that don't need to be on the model.
+    # The default value ensures they are always present in the serialized output.
+    like_count = serializers.ReadOnlyField(default=0)
+    comment_count = serializers.ReadOnlyField(default=0)
+    is_liked_by_user = serializers.ReadOnlyField(default=False)
+    is_saved = serializers.ReadOnlyField(default=False)
+    # --- END OF FIX ---
+
+    class Meta:
+        model = StatusPost
+        fields = [
+            'id', 'author', 'content', 'created_at', 'updated_at', 'group',
+            'content_type_id', 'object_id', 'post_type', 'media', 'poll',
+            'like_count', 'comment_count', 'is_liked_by_user', 'is_saved'
+        ]
+        # We no longer need extra_kwargs or read_only_fields here
+        # because ReadOnlyField handles it for us.
+
+    def get_content_type_id(self, obj):
+        return ContentType.objects.get_for_model(obj).id
+
+    def get_object_id(self, obj):
+        return obj.pk
+
+    def get_post_type(self, obj):
+        return obj.__class__.__name__.lower()
+# --- END OF LivePostSerializer ---
+
     # ... (all get_* methods remain the same)
 # --- FeedItemSerializer and other serializers remain unchanged ---
 # ... (rest of your serializers.py file) ...

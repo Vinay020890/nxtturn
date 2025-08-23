@@ -351,6 +351,13 @@ export const useFeedStore = defineStore('feed', () => {
     }
   }
 
+  // --- NEW: Action to handle incoming live posts ---
+  function addNewPostFromLiveUpdate(post: Post) {
+    console.log('Live update: New post received!', post);
+    // Add the new post to the refresh array. The UI will automatically react.
+    newPostsFromRefresh.value.unshift(post);
+  }
+
   async function fetchNextPageOfMainFeed() {
     if (mainFeedNextCursor.value && !isLoadingMainFeed.value) {
       await fetchFeed(mainFeedNextCursor.value)
@@ -729,5 +736,6 @@ export const useFeedStore = defineStore('feed', () => {
     updateAuthorDetailsInAllPosts,
     refreshMainFeed,      // <-- ADD THIS
     showNewPosts,
+    addNewPostFromLiveUpdate,
   }
 })
