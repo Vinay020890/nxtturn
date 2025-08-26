@@ -1,69 +1,40 @@
-<!-- C:\Users\Vinay\Project\frontend\src\views\FeedView.vue -->
-<!-- FINAL VERSION with Smart Refresh -->
 <script setup lang="ts">
-import { useAuthStore } from '@/stores/auth';
-import { onMounted, onUnmounted, ref } from 'vue'; // --- MODIFIED: onBeforeRouteLeave replaced with onUnmounted
+import { onMounted, onUnmounted, ref, computed } from 'vue';
 import { useFeedStore } from '@/stores/feed';
+import { useInfiniteScroll } from '@/composables/useInfiniteScroll';
 import CreatePostForm from '@/components/CreatePostForm.vue';
 import PostItem from '@/components/PostItem.vue';
 import eventBus from '@/services/eventBus';
 import { ArrowUpIcon } from '@heroicons/vue/24/solid';
 import PostItemSkeleton from '@/components/PostItemSkeleton.vue';
 
-const authStore = useAuthStore();
 const feedStore = useFeedStore();
-
 const createPostFormKey = ref(0);
 const loadMoreTrigger = ref<HTMLElement | null>(null);
-let observer: IntersectionObserver | null = null;
+
+// Setup reusable infinite scroll with the CORRECT watcher
+const nextFeedPageUrl = computed(() => feedStore.mainFeedNextCursor);
+useInfiniteScroll(loadMoreTrigger, feedStore.fetchNextPageOfMainFeed, nextFeedPageUrl);
 
 function forceFormReset() {
   createPostFormKey.value++;
 }
 
 function handleShowNewPosts() {
-  // First, call the store action to add the new posts to the array.
   feedStore.showNewPosts();
-  
-  // Next, tell the browser to scroll smoothly to the top of the page.
   window.scrollTo({
     top: 0,
-    behavior: 'smooth' // 'smooth' provides a nice scrolling animation.
+    behavior: 'smooth'
   });
 }
 
-// --- MODIFIED: onMounted logic changed significantly ---
-onMounted(async () => {
+onMounted(() => {
   eventBus.on('reset-feed-form', forceFormReset);
-
-  // Always trigger a smart refresh on mount.
-  // This will fetch initial posts if the list is empty, or
-  // fetch new/updated posts if returning to a cached feed.
   feedStore.refreshMainFeed();
-
-  // --- REPLACEMENT BLOCK WITH THE FINAL FIX ---
-  observer = new IntersectionObserver((entries) => {
-    // The component's only job is to report that the user has scrolled to the bottom.
-    if (entries[0].isIntersecting) {
-      // We delegate the responsibility of checking loading states to the store's action.
-      // This is more robust and prevents race conditions.
-      feedStore.fetchNextPageOfMainFeed();
-    }
-  }, { rootMargin: '200px' });
-  // --- END OF REPLACEMENT BLOCK ---
-
-  if (loadMoreTrigger.value) {
-    observer.observe(loadMoreTrigger.value);
-  }
 });
 
-// --- MODIFIED: Replaced onBeforeRouteLeave with onUnmounted for better practice ---
 onUnmounted(() => {
   eventBus.off('reset-feed-form', forceFormReset);
-  if (observer) {
-    observer.disconnect();
-  }
-  // We NO LONGER call resetMainFeedState() here. This is the key to caching.
   console.log('Leaving main feed view, observer cleaned up. State is preserved.');
 });
 </script>

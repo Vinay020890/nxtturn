@@ -1,37 +1,36 @@
+<!-- C:\Users\Vinay\Project\frontend\src\views\SavedPostsView.vue -->
+<!-- FINAL CORRECTED VERSION -->
+
 <script setup lang="ts">
-import { onMounted } from 'vue';
-// The import for 'onBeforeRouteLeave' has been correctly removed.
+import { onMounted, ref, computed } from 'vue';
 import { useFeedStore } from '@/stores/feed';
+import { useInfiniteScroll } from '@/composables/useInfiniteScroll';
 import PostItem from '@/components/PostItem.vue';
 
 const feedStore = useFeedStore();
+const loadMoreTrigger = ref<HTMLElement | null>(null);
 
-async function fetchMoreSavedPosts() {
-  await feedStore.fetchNextPageOfSavedPosts();
-}
+// This is the single source of truth for the next page URL
+const nextSavedPostUrl = computed(() => feedStore.savedPostsNextPageUrl);
 
-// Lifecycle Hooks
+// We pass it to our composable
+useInfiniteScroll(loadMoreTrigger, feedStore.fetchNextPageOfSavedPosts, nextSavedPostUrl);
+
 onMounted(() => {
-  // This logic now correctly enables caching.
-  // It only fetches from the API if the savedPosts list is empty.
   if (feedStore.savedPosts.length === 0) {
     feedStore.fetchSavedPosts();
   }
 });
-
-// The onBeforeRouteLeave hook has been completely removed to stop the state from being cleared.
 </script>
 
 <template>
   <div class="space-y-4">
-    <!-- Header card for the title -->
     <div class="bg-white rounded-lg shadow-sm p-4 md:p-6 border border-gray-200">
       <div class="flex items-center justify-between">
         <h1 class="text-xl md:text-2xl font-bold text-gray-800">Saved Posts</h1>
       </div>
     </div>
 
-    <!-- Content Area -->
     <div v-if="feedStore.isLoadingSavedPosts && feedStore.savedPosts.length === 0" class="text-center text-gray-500 mt-12">
       Loading saved posts...
     </div>
@@ -52,16 +51,13 @@ onMounted(() => {
         :post="post"
       />
       
-      <div v-if="feedStore.savedPostsNextPageUrl" class="flex justify-center py-4">
-        <button 
-          @click="fetchMoreSavedPosts" 
-          :disabled="feedStore.isLoadingSavedPosts"
-          class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-full shadow-md transition-transform transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {{ feedStore.isLoadingSavedPosts ? 'Loading...' : 'Load More' }}
-        </button>
+      <!-- THIS IS THE FIX: We now use `nextSavedPostUrl` in the v-if -->
+      <div v-if="nextSavedPostUrl" ref="loadMoreTrigger" class="h-10"></div>
+      
+      <div v-if="feedStore.isLoadingSavedPosts && feedStore.savedPosts.length > 0" class="text-center p-4 text-gray-500">
+          Loading more posts...
       </div>
+
     </div>
-    
   </div>
 </template>

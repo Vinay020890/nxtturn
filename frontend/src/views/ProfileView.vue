@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router';
 import PostItem from '@/components/PostItem.vue';
 import { useProfileStore } from '@/stores/profile';
 import { useAuthStore } from '@/stores/auth';
+import { useInfiniteScroll } from '@/composables/useInfiniteScroll';
 import { storeToRefs } from 'pinia';
 
 const route = useRoute();
@@ -24,29 +25,19 @@ const isUploadingPicture = ref(false);
 const uploadError = ref<string |null>(null);
 const username = computed(() => route.params.username as string || '');
 const isOwnProfile = computed(() => isAuthenticated.value && currentUser.value?.username === username.value);
-
 const loadMoreTrigger = ref<HTMLElement | null>(null);
-let observer: IntersectionObserver | null = null;
 
-const setupObserver = () => {
-  if (observer) observer.disconnect();
-
-  observer = new IntersectionObserver((entries) => {
-    if (entries[0].isIntersecting && userPostsNextPageUrl.value && !isLoadingPosts.value) {
-      profileStore.fetchNextPageOfUserPosts(username.value);
-    }
-  }, { rootMargin: '200px' });
-
-  if (loadMoreTrigger.value) {
-    observer.observe(loadMoreTrigger.value);
-  }
-};
+// Setup reusable infinite scroll with the CORRECT watcher
+const nextProfilePostUrl = computed(() => userPostsNextPageUrl.value);
+useInfiniteScroll(
+  loadMoreTrigger,
+  () => profileStore.fetchNextPageOfUserPosts(username.value),
+  nextProfilePostUrl
+);
 
 const loadProfileData = async () => {
   if (username.value) {
-    // Only fetch if the profile is not already loaded or is for a different user
     if (!currentProfile.value || currentProfile.value.user.username !== username.value) {
-      // Clear previous user's data ONLY if we're loading a different profile
       if (currentProfile.value) {
           profileStore.clearProfileData();
       }
@@ -55,7 +46,6 @@ const loadProfileData = async () => {
           profileStore.fetchUserPosts(username.value)
       ]);
     }
-    setupObserver();
   }
 };
 
@@ -65,16 +55,13 @@ onMounted(() => {
 
 watch(username, (newUsername, oldUsername) => {
   if (newUsername && newUsername !== oldUsername) {
-    // This correctly handles navigation between DIFFERENT profiles.
     profileStore.clearProfileData();
     loadProfileData();
   }
 });
 
 onUnmounted(() => {
-  if (observer) observer.disconnect();
-  // THE FIX: The line `profileStore.clearProfileData()` has been removed from here.
-  // This will preserve the profile data in the store when navigating away.
+  // Cleanup is now automatic in the composable
 });
 
 function handleFileChange(event: Event) {

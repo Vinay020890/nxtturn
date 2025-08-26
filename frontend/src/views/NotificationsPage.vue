@@ -1,13 +1,10 @@
-<!-- FINAL VERSION (with Infinite Scroll) -->
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import { onBeforeRouteLeave } from 'vue-router'; // Import for cleanup
+import { onMounted, ref, computed } from 'vue';
 import { useNotificationStore } from '@/stores/notification';
+import { useInfiniteScroll } from '@/composables/useInfiniteScroll';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { getAvatarUrl } from '@/utils/avatars';
 import type { Notification } from '@/stores/notification';
-
-// Icon Imports
 import {
   HeartIcon,
   ChatBubbleOvalLeftEllipsisIcon,
@@ -18,11 +15,15 @@ import {
 
 const notificationStore = useNotificationStore();
 const isMarkingAllRead = ref(false);
-
-// --- START: Infinite Scroll Logic ---
 const loadMoreTrigger = ref<HTMLElement | null>(null);
-let observer: IntersectionObserver | null = null;
-// --- END: Infinite Scroll Logic ---
+
+// Setup reusable infinite scroll with the CORRECT watcher
+const nextNotificationPageUrl = computed(() => notificationStore.pagination.next);
+useInfiniteScroll(
+  loadMoreTrigger,
+  () => notificationStore.fetchNotifications(notificationStore.pagination.currentPage + 1),
+  nextNotificationPageUrl
+);
 
 const getNotificationLink = (notification: Notification) => {
   if (['like', 'comment', 'reply', 'mention'].includes(notification.notification_type)) {
@@ -31,11 +32,6 @@ const getNotificationLink = (notification: Notification) => {
     }
   }
   return { name: 'profile', params: { username: notification.actor.username } };
-};
-
-const loadNotifications = (page: number) => {
-  if (notificationStore.isLoadingList && page !== 1) return;
-  notificationStore.fetchNotifications(page);
 };
 
 const markOneAsRead = async (notificationId: number) => {
@@ -52,36 +48,10 @@ async function handleMarkAllAsRead() {
 }
 
 onMounted(() => {
-  // Fetch initial notifications only if the list is empty (part of caching strategy)
   if (notificationStore.notifications.length === 0) {
-      loadNotifications(1);
+      notificationStore.fetchNotifications(1);
   }
-
-  // --- START: Setup Intersection Observer ---
-  observer = new IntersectionObserver((entries) => {
-    // Check if the trigger is visible, there's a next page, and we are not currently loading
-    if (entries[0].isIntersecting && notificationStore.pagination.next && !notificationStore.isLoadingList) {
-      // Load the next page of notifications
-      notificationStore.fetchNotifications(notificationStore.pagination.currentPage + 1);
-    }
-  }, { rootMargin: '200px' }); // Load content 200px before it enters the viewport
-  
-  if (loadMoreTrigger.value) { 
-    observer.observe(loadMoreTrigger.value); 
-  }
-  // --- END: Setup Intersection Observer ---
 });
-
-// --- START: Cleanup Logic ---
-onBeforeRouteLeave(() => {
-  // Disconnect the observer to prevent memory leaks when leaving the page
-  if (observer) { 
-    observer.disconnect(); 
-  }
-  // NOTE: We do NOT reset the notification state, to preserve the cache for instant re-loads.
-});
-// --- END: Cleanup Logic ---
-
 </script>
 
 <template>
@@ -131,7 +101,7 @@ onBeforeRouteLeave(() => {
                 />
               </div>
               
-              <div class="flex-grow">
+              <div class="flex-grow min-w-0 break-words">
                 <div class="flex justify-between items-baseline">
                   <strong class="font-bold text-sm" :class="notification.is_read ? 'text-gray-700' : 'text-gray-900'">
                     {{ notification.actor.username }}
@@ -152,7 +122,7 @@ onBeforeRouteLeave(() => {
                   <span>{{ notification.verb }}</span>
                 </div>
                 
-                <p v-if="notification.context_snippet" class="mt-2 text-sm text-gray-500 italic">
+                <p v-if="notification.context_snippet" class="mt-2 text-sm text-gray-500 italic break-words">
                   {{ notification.context_snippet }}
                 </p>
               </div>

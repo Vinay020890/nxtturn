@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { onMounted, watch, computed, ref, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-// 'onBeforeRouteLeave' has been removed to enable caching
 import { useGroupStore } from '@/stores/group';
 import { useAuthStore } from '@/stores/auth';
+import { useInfiniteScroll } from '@/composables/useInfiniteScroll';
 import { storeToRefs } from 'pinia';
 import CreatePostForm from '@/components/CreatePostForm.vue';
 import PostItem from '@/components/PostItem.vue';
@@ -19,16 +19,18 @@ const isTransferModalOpen = ref(false);
 const {
   currentGroup, groupPosts, isLoadingGroup, groupError, isJoiningLeaving,
   joinLeaveError, isLoadingGroupPosts, groupPostsNextCursor, isDeletingGroup,
-  deleteGroupError,
-  isTransferringOwnership,
-  transferOwnershipError,
+  deleteGroupError, isTransferringOwnership, transferOwnershipError,
 } = storeToRefs(groupStore);
+
 const { isAuthenticated, currentUser } = storeToRefs(authStore);
 const loadMoreGroupPostsTrigger = ref<HTMLElement | null>(null);
-let observer: IntersectionObserver | null = null;
 const isGroupCreator = computed(() => isAuthenticated.value && currentGroup.value && currentUser.value?.id === currentGroup.value.creator.id);
 const showOptionsMenu = ref(false);
 const optionsMenuRef = ref<HTMLDivElement | null>(null);
+
+// Setup reusable infinite scroll with the CORRECT watcher
+const nextGroupPostUrl = computed(() => groupPostsNextCursor.value);
+useInfiniteScroll(loadMoreGroupPostsTrigger, groupStore.fetchNextPageOfGroupPosts, nextGroupPostUrl);
 
 function toggleOptionsMenu() {
   showOptionsMenu.value = !showOptionsMenu.value;
@@ -45,74 +47,44 @@ watch(showOptionsMenu, (isOpen) => {
     document.removeEventListener('click', closeOnClickOutside, true);
   }
 });
-function setupObserver() {
-  if (observer) {
-    observer.disconnect();
-    observer = null;
-  }
-  observer = new IntersectionObserver((entries) => {
-    if (entries[0].isIntersecting && groupPostsNextCursor.value && !isLoadingGroupPosts.value) {
-      groupStore.fetchNextPageOfGroupPosts();
-    }
-  }, { rootMargin: '200px' });
-  if (loadMoreGroupPostsTrigger.value) {
-    observer.observe(loadMoreGroupPostsTrigger.value);
-  }
-}
 
 async function loadGroupData() {
     const slug = route.params.slug as string;
-    // CACHING LOGIC: Only fetch if the group is not loaded or is a different group
     if (!currentGroup.value || currentGroup.value.slug !== slug) {
         if (currentGroup.value) {
             groupStore.resetGroupFeedState();
         }
         await groupStore.fetchGroupDetails(slug);
     }
-    setupObserver();
 }
 
 onMounted(() => {
     loadGroupData();
 });
 
-// The onBeforeRouteLeave hook has been removed to enable caching.
-
 onUnmounted(() => {
   document.removeEventListener('click', closeOnClickOutside, true);
-  if (observer) {
-      observer.disconnect();
-  }
 });
 
 watch(() => route.params.slug, async (newSlug, oldSlug) => {
   if (newSlug && newSlug !== oldSlug) {
-    // This correctly handles navigating between DIFFERENT groups
     loadGroupData();
   }
 }, { immediate: false });
 
 async function handleJoinGroup() {
   if (!currentGroup.value) return;
-  const success = await groupStore.joinGroup(currentGroup.value.slug);
-  if (!success) {
-    alert(`Failed to join group: ${joinLeaveError.value || 'Unknown error'}`);
-  }
+  await groupStore.joinGroup(currentGroup.value.slug);
 }
 async function handleLeaveGroup() {
   if (!currentGroup.value) return;
-
   if (isGroupCreator.value) {
     alert('As the group creator, you must transfer ownership before you can leave.');
     isTransferModalOpen.value = true;
     showOptionsMenu.value = false;
     return;
   }
-
-  const success = await groupStore.leaveGroup(currentGroup.value.slug);
-  if (!success) {
-    alert(`Failed to leave group: ${joinLeaveError.value || 'Unknown error'}`);
-  }
+  await groupStore.leaveGroup(currentGroup.value.slug);
 }
 function handleTransferOwnership() {
   showOptionsMenu.value = false;
@@ -120,13 +92,10 @@ function handleTransferOwnership() {
 }
 async function handleDeleteGroup() {
   if (!currentGroup.value) return;
-  if (confirm(`Are you sure you want to permanently delete the group "${currentGroup.value.name}"? This action cannot be undone.`)) {
+  if (confirm(`Are you sure you want to permanently delete the group "${currentGroup.value.name}"?`)) {
     const success = await groupStore.deleteGroup(currentGroup.value.slug);
     if (success) {
-      alert('Group deleted successfully.');
       router.push({ name: 'group-list' });
-    } else {
-      alert(`Failed to delete group: ${deleteGroupError.value || 'An unknown error occurred.'}`);
     }
   }
 }
@@ -135,9 +104,6 @@ async function handleConfirmTransfer(newOwnerId: number) {
   const success = await groupStore.transferOwnership(currentGroup.value.slug, newOwnerId);
   if (success) {
     isTransferModalOpen.value = false;
-    alert('Ownership transferred successfully. The page will now update.');
-  } else {
-    alert(`Failed to transfer ownership: ${transferOwnershipError.value || 'An unknown error occurred.'}`);
   }
 }
 </script>
