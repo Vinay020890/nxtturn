@@ -351,12 +351,32 @@ export const useFeedStore = defineStore('feed', () => {
     }
   }
 
-  // --- NEW: Action to handle incoming live posts ---
-  function addNewPostFromLiveUpdate(post: Post) {
-    console.log('Live update: New post received!', post);
-    // Add the new post to the refresh array. The UI will automatically react.
-    newPostsFromRefresh.value.unshift(post);
+  // --- ADD THIS NEW FUNCTION ---
+  async function handleNewPostSignal(postId: number) {
+    try {
+      // First, check if we already have this post to avoid duplicates.
+      const isAlreadyPresent = mainFeedPosts.value.some(p => p.id === postId) ||
+                               newPostsFromRefresh.value.some(p => p.id === postId);
+
+      if (isAlreadyPresent) {
+        console.log(`FeedStore: Signal for post ${postId} ignored, already present.`);
+        return; 
+      }
+
+      // Fetch the FULL post object from our existing API endpoint.
+      console.log(`FeedStore: Signal for new post ${postId}. Fetching full data...`);
+      const response = await axiosInstance.get<Post>(`/posts/${postId}/`);
+      const fullPostObject = response.data;
+
+      // Add the full post object to the `newPostsFromRefresh` array.
+      // This will automatically cause the "Show new post(s)" button to appear.
+      newPostsFromRefresh.value.unshift(fullPostObject);
+
+    } catch (error) {
+      console.error(`FeedStore: Failed to fetch full post data for ID ${postId}.`, error);
+    }
   }
+  
 
   async function fetchNextPageOfMainFeed() {
     if (mainFeedNextCursor.value && !isLoadingMainFeed.value) {
@@ -736,6 +756,6 @@ export const useFeedStore = defineStore('feed', () => {
     updateAuthorDetailsInAllPosts,
     refreshMainFeed,      // <-- ADD THIS
     showNewPosts,
-    addNewPostFromLiveUpdate,
+    handleNewPostSignal,
   }
 })

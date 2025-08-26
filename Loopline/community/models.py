@@ -233,6 +233,24 @@ class Like(models.Model):
     object_id = models.PositiveIntegerField()
     content_object = GenericForeignKey('content_type', 'object_id')
     created_at = models.DateTimeField(auto_now_add=True)
+    @property
+    def parent_post(self):
+        """
+        A helper to reliably find the top-level StatusPost.
+        - If the liked object is a Post, return it.
+        - If the liked object is a Comment, return its parent post.
+        - Otherwise, return None.
+        """
+
+        # This dynamic import prevents circular dependency issues.
+        from .models import StatusPost, Comment
+
+        if isinstance(self.content_object, StatusPost):
+            return self.content_object
+        elif isinstance(self.content_object, Comment):
+            # A comment's content_object is always the post it belongs to.
+            return self.content_object.content_object
+        return None
 
     class Meta:
         unique_together = ('user', 'content_type', 'object_id')

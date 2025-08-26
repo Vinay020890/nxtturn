@@ -252,32 +252,32 @@ class NotificationSerializer(serializers.ModelSerializer):
         read_only_fields = fields 
 
     # --- 3. ADD THIS ENTIRE NEW METHOD INSIDE THE CLASS ---
+    # --- FINAL, PERFECTED REPLACEMENT ---
     def get_context_snippet(self, obj: Notification) -> str | None:
         """
         Generates a short preview of the content related to the notification.
-        - For comments/replies, it shows the comment's own text.
-        - For likes/mentions, it shows the text of the post/comment being targeted.
-        - For follows, it returns None as there is no text content.
+        This version is the definitive one, handling all cases correctly.
         """
         source_object = None
-        # For new comments or replies, the content is on the action_object.
-        if obj.notification_type in ['comment', 'reply']:
+
+        # For comments, replies, AND mentions, the most relevant new content
+        # is the comment/reply/post where the action happened. This is always the action_object.
+        if obj.notification_type in ['comment', 'reply', 'mention']:
             source_object = obj.action_object
-        # For likes or mentions, the content is on the target object.
-        elif obj.notification_type in ['like', 'mention']:
+        
+        # For likes, the content we want to show is on the object that was liked, which is the target.
+        elif obj.notification_type == 'like':
             source_object = obj.target
 
-        # Check if the source object exists and has a 'content' attribute.
+        # Now that we have the correct source_object, extract its content.
         if source_object and hasattr(source_object, 'content') and source_object.content:
             content = str(source_object.content)
-            # Truncate the content to a reasonable preview length
             truncate_at = 75
             if len(content) > truncate_at:
-                # Add quotes for a nice visual style in the UI
                 return f'"{content[:truncate_at]}..."'
             return f'"{content}"'
 
-        # Return None if no relevant text content is found (e.g., for 'follow' notifications)
+        # Return None for 'follow' or if no content is found.
         return None 
 
 class UserProfileSerializer(serializers.ModelSerializer):
@@ -536,46 +536,12 @@ class StatusPostSerializer(serializers.ModelSerializer):
 # --- THIS IS THE CORRECTED VERSION ---
 class LivePostSerializer(serializers.ModelSerializer):
     """
-    A lightweight serializer specifically for pushing new posts over WebSockets.
-    It does NOT depend on a request context, making it safe for use in signals.
+    An extremely lightweight serializer for pushing only the ID of a new post
+    over WebSockets, following the "True Hybrid" model.
     """
-    author = UserSerializer(read_only=True)
-    media = PostMediaSerializer(many=True, read_only=True)
-    poll = PollSerializer(read_only=True, allow_null=True)
-    group = StatusPostSerializer.SimpleGroupSerializer(read_only=True)
-    
-    content_type_id = serializers.SerializerMethodField()
-    object_id = serializers.SerializerMethodField()
-    post_type = serializers.SerializerMethodField()
-
-    # --- THIS IS THE FIX ---
-    # We explicitly define these as simple fields that don't need to be on the model.
-    # The default value ensures they are always present in the serialized output.
-    like_count = serializers.ReadOnlyField(default=0)
-    comment_count = serializers.ReadOnlyField(default=0)
-    is_liked_by_user = serializers.ReadOnlyField(default=False)
-    is_saved = serializers.ReadOnlyField(default=False)
-    # --- END OF FIX ---
-
     class Meta:
         model = StatusPost
-        fields = [
-            'id', 'author', 'content', 'created_at', 'updated_at', 'group',
-            'content_type_id', 'object_id', 'post_type', 'media', 'poll',
-            'like_count', 'comment_count', 'is_liked_by_user', 'is_saved'
-        ]
-        # We no longer need extra_kwargs or read_only_fields here
-        # because ReadOnlyField handles it for us.
-
-    def get_content_type_id(self, obj):
-        return ContentType.objects.get_for_model(obj).id
-
-    def get_object_id(self, obj):
-        return obj.pk
-
-    def get_post_type(self, obj):
-        return obj.__class__.__name__.lower()
-# --- END OF LivePostSerializer ---
+        fields = ['id'] # We only need to send the ID.
 
     # ... (all get_* methods remain the same)
 # --- FeedItemSerializer and other serializers remain unchanged ---

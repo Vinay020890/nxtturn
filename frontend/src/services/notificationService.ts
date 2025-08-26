@@ -57,7 +57,8 @@ class NotificationService {
           case 'live_post': {
             const { useFeedStore } = await import('@/stores/feed');
             const store = useFeedStore();
-            store.addNewPostFromLiveUpdate(message.payload);
+            // The payload now just has an 'id'. Pass it to our new handler.
+            store.handleNewPostSignal(message.payload.id);
             break;
           }
           default:

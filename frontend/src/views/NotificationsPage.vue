@@ -17,7 +17,6 @@ const notificationStore = useNotificationStore();
 const isMarkingAllRead = ref(false);
 const loadMoreTrigger = ref<HTMLElement | null>(null);
 
-// Setup reusable infinite scroll with the CORRECT watcher
 const nextNotificationPageUrl = computed(() => notificationStore.pagination.next);
 useInfiniteScroll(
   loadMoreTrigger,
@@ -48,8 +47,10 @@ async function handleMarkAllAsRead() {
 }
 
 onMounted(() => {
-  if (notificationStore.notifications.length === 0) {
-      notificationStore.fetchNotifications(1);
+  // --- THIS IS THE CRITICAL FIX ---
+  // We now use the reliable flag instead of checking array length.
+  if (!notificationStore.hasLoadedInitialList) {
+    notificationStore.fetchNotifications(1);
   }
 });
 </script>

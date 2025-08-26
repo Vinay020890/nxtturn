@@ -1,4 +1,5 @@
 // C:\Users\Vinay\Project\frontend\src\stores\notification.ts
+// --- FINAL CORRECTED VERSION ---
 
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
@@ -6,7 +7,7 @@ import axiosInstance from '@/services/axiosInstance'
 import { useToast } from 'vue-toastification'
 import type { User } from './auth'
 
-// Your complete and correct interfaces
+// Your interfaces remain unchanged
 export interface NotificationActor extends User {}
 export interface NotificationRelatedObject {
   type: string
@@ -35,7 +36,6 @@ export interface PaginatedNotificationResponse {
 export const useNotificationStore = defineStore('notification', () => {
   const toast = useToast()
 
-  // Your complete state
   const notifications = ref<Notification[]>([])
   const unreadCount = ref<number>(0)
   const isLoadingList = ref<boolean>(false)
@@ -51,8 +51,12 @@ export const useNotificationStore = defineStore('notification', () => {
   })
   const ITEMS_PER_PAGE_NOTIFICATIONS = 10
 
-  // Your complete actions
+  // --- 1. NEW STATE PROPERTY ADDED ---
+  // This flag is the key to solving the race condition.
+  const hasLoadedInitialList = ref<boolean>(false)
+
   async function fetchUnreadCount() {
+    // ... (This function is unchanged)
     isLoadingCount.value = true
     try {
       const response = await axiosInstance.get<{ unread_count: number }>(
@@ -68,6 +72,7 @@ export const useNotificationStore = defineStore('notification', () => {
   }
 
   async function fetchNotifications(page: number = 1) {
+    // ... (This function is unchanged, except for one line)
     isLoadingList.value = true
     error.value = null
     if (page === 1) {
@@ -89,6 +94,11 @@ export const useNotificationStore = defineStore('notification', () => {
       pagination.value.currentPage = page
       pagination.value.totalPages =
         data.count > 0 ? Math.ceil(data.count / ITEMS_PER_PAGE_NOTIFICATIONS) : 0
+        
+      // --- 2. NEW LINE ADDED ON SUCCESS ---
+      // If we successfully fetched any page, we mark the initial load as complete.
+      hasLoadedInitialList.value = true
+
     } catch (err: any) {
       console.error('NotificationStore: Error fetching notifications:', err)
       error.value = err.response?.data?.detail || err.message || 'Failed to fetch notifications.'
@@ -97,6 +107,7 @@ export const useNotificationStore = defineStore('notification', () => {
     }
   }
 
+  // ... (markNotificationsAsRead and markAllAsRead are unchanged)
   async function markNotificationsAsRead(notificationIds: number[]) {
     if (!notificationIds || notificationIds.length === 0) return { success: false }
     try {
@@ -116,7 +127,6 @@ export const useNotificationStore = defineStore('notification', () => {
       return { success: false, error: error.value }
     }
   }
-
   async function markAllAsRead() {
     try {
       await axiosInstance.post('/notifications/mark-all-as-read/')
@@ -132,18 +142,15 @@ export const useNotificationStore = defineStore('notification', () => {
     }
   }
 
+  // ... (addLiveNotification is unchanged)
   function addLiveNotification(newNotification: Notification) {
-    // Add the new item to the top of the list currently on screen
     notifications.value.unshift(newNotification)
-
-    // Increase the count in the badge without another API call
     unreadCount.value++
-
-    // Show the toast message
     toast.info(`${newNotification.actor.username} ${newNotification.verb}`)
   }
 
   function resetState() {
+    // ... (This function is unchanged, except for one line)
     notifications.value = []
     unreadCount.value = 0
     isLoadingList.value = false
@@ -157,9 +164,11 @@ export const useNotificationStore = defineStore('notification', () => {
       totalPages: 0,
       pageSize: 10,
     }
+    // --- 3. NEW LINE ADDED TO RESET ---
+    // Ensure the flag is reset on logout.
+    hasLoadedInitialList.value = false
   }
 
-  // The final, complete return statement
   return {
     notifications,
     unreadCount,
@@ -167,6 +176,8 @@ export const useNotificationStore = defineStore('notification', () => {
     isLoadingCount,
     error,
     pagination,
+    // --- 4. EXPOSE THE NEW PROPERTY ---
+    hasLoadedInitialList,
     fetchNotifications,
     fetchUnreadCount,
     markNotificationsAsRead,
