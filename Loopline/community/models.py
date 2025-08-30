@@ -64,7 +64,7 @@ class Follow(models.Model):
     class Meta:
         unique_together = ('follower', 'following')
         constraints = [
-            models.CheckConstraint(check=~models.Q(follower=models.F('following')), name='prevent_self_follow')
+            models.CheckConstraint(condition=~models.Q(follower=models.F('following')), name='prevent_self_follow')
         ]
 
     def __str__(self):
@@ -254,7 +254,7 @@ class ForumPost(models.Model):
         ordering = ['-created_at']
         constraints = [
             models.CheckConstraint(
-                check=(
+                condition=(
                     (models.Q(category__isnull=False) & models.Q(group__isnull=True)) |
                     (models.Q(category__isnull=True) & models.Q(group__isnull=False))
                 ),
