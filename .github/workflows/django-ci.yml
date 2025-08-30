@@ -14,9 +14,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    # We now have TWO services: one for the database, one for channels.
     services:
       postgres:
-        # --- THE ONLY CHANGE IS HERE ---
         image: postgres:16
         env:
           POSTGRES_DB: nxtturn_test_db
@@ -29,6 +29,17 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
+          
+      # --- THIS NEW BLOCK IS THE FINAL FIX ---
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
 
     steps:
       - name: Check out code
@@ -46,6 +57,7 @@ jobs:
 
       - name: Run Pytest
         env:
+          # These variables now connect to our two services.
           SECRET_KEY: 'dummy-secret-key-for-testing'
           DB_NAME: nxtturn_test_db
           DB_USER: testuser
