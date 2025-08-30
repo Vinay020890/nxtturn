@@ -1,0 +1,51 @@
+# A human-readable name for your workflow, which will be displayed on GitHub
+name: Django Backend Tests
+
+# --- Triggers ---
+# This section defines when the workflow should run.
+on:
+  # Run on pushes to the main branch
+  push:
+    branches: [ main, fix/known-issues-cleanup ]
+  
+  # Run on pull requests that target the main branch
+  pull_request:
+    branches: [ main ]
+    
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# --- Jobs ---
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel.
+jobs:
+  # We'll define a single job called "test"
+  test:
+    # The type of runner that the job will run on. 'ubuntu-latest' is fast and cost-effective.
+    runs-on: ubuntu-latest
+
+    # --- Steps ---
+    # A sequence of tasks that will be executed as part of the job.
+    steps:
+      # Step 1: Check out your repository code so the runner can access it.
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      # Step 2: Set up the specific version of Python you need.
+      # Django 5.2 requires Python 3.10+, so 3.11 is a good choice.
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Step 3: Install project dependencies.
+      # This step assumes you have a requirements.txt file in your backend folder.
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r Loopline/requirements.txt
+
+      # Step 4: Run the tests!
+      # pytest-django is smart enough to use a temporary, in-memory SQLite database
+      # for tests, so we don't need to set up PostgreSQL here.
+      - name: Run Pytest
+        run: pytest Loopline/
