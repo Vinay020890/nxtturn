@@ -14,11 +14,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    # --- THIS IS THE CRITICAL FIX ---
-    # This starts a PostgreSQL container for your tests to connect to.
     services:
       postgres:
-        image: postgres:13
+        # --- THE ONLY CHANGE IS HERE ---
+        image: postgres:16
         env:
           POSTGRES_DB: nxtturn_test_db
           POSTGRES_USER: testuser
@@ -46,7 +45,6 @@ jobs:
           pip install -r Loopline/requirements.txt
 
       - name: Run Pytest
-        # These env variables MUST match the service credentials above
         env:
           SECRET_KEY: 'dummy-secret-key-for-testing'
           DB_NAME: nxtturn_test_db
