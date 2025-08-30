@@ -20,12 +20,12 @@ from rest_framework.pagination import PageNumberPagination, CursorPagination # N
 from rest_framework.filters import SearchFilter
 
 from .models import (
-    UserProfile, Follow, StatusPost, ForumCategory, Group, ForumPost,
+    UserProfile, Follow, StatusPost,  Group, 
     Comment, Like, Conversation, Message, Notification, Poll, PollOption, PollVote, Report, GroupJoinRequest, GroupBlock
 )
 from .serializers import (
     UserSerializer, UserProfileSerializer, UserProfileUpdateSerializer,
-    StatusPostSerializer, ForumCategorySerializer, ForumPostSerializer,
+    StatusPostSerializer, 
     GroupSerializer, GroupJoinRequestSerializer, CommentSerializer, ConversationSerializer,
     MessageSerializer, MessageCreateSerializer, NotificationSerializer, ReportSerializer, GroupBlockSerializer
 )
@@ -270,44 +270,11 @@ class PollVoteAPIView(APIView):
 # ==================================
 # Forum Views
 # ==================================
-class ForumCategoryListView(generics.ListAPIView):
-    queryset = ForumCategory.objects.all()
-    serializer_class = ForumCategorySerializer
-    permission_classes = [AllowAny]
 
-class ForumPostListCreateView(generics.ListCreateAPIView):
-    serializer_class = ForumPostSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
-    pagination_class = PageNumberPagination # KEEP: Offset pagination for forum posts
-    def get_queryset(self):
-        queryset = ForumPost.objects.select_related('author', 'category', 'group').prefetch_related('likes').order_by('-created_at')
-        category_id = self.kwargs.get('category_id')
-        group_id = self.kwargs.get('group_id')
-        if category_id:
-            queryset = queryset.filter(category_id=category_id)
-        elif group_id:
-            queryset = queryset.filter(group_id=group_id)
-        else:
-            return ForumPost.objects.none()
-        return queryset
-    def perform_create(self, serializer):
-        category_id = self.kwargs.get('category_id')
-        group_id = self.kwargs.get('group_id')
-        category = get_object_or_404(ForumCategory, pk=category_id) if category_id else None
-        group = get_object_or_404(Group, pk=group_id) if group_id else None
-        if not category and not group:
-             raise serializers.ValidationError("Missing category or group context.")
-        serializer.save(author=self.request.user, category=category, group=group)
-    def get_serializer_context(self):
-        return {'request': self.request}
 
-class ForumPostRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = ForumPost.objects.select_related('author__profile', 'category', 'group').prefetch_related('likes').all()
-    serializer_class = ForumPostSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
-    lookup_field = 'pk'
-    def get_serializer_context(self):
-        return {'request': self.request}
+
+
+
 
 # ==================================
 # Group Views

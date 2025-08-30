@@ -10,9 +10,8 @@ from .utils import process_mentions
 
 # Updated model imports to include PostMedia
 from .models import (
-    UserProfile, Follow, StatusPost, PostMedia, ForumCategory, Group, 
-    ForumPost, Comment, Like, Conversation, Message, Notification, Poll, PollOption, Report, GroupJoinRequest, GroupBlock  
-)
+    UserProfile, Follow, StatusPost, PostMedia, Group, 
+    Comment, Like, Conversation, Message, Notification, Poll, PollOption, Report, GroupJoinRequest, GroupBlock  )
 
 User = get_user_model() 
 
@@ -613,20 +612,10 @@ class FeedItemSerializer(serializers.Serializer):
             return Comment.objects.filter(content_type=content_type, object_id=obj.pk).count()
         return 0
 
-# ... (ForumCategorySerializer, ForumPostSerializer, GroupSerializer, etc. remain the same)
-class ForumCategorySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ForumCategory
-        fields = ['id', 'name', 'description']
 
-class ForumPostSerializer(serializers.ModelSerializer):
-    author = UserSerializer(read_only=True)
-    category_name = serializers.CharField(source='category.name', read_only=True, allow_null=True)
-    group_name = serializers.CharField(source='group.name', read_only=True, allow_null=True)
-    class Meta:
-        model = ForumPost
-        fields = ['id', 'author', 'category', 'group', 'category_name', 'group_name', 'title', 'content', 'created_at', 'updated_at']
-        read_only_fields = ['author', 'created_at', 'updated_at', 'category_name', 'group_name']
+
+
+
 
 # In community/serializers.py
 

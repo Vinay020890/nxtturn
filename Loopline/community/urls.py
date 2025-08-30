@@ -26,10 +26,7 @@ urlpatterns = [
     # path('reports/create/', views.ReportCreateAPIView.as_view(), name='report-create'),
     # --- END OF NEW URL ---
 
-    # --- Forums ---
-    path('forums/', views.ForumCategoryListView.as_view(), name='forum-category-list'),
-    path('forums/<int:category_id>/posts/', views.ForumPostListCreateView.as_view(), name='forum-post-list-create-by-category'),
-    path('forumposts/<int:pk>/', views.ForumPostRetrieveUpdateDestroyView.as_view(), name='forumpost-detail'),
+    
 
     # --- Groups ---
     path('groups/', views.GroupListView.as_view(), name='group-list'),

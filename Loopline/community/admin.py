@@ -8,8 +8,8 @@ from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
 # --- Import your models ---
 from .models import (
-    UserProfile, Follow, StatusPost, ForumCategory, Group,
-    ForumPost, Comment, Like, Notification, Report  
+    UserProfile, Follow, StatusPost, Group,
+    Comment, Like, Notification, Report  
 )
 from django.shortcuts import redirect
 from django.utils import timezone
@@ -70,9 +70,9 @@ class UserProfileAdmin(admin.ModelAdmin):
 # --- Register your other models (keep your existing simple registrations) ---
 # You DON'T need admin.site.register(UserProfile) anymore as it's inline
 admin.site.register(Follow)
-admin.site.register(ForumCategory)
+
 admin.site.register(Group)
-admin.site.register(ForumPost)
+
 admin.site.register(Comment)
 admin.site.register(Like)
 

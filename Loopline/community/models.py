@@ -127,15 +127,7 @@ class PostMedia(models.Model):
 # --- END NEW MODEL ---
 
 
-class ForumCategory(models.Model):
-    name = models.CharField(max_length=100, unique=True)
-    description = models.TextField(blank=True, null=True)
 
-    class Meta:
-        verbose_name_plural = "Forum Categories"
-
-    def __str__(self):
-        return self.name
 
 class Group(models.Model):
     name = models.CharField(max_length=150) # MODIFICATION: unique=True has been removed.
@@ -240,30 +232,7 @@ class GroupBlock(models.Model):
     def __str__(self):
         return f'{self.user.username} blocked from {self.group.name}'
 
-class ForumPost(models.Model):
-    author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='forum_posts')
-    category = models.ForeignKey(ForumCategory, on_delete=models.SET_NULL, blank=True, null=True, related_name='posts')
-    group = models.ForeignKey(Group, on_delete=models.CASCADE, blank=True, null=True, related_name='forum_posts')
-    title = models.CharField(max_length=255)
-    content = models.TextField()
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    likes = GenericRelation('Like', related_query_name='forumpost_likes')
 
-    class Meta:
-        ordering = ['-created_at']
-        constraints = [
-            models.CheckConstraint(
-                condition=(
-                    (models.Q(category__isnull=False) & models.Q(group__isnull=True)) |
-                    (models.Q(category__isnull=True) & models.Q(group__isnull=False))
-                ),
-                name='forumpost_has_one_target'
-            )
-        ]
-
-    def __str__(self):
-        return self.title
 
 class Comment(models.Model):
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='comments')
