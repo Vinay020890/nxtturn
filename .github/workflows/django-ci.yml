@@ -48,4 +48,4 @@ jobs:
       # pytest-django is smart enough to use a temporary, in-memory SQLite database
       # for tests, so we don't need to set up PostgreSQL here.
       - name: Run Pytest
-        run: pytest Loopline/
+        run: python -m pytest Loopline/
