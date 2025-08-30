@@ -48,4 +48,14 @@ jobs:
       # pytest-django is smart enough to use a temporary, in-memory SQLite database
       # for tests, so we don't need to set up PostgreSQL here.
       - name: Run Pytest
+        env:
+          SECRET_KEY: 'dummy-secret-key-for-testing'
+          DB_NAME: 'dummy_db_name'
+          DB_USER: 'dummy_user'
+          DB_PASSWORD: 'dummy_password'
+          DB_HOST: 'localhost'
+          DB_PORT: '5432'
+          REDIS_HOST: 'localhost'
+          REDIS_PORT: '6379'
         run: python -m pytest Loopline/
+
