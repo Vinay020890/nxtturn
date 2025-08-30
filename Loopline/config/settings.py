@@ -145,6 +145,9 @@ EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 # REST Framework Settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        # ADD THIS LINE: Enables browser-based authentication for the browsable API
+        'rest_framework.authentication.SessionAuthentication', 
+        
         'rest_framework.authentication.TokenAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [

@@ -6,10 +6,12 @@ from django.db import transaction
 from django.db.models import Count
 from .utils import process_mentions
 
+
+
 # Updated model imports to include PostMedia
 from .models import (
     UserProfile, Follow, StatusPost, PostMedia, ForumCategory, Group, 
-    ForumPost, Comment, Like, Conversation, Message, Notification, Poll, PollOption, Report
+    ForumPost, Comment, Like, Conversation, Message, Notification, Poll, PollOption, Report, GroupJoinRequest, GroupBlock  
 )
 
 User = get_user_model() 
@@ -84,17 +86,19 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'first_name', 'last_name', 'picture']
 
     def get_picture(self, obj):
-        # This method safely gets the picture URL.
-        # It checks for the existence of the profile and the picture field.
+        """
+        Returns the absolute URL for the user's profile picture.
+        """
+        request = self.context.get('request')
+        if not request:
+            return None
+
         try:
-            # FIXED: Use .profile, which is the new 'related_name'.
             if hasattr(obj, 'profile') and obj.profile.picture and hasattr(obj.profile.picture, 'url'):
-                return obj.profile.picture.url
+                return request.build_absolute_uri(obj.profile.picture.url)
         except UserProfile.DoesNotExist:
-            # This handles the case where a User was somehow created without a profile.
             pass
         
-        # Return None if no picture is found.
         return None
     
 # In community/serializers.py
@@ -222,9 +226,11 @@ class GenericRelatedObjectSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True, source='pk')
     display_text = serializers.CharField(read_only=True, source='__str__')
     
-    # --- THIS IS THE FIX ---
-    # We add object_id to link back to parent posts from comments/replies.
+    # This is for linking back to parent posts from comments/replies.
     object_id = serializers.SerializerMethodField()
+
+    # --- THIS IS THE NEW FIELD FOR CREATING URLS ON THE FRONTEND ---
+    slug = serializers.CharField(read_only=True, default=None) # Corrected: Removed redundant source='slug'
 
     def get_object_id(self, obj):
         """
@@ -233,9 +239,7 @@ class GenericRelatedObjectSerializer(serializers.Serializer):
         """
         if hasattr(obj, 'object_id'):
             return obj.object_id
-        # For top-level objects like StatusPost, its object_id is its own pk.
         return obj.pk
-    # --- END OF FIX ---
 
 class NotificationSerializer(serializers.ModelSerializer):
     actor = UserSerializer(read_only=True)
@@ -627,37 +631,103 @@ class ForumPostSerializer(serializers.ModelSerializer):
 # In community/serializers.py
 
 
+
+
+
 class GroupSerializer(serializers.ModelSerializer):
     creator = UserSerializer(read_only=True)
     member_count = serializers.IntegerField(source='members.count', read_only=True)
-    is_member = serializers.SerializerMethodField()
-    is_creator = serializers.SerializerMethodField() # <-- 1. ADD THIS LINE
-    members = UserSerializer(many=True, read_only=True)
+    membership_status = serializers.SerializerMethodField()
+    
+    # --- CHANGE 1: 'members' is now a SerializerMethodField ---
+    members = serializers.SerializerMethodField()
 
     class Meta:
         model = Group
         fields = [
             'id', 'name', 'slug', 'description', 'creator', 'member_count', 
-            'is_member', 'is_creator', 'created_at', 'privacy_level', 'members' # <-- 2. ADD 'is_creator' HERE
+            'membership_status', 'created_at', 'privacy_level', 'members'
         ]
         read_only_fields = ['creator', 'member_count', 'created_at']
 
-    def get_is_member(self, obj):
+    def get_membership_status(self, obj):
+        """
+        Determines the requesting user's status relative to the group.
+        (This method remains unchanged, it is already correct)
+        """
         request = self.context.get('request')
-        if request and request.user.is_authenticated:
-            return obj.members.filter(pk=request.user.pk).exists()
-        return False
+        if not request or not request.user.is_authenticated:
+            return 'none'
+        
+        user = request.user
+        
+        if obj.creator == user:
+            return 'creator'
+        
+        if obj.members.filter(pk=user.pk).exists():
+            return 'member'
+            
+        if obj.privacy_level == 'private' and obj.join_requests.filter(user=user, status='pending').exists():
+            return 'pending'
+        
+        return 'none'
 
-    # --- 3. ADD THIS NEW METHOD ---
-    def get_is_creator(self, obj):
-        """Checks if the requesting user is the creator of the group."""
-        request = self.context.get('request')
-        if request and request.user.is_authenticated:
-            return obj.creator == request.user
-        return False
-    # --- END OF NEW METHOD ---
+    # --- CHANGE 2: The new method that contains our security logic ---
+    def get_members(self, obj):
+        """
+        Conditionally returns the list of group members.
+        - For public groups, always returns the member list.
+        - For private groups, only returns the member list to other members/creator.
+        - For non-members of private groups, returns an empty list.
+        """
+        membership_status = self.get_membership_status(obj)
 
+        # Allow access if the group is public OR if the user is a member/creator
+        if obj.privacy_level == 'public' or membership_status in ['creator', 'member']:
+            queryset = obj.members.all()
+            # We must pass the context down to the UserSerializer
+            # so it can correctly build absolute image URLs.
+            return UserSerializer(queryset, many=True, context=self.context).data
+        
+        # For non-members of a private group, return a safe empty list
+        return []
+# =====================================================================================
+
+class GroupJoinRequestSerializer(serializers.ModelSerializer):
+    """
+    Serializer for listing and managing group join requests.
+    This version uses a SerializerMethodField to guarantee context is passed.
+    """
+    # We change the field to a SerializerMethodField
+    user = serializers.SerializerMethodField()
+
+    class Meta:
+        model = GroupJoinRequest
+        fields = ['id', 'user', 'group', 'status', 'created_at']
+        read_only_fields = ['id', 'group', 'status', 'created_at']
+
+    def get_user(self, obj):
+        """
+        This method manually serializes the user object.
+        """
+        # We explicitly create a UserSerializer instance for the user.
+        # CRUCIALLY, we pass self.context, which we know contains the request,
+        # down to the UserSerializer.
+        serializer = UserSerializer(obj.user, context=self.context)
+        
+        # We return the serialized data.
+        return serializer.data  
     
+class GroupBlockSerializer(serializers.ModelSerializer):
+    """
+    Serializer for listing users who are blocked from a group.
+    """
+    user = UserSerializer(read_only=True)
+    blocked_by = UserSerializer(read_only=True)
+
+    class Meta:
+        model = GroupBlock
+        fields = ['id', 'user', 'group', 'blocked_by', 'created_at']
 
 # --- Replace your existing CommentSerializer with this one ---
 class CommentSerializer(serializers.ModelSerializer):

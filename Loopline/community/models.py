@@ -156,6 +156,9 @@ class Group(models.Model):
         help_text="Defines who can view content and how users can join."
     )
 
+    class Meta:
+        ordering = ['-created_at']
+
     def __str__(self):
         return self.name
 
@@ -175,6 +178,67 @@ class Group(models.Model):
         # Call the original save method.
         super().save(*args, **kwargs)
     # --- END NEW METHOD ---
+
+# PASTE THIS ENTIRE BLOCK
+
+class GroupJoinRequest(models.Model):
+    """
+    Represents a user's request to join a private group.
+    """
+    class RequestStatus(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        APPROVED = 'approved', 'Approved'
+        DENIED = 'denied', 'Denied'
+
+    group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name='join_requests')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='group_join_requests')
+    
+    status = models.CharField(
+        max_length=10,
+        choices=RequestStatus.choices,
+        default=RequestStatus.PENDING
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        # A user can only have one pending request for a specific group at a time.
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'group'], name='unique_join_request')
+        ]
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.user.username} request to join {self.group.name} ({self.status})'
+    
+class GroupBlock(models.Model):
+    """
+    Represents a permanent block of a user from a specific group.
+    """
+    group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name='blocked_users')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='group_blocks')
+    
+    # The admin/creator who initiated the block.
+    # If the blocker's account is deleted, the block should remain.
+    blocked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        related_name='issued_group_blocks'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # A user can only be blocked from a group once.
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'group'], name='unique_user_group_block')
+        ]
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.user.username} blocked from {self.group.name}'
 
 class ForumPost(models.Model):
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='forum_posts')
@@ -275,12 +339,17 @@ class Notification(models.Model):
     REPLY = 'reply'
     MENTION = 'mention'
     FOLLOW = 'follow'
+    GROUP_JOIN_REQUEST = 'group_join_request'
+    GROUP_JOIN_APPROVED = 'group_join_approved'
+
     NOTIFICATION_TYPE_CHOICES = [
         (LIKE, 'Like on your Post'),
         (COMMENT, 'Comment on your Post'),
         (REPLY, 'Reply to your Comment'),
         (MENTION, 'Mention in a Post/Comment'),
         (FOLLOW, 'New Follower'),
+        (GROUP_JOIN_REQUEST, 'Group Join Request'),
+        (GROUP_JOIN_APPROVED, 'Group Join Approved'), 
     ]
     notification_type = models.CharField(max_length=50, choices=NOTIFICATION_TYPE_CHOICES, blank=True, null=True)
     action_object_content_type = models.ForeignKey(ContentType, related_name='notification_action_object', on_delete=models.CASCADE, null=True, blank=True)
@@ -305,6 +374,8 @@ class Notification(models.Model):
             parts.append(f"on your {self.target_content_type.model}")
         status = "Read" if self.is_read else "Unread"
         return f"To: {self.recipient.username} - {' '.join(parts)} - {status}"
+    
+    
 
 
 class Conversation(models.Model):

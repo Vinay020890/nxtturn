@@ -23,6 +23,7 @@ urlpatterns = [
 
     # --- ADD THIS NEW REPORTING URL ---
     path('content/<int:ct_id>/<int:obj_id>/report/', views.ReportCreateAPIView.as_view(), name='content-report'),
+    # path('reports/create/', views.ReportCreateAPIView.as_view(), name='report-create'),
     # --- END OF NEW URL ---
 
     # --- Forums ---
@@ -36,6 +37,13 @@ urlpatterns = [
     path('groups/<slug:slug>/transfer-ownership/', views.GroupTransferOwnershipView.as_view(), name='group-transfer-ownership'),
     path('groups/<slug:slug>/membership/', views.GroupMembershipView.as_view(), name='group-membership'),
     path('groups/<slug:slug>/status-posts/', views.GroupPostListView.as_view(), name='group-statuspost-list'),
+
+    # === NEW: URLs for managing private group join requests ===
+    path('groups/<slug:slug>/requests/', views.GroupJoinRequestListView.as_view(), name='group-join-requests-list'),
+    path('groups/<slug:slug>/requests/<int:request_id>/', views.GroupJoinRequestManageView.as_view(), name='group-request-manage'),
+    path('groups/<slug:slug>/blocks/', views.GroupBlockListView.as_view(), name='group-block-list'),
+    path('groups/<slug:slug>/blocks/<int:user_id>/', views.GroupBlockManageView.as_view(), name='group-block-manage'),
+    # =========================================================
 
     # --- Comments ---
     path('comments/<str:content_type>/<int:object_id>/', views.CommentListCreateAPIView.as_view(), name='comment-list-create'),

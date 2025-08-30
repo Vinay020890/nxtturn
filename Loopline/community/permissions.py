@@ -33,48 +33,44 @@ class IsOwnerOrReadOnly(permissions.BasePermission):
         return False
         # --- END OF UPDATED CHECK ---
 
+# In C:\Users\Vinay\Project\Loopline\community\permissions.py
+
+# --- REPLACEMENT FOR THE IsGroupMember CLASS ---
 class IsGroupMember(permissions.BasePermission):
     """
     Custom permission to only allow members of a specified group to create content within it.
-    Assumes the group_id is available in the request.data or view's kwargs.
+    This version correctly handles a 'group' SLUG from the request.data.
     """
     message = "You must be a member of this group to perform this action."
 
     def has_permission(self, request, view):
-        # Allow read operations (GET, HEAD, OPTIONS) for group content, regardless of membership.
-        # This means anyone can view group posts (assuming the GroupPostListView allows it).
-        if request.method in permissions.SAFE_METHODS:
+        # Read operations are not handled by this permission; it's for creation (POST).
+        # We assume another permission like IsAuthenticated handles GET.
+        # This simplifies the logic. If it's not a POST, we don't block.
+        if request.method != 'POST':
             return True
 
-        # For write operations (POST, PUT, PATCH, DELETE)
-        if request.user and request.user.is_authenticated:
-            group_id = None
+        # For POST requests, the user must be authenticated.
+        if not request.user or not request.user.is_authenticated:
+            return False
 
-            # 1. Try to get group_id from request.data (for StatusPostListCreateView)
-            #    This handles the case where the group is part of the POST payload.
-            if 'group' in request.data:
-                group_id = request.data['group']
-            
-            # 2. Try to get group_id from view.kwargs (for GroupPostListView if it supported create, or nested URLs)
-            #    This handles cases where the group_id is in the URL path, e.g., /groups/{id}/posts/
-            elif 'group_id' in view.kwargs:
-                group_id = view.kwargs['group_id']
+        # --- THIS IS THE CORE FIX ---
+        # 1. We now look for a 'group' SLUG in the request data.
+        group_slug = request.data.get('group')
 
-            if group_id:
-                try:
-                    group = Group.objects.get(pk=group_id)
-                    # Check if the requesting user is a member of this group
-                    return group.members.filter(pk=request.user.pk).exists()
-                except Group.DoesNotExist:
-                    # If the group doesn't exist, permission should fail for creation.
-                    # The serializer's PrimaryKeyRelatedField will also catch this, but it's good to be explicit.
-                    return False 
-            else:
-                # If 'group_id' is not present in the request data or URL kwargs,
-                # it means this is likely a general feed post, not a group-specific one.
-                # In this case, this permission class doesn't restrict it, and IsAuthenticated applies.
-                return True 
-        return False # Not authenticated or no user
+        # 2. If no group slug is provided, this is a main feed post.
+        #    This permission should not block it. The view's IsAuthenticated handles it.
+        if not group_slug:
+            return True
+
+        # 3. If a group slug IS provided, we look up the group by the slug.
+        try:
+            group = Group.objects.get(slug=group_slug)
+            # Check if the requesting user is a member of this group.
+            return group.members.filter(pk=request.user.pk).exists()
+        except Group.DoesNotExist:
+            # If the group slug is invalid, deny permission.
+            return False
     
 class IsCreatorOrReadOnly(permissions.BasePermission):
     """
@@ -116,3 +112,28 @@ class IsGroupCreator(permissions.BasePermission):
             return group.creator == request.user
         
         return False
+    
+
+
+
+class IsGroupMemberOrPublicReadOnly(permissions.BasePermission):
+    """
+    Custom permission for viewing and editing a group.
+    - Allows ANYONE to view a group's basic details (GET).
+    - Hides sensitive data at the serializer level.
+    - Allows ONLY THE CREATOR to edit/delete any group.
+    """
+
+    def has_object_permission(self, request, view, obj):
+        # 'obj' here is the Group instance.
+        
+        # === THIS IS THE CORE CHANGE ===
+        # Allow ALL read-only requests (GET, HEAD, OPTIONS).
+        # The serializer will be responsible for hiding sensitive data.
+        if request.method in permissions.SAFE_METHODS:
+            return True
+
+        # Write permissions (PATCH, DELETE) are still only for the creator.
+        if not request.user.is_authenticated:
+            return False
+        return obj.creator == request.user

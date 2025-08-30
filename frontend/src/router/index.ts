@@ -24,6 +24,16 @@ const router = createRouter({
         { path: '', name: 'feed', component: () => import('@/views/FeedView.vue') },
         { path: 'groups', name: 'group-list', component: () => import('@/views/GroupListAllView.vue') },
         { path: 'groups/:slug', name: 'group-detail', component: () => import('@/views/GroupDetailView.vue') },
+
+        // ================== ADD THIS NEW ROUTE OBJECT HERE ==================
+        {
+          path: 'groups/:slug/requests', // Path is relative to the parent '/'
+          name: 'group-requests',
+          component: () => import('@/views/GroupRequestsView.vue'),
+          // meta: { requiresAuth: true } is inherited from the parent
+        },
+        // ====================================================================
+        
         { path: 'saved-posts', name: 'saved-posts', component: () => import('@/views/SavedPostsView.vue') },
         { path: 'notifications', name: 'notifications', component: () => import('@/views/NotificationsPage.vue') },
         { path: 'search', name: 'search', component: () => import('@/views/SearchPage.vue') },

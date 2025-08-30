@@ -38,12 +38,9 @@ async function handleVote(optionId: number) {
 
 <template>
   <div class="p-4">
-    <p class="font-bold text-gray-800 mb-4">{{ poll.question }}</p>
+    <!-- This fix is correct and remains -->
+    <p class="font-bold text-gray-800 mb-4 break-all">{{ poll.question }}</p>
 
-    <!-- 
-      This is a much cleaner structure. We have ONE loop, and each option is a button.
-      The button's appearance changes based on whether the user has voted or not.
-    -->
     <div class="space-y-3">
       <div v-for="(option, index) in poll.options" :key="option.id">
         <button 
@@ -56,20 +53,22 @@ async function handleVote(optionId: number) {
             'border-blue-500 ring-2 ring-blue-200': hasVoted && poll.user_vote === option.id
           }"
         >
-          <!-- Progress Bar (only visible if user has voted) -->
+          <!-- Progress Bar -->
           <div 
             v-if="hasVoted"
             class="absolute top-0 left-0 h-full bg-blue-100 transition-all duration-500" 
             :style="{ width: getPercentage(option) + '%' }"
           ></div>
           
-          <!-- Content Layer (always visible) -->
+          <!-- Content Layer -->
           <div class="relative flex-shrink-0 w-6 h-6 flex items-center justify-center bg-gray-200 text-gray-600 text-xs font-bold rounded-full">
             {{ optionLetters[index] }}
           </div>
-          <span class="relative flex-grow font-medium text-gray-800">{{ option.text }}</span>
           
-          <!-- Results (Percentage and Checkmark) (only visible if user has voted) -->
+          <!-- FINAL FIX FOR POLL OPTIONS: Added 'min-w-0' to allow the flex item to shrink -->
+          <span class="relative flex-grow font-medium text-gray-800 break-words min-w-0">{{ option.text }}</span>
+          
+          <!-- Results -->
           <div v-if="hasVoted" class="relative flex items-center gap-3">
             <span class="font-semibold text-gray-600">{{ getPercentage(option) }}%</span>
             <div class="w-5 h-5">

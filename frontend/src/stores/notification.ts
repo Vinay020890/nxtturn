@@ -14,6 +14,7 @@ export interface NotificationRelatedObject {
   id: number
   display_text: string
   object_id?: number
+  slug?: string;
 }
 export interface Notification {
   id: number

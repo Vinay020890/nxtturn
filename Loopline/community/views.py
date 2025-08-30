@@ -21,15 +21,15 @@ from rest_framework.filters import SearchFilter
 
 from .models import (
     UserProfile, Follow, StatusPost, ForumCategory, Group, ForumPost,
-    Comment, Like, Conversation, Message, Notification, Poll, PollOption, PollVote, Report
+    Comment, Like, Conversation, Message, Notification, Poll, PollOption, PollVote, Report, GroupJoinRequest, GroupBlock
 )
 from .serializers import (
     UserSerializer, UserProfileSerializer, UserProfileUpdateSerializer,
     StatusPostSerializer, ForumCategorySerializer, ForumPostSerializer,
-    GroupSerializer, CommentSerializer, ConversationSerializer, # Removed FeedItemSerializer as it's not directly used in views
-    MessageSerializer, MessageCreateSerializer, NotificationSerializer, ReportSerializer
+    GroupSerializer, GroupJoinRequestSerializer, CommentSerializer, ConversationSerializer,
+    MessageSerializer, MessageCreateSerializer, NotificationSerializer, ReportSerializer, GroupBlockSerializer
 )
-from .permissions import IsOwnerOrReadOnly, IsGroupMember, IsCreatorOrReadOnly,IsGroupCreator
+from .permissions import IsOwnerOrReadOnly, IsGroupMember, IsCreatorOrReadOnly,IsGroupCreator, IsGroupMemberOrPublicReadOnly 
 
 User = get_user_model()
 
@@ -174,11 +174,13 @@ class StatusPostListCreateView(generics.ListCreateAPIView):
 
     def get_permissions(self):
         if self.request.method == 'POST':
-            if 'group_id' in self.request.data and self.request.data['group_id']:
+            # THE FIX: We now check for the 'group' key (which contains the slug)
+            # instead of the old 'group_id' key. We also check that it's not empty.
+            if 'group' in self.request.data and self.request.data['group']:
                 return [IsAuthenticated(), IsGroupMember()]
             else:
                 return [IsAuthenticated()]
-        return [AllowAny()] 
+        return [IsAuthenticated()] 
 
     def perform_create(self, serializer):
         group = serializer.validated_data.get('group', None)
@@ -338,36 +340,105 @@ class GroupListView(generics.ListCreateAPIView):
 class GroupRetrieveAPIView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Group.objects.prefetch_related('members__profile', 'creator__profile').all()
     serializer_class = GroupSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly, IsCreatorOrReadOnly]
+    permission_classes = [IsGroupMemberOrPublicReadOnly] # <-- THIS IS THE FIX
     lookup_field = 'slug'
+
+# PASTE THIS ENTIRE CLASS TO REPLACE THE OLD ONE
 
 class GroupMembershipView(APIView):
     permission_classes = [IsAuthenticated]
-    
-    def post(self, request, slug, format=None):
-        group = get_object_or_404(Group, slug=slug)
-        if group.members.filter(pk=request.user.pk).exists():
-            return Response({"detail": "You are already a member."}, status=status.HTTP_400_BAD_REQUEST)
-        group.members.add(request.user)
-        return Response({"detail": f"Joined group '{group.name}'."}, status=status.HTTP_200_OK)
 
-    def delete(self, request, slug, format=None):
+    # --- THE FIX IS HERE ---
+    def post(self, request, slug, format=None):
+        """
+        Allows a user to join a public group directly or request to join a private group.
+        """
+        # --- AND HERE ---
         group = get_object_or_404(Group, slug=slug)
         user = request.user
 
-        # --- THIS IS THE NEW SAFETY CHECK ---
-        if group.creator == user:
+        # === THIS IS THE NEW SECURITY CHECK ===
+        # 1. Check if the user is blocked from this group BEFORE any other action.
+        if GroupBlock.objects.filter(group=group, user=user).exists():
             return Response(
-                {"detail": "As the group creator, you must transfer ownership before leaving."},
+                {'detail': 'You are blocked from joining this group.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        # ======================================
+
+        # Prevent the user from joining/requesting if they are already a member.
+        if group.members.filter(id=user.id).exists():
+            return Response(
+                {'detail': 'You are already a member of this group.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        # --- END OF SAFETY CHECK ---
 
-        if not group.members.filter(pk=user.pk).exists():
-            return Response({"detail": "You are not a member."}, status=status.HTTP_400_BAD_REQUEST)
+        # --- THIS IS THE NEW CORE LOGIC ---
+        # ... inside GroupMembershipView's post method ...
+        if group.privacy_level == 'private':
+            # For private groups, get or create a join request.
+            join_request, created = GroupJoinRequest.objects.get_or_create(
+                user=user,
+                group=group
+            )
+            
+            # --- THIS IS THE NEW, SMARTER LOGIC ---
+            if not created:
+                # If a request already exists...
+                if join_request.status == 'pending':
+                    return Response(
+                        {'detail': 'Your request to join this group is already pending.'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                # If the user was previously approved (and left) or was denied,
+                # allow them to re-request by resetting the status to pending.
+                elif join_request.status in ['approved', 'denied']:
+                    join_request.status = 'pending'
+                    join_request.save(update_fields=['status'])
+                    # A signal on GroupJoinRequest will create the notification for the owner.
+            
+            # This response is now sent for both newly created requests
+            # and for old requests that have been reset to 'pending'.
+            return Response(
+                {'status': 'request sent', 'detail': 'Your request to join this private group has been sent.'},
+                status=status.HTTP_201_CREATED
+            )
+# ... rest of the method
+
+        else:
+            # For public groups, add the member directly.
+            group.members.add(user)
+            return Response(
+                {'status': 'member added', 'detail': f"Successfully joined the group '{group.name}'."},
+                status=status.HTTP_201_CREATED
+            )
+
+    # --- AND HERE ---
+    def delete(self, request, slug, format=None):
+        """
+        Allows a user to leave a group.
+        """
+        # --- AND HERE ---
+        group = get_object_or_404(Group, slug=slug)
+        user = request.user
         
+        if not group.members.filter(id=user.id).exists():
+            return Response(
+                {'detail': 'You are not a member of this group.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if group.creator == user:
+            return Response(
+                {'detail': 'Group creators cannot leave their own group. Please transfer ownership first.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         group.members.remove(user)
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(
+            {'status': 'member removed'},
+            status=status.HTTP_204_NO_CONTENT
+        )
 
 class GroupPostListView(generics.ListAPIView):
     serializer_class = StatusPostSerializer
@@ -629,3 +700,135 @@ class GroupTransferOwnershipView(APIView):
             {"detail": f"Ownership successfully transferred to {new_owner.username}."},
             status=status.HTTP_200_OK
         )
+    
+class GroupJoinRequestListView(generics.ListAPIView):
+    """
+    Lists pending join requests for a specific group.
+    Only accessible by the group creator.
+    """
+    serializer_class = GroupJoinRequestSerializer
+    permission_classes = [IsAuthenticated, IsGroupCreator]
+
+    def get_queryset(self):
+        group_slug = self.kwargs.get('slug')
+        # The IsGroupCreator permission already ensures the user is the creator.
+        # We filter for requests that are still 'pending'.
+        return GroupJoinRequest.objects.filter(
+            group__slug=group_slug,
+            status='pending'
+        ).select_related('user__profile') # Eager load user data for efficiency
+
+
+# In community/views.py, inside GroupJoinRequestManageView
+
+# In C:\Users\Vinay\Project\Loopline\community\views.py
+
+# Add this entire class to your views.py file.
+
+class GroupJoinRequestManageView(APIView):
+    """
+    Allows a group creator to approve, deny, or deny_and_block a join request.
+    """
+    permission_classes = [IsAuthenticated, IsGroupCreator]
+
+    def patch(self, request, slug, request_id, format=None):
+        # The IsGroupCreator permission ensures the user owns the group (via 'slug')
+        
+        join_request = get_object_or_404(
+            GroupJoinRequest,
+            id=request_id,
+            group__slug=slug,
+            status='pending'
+        )
+
+        # === THIS IS THE FIX: Delete the old notification first ===
+        Notification.objects.filter(
+            recipient=request.user, 
+            action_object_object_id=join_request.id
+        ).delete()
+    # ==========================================================
+
+        action = request.data.get('action')
+
+        if action not in ['approve', 'deny', 'deny_and_block']:
+            return Response(
+                {"detail": "Invalid action. Must be 'approve', 'deny', or 'deny_and_block'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if action == 'approve':
+            with transaction.atomic():
+                join_request.status = 'approved'
+                join_request.group.members.add(join_request.user)
+                join_request.save()
+
+                # Create the approval notification for the user.
+                Notification.objects.create(
+                    recipient=join_request.user,
+                    actor=request.user, # The group owner is the actor
+                    verb=f"approved your request to join the group",
+                    notification_type=Notification.GROUP_JOIN_APPROVED,
+                    target=join_request.group
+                )
+            
+            return Response({"status": "Request approved. User added to group."}, status=status.HTTP_200_OK)
+        
+        if action == 'deny':
+            join_request.delete()
+            return Response({"status": "Request denied."}, status=status.HTTP_200_OK)
+        
+        if action == 'deny_and_block':
+            with transaction.atomic():
+                GroupBlock.objects.create(
+                    group=join_request.group,
+                    user=join_request.user,
+                    blocked_by=request.user
+                )
+                join_request.delete()
+
+            return Response({"status": "Request denied and user blocked."}, status=status.HTTP_200_OK)
+
+        return Response(status=status.HTTP_400_BAD_REQUEST)
+    
+# In community/views.py
+
+# Add this new view class
+class GroupBlockListView(generics.ListAPIView):
+    """
+    Lists users who are blocked from a specific group.
+    Only accessible by the group creator.
+    """
+    serializer_class = GroupBlockSerializer
+    permission_classes = [IsAuthenticated, IsGroupCreator]
+    pagination_class = StandardResultsSetPagination # Re-use existing pagination
+
+    def get_queryset(self):
+        group_slug = self.kwargs.get('slug')
+        # The IsGroupCreator permission already ensures the request.user is the creator.
+        return GroupBlock.objects.filter(
+            group__slug=group_slug
+        ).select_related('user__profile', 'blocked_by__profile')
+    
+# In community/views.py
+
+# Add this new view class
+class GroupBlockManageView(APIView):
+    """
+    Allows a group creator to unblock a user by deleting the GroupBlock instance.
+    """
+    permission_classes = [IsAuthenticated, IsGroupCreator]
+
+    def delete(self, request, slug, user_id, format=None):
+        # The IsGroupCreator permission already ensures the request.user is the group creator.
+        
+        # We find the specific block record to delete.
+        # This also implicitly checks that the group exists via the slug.
+        group_block = get_object_or_404(
+            GroupBlock,
+            group__slug=slug,
+            user__id=user_id
+        )
+        
+        group_block.delete()
+        
+        return Response(status=status.HTTP_204_NO_CONTENT)
