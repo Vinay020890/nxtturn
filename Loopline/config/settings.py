@@ -23,13 +23,12 @@ if not IS_PRODUCTION and not SECRET_KEY:
 # --- HOSTS CONFIGURATION ---
 ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 if IS_PRODUCTION:
-    # In a generic production environment, ALLOWED_HOSTS should list your production domain(s).
-    # If not defined via an environment variable, it might default to an empty list or be explicitly added here.
-    # Example: ALLOWED_HOSTS.append(os.getenv('PROD_DOMAIN', 'your-production-domain.com'))
-    pass # Keep this empty for now, assuming external domain isn't directly configured via ENV in this setup
+    # ...
+    pass
 else:
-    # This setting allows others on your local network to access the app
-    ALLOWED_HOSTS.append('192.168.31.35')
+    # When running the server with 0.0.0.0, we need to allow all hosts for local network access.
+    # This is safe for local development but should NOT be used in production.
+    ALLOWED_HOSTS.append('*')
 
 # --- APPLICATION DEFINITION ---
 INSTALLED_APPS = [
@@ -53,7 +52,7 @@ INSTALLED_APPS = [
     'community.apps.CommunityConfig',
 ]
 SITE_ID = 1
-ACCOUNT_EMAIL_VERIFICATION = 'none'
+# ACCOUNT_EMAIL_VERIFICATION = 'none'
 
 # --- MIDDLEWARE ---
 MIDDLEWARE = [
@@ -162,9 +161,34 @@ REST_FRAMEWORK = {
     'DEFAULT_FILTER_BACKENDS': ['rest_framework.filters.SearchFilter'],
 }
 
+# --- AUTHENTICATION & REGISTRATION SETTINGS (dj-rest-auth & allauth) ---
+
+
+# It tells Django to use allauth's authentication system.
+AUTHENTICATION_BACKENDS = (
+    'allauth.account.auth_backends.AuthenticationBackend',
+    'django.contrib.auth.backends.ModelBackend',
+)
+
+# django-allauth settings
+# This is the modern way to specify requirements for accounts.
+ACCOUNT_AUTHENTICATION_METHOD = 'username_email' # Allow login with username or email
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_USERNAME_REQUIRED = True
+ACCOUNT_EMAIL_VERIFICATION = 'none' # Keep this for development ease
+
+# dj-rest-auth settings
+# This configures dj-rest-auth itself and how it handles registration.
 REST_AUTH = {
+    'USE_SESSION_AUTH': False, # We use Token Authentication, not sessions
     'USER_DETAILS_SERIALIZER': 'community.serializers.UserSerializer',
     'REGISTER_SERIALIZER': 'community.serializers.CustomRegisterSerializer',
+    
+    # This setting, combined with the ACCOUNT_* settings above, resolves all warnings.
+    'SIGNUP_FIELDS': {
+        'username': {'required': True},
+        'email': {'required': True},
+    }
 }
 
 # --- CORS SETTINGS ---
@@ -187,6 +211,11 @@ else:
         'http://192.168.31.35:5173' # Your local network IP
     ]
 
+# This tells Django that it's safe to accept POST requests from your frontend's network IP
+CSRF_TRUSTED_ORIGINS = [
+    'http://192.168.31.35:5173',
+]
+
 # If you remove Whitenoise:
 # You might need to add 'django.contrib.staticfiles.finders.FileSystemFinder'
 # and 'django.contrib.staticfiles.finders.AppDirectoriesFinder' to STATICFILES_FINDERS
@@ -196,7 +225,9 @@ CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
+            # This now reads the full Redis URL from your .env file
+            # It defaults to the local URL if the .env variable is missing
+            "hosts": [os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0')],
         },
     },
 }

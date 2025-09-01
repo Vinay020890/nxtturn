@@ -5,6 +5,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 from django.db.models import Count
 from .utils import process_mentions
+from dj_rest_auth.registration.serializers import RegisterSerializer
 
 
 
@@ -100,42 +101,10 @@ class UserSerializer(serializers.ModelSerializer):
         
         return None
     
-# In community/serializers.py
-
-# In Loopline/community/serializers.py
-
-# Replace your entire CustomRegisterSerializer with this one.
-class CustomRegisterSerializer(serializers.Serializer):
-    username = serializers.CharField(
-        max_length=150,
-        validators=[validators.UniqueValidator(queryset=User.objects.all())]
-    )
-    email = serializers.EmailField(
-        required=True,
-        validators=[validators.UniqueValidator(queryset=User.objects.all())]
-    )
-    # FIX 1: The field is now named 'password' to match the frontend
-    password = serializers.CharField(write_only=True, style={'input_type': 'password'})
-    password2 = serializers.CharField(write_only=True, style={'input_type': 'password'})
-
-    def validate(self, data):
-        # FIX 2: The validation now compares 'password' and 'password2'
-        if data['password'] != data['password2']:
-            raise serializers.ValidationError({"password": "Passwords must match."})
-        return data
-
-    @transaction.atomic
-    def save(self, request):
-        user = User.objects.create_user(
-            username=self.validated_data['username'],
-            email=self.validated_data['email'],
-            # FIX 3: The user is created using the 'password' field
-            password=self.validated_data['password']
-        )
-        # The signal will automatically create the UserProfile
-        return user
-    
-# === PASTE THIS NEW SERIALIZER AFTER CustomRegisterSerializer ===
+class CustomRegisterSerializer(RegisterSerializer):
+    # This serializer correctly inherits from dj-rest-auth's base class,
+    # which fixes the deprecation warnings. We can add custom fields here later.
+    pass
 
 class ReportSerializer(serializers.ModelSerializer):
     """
