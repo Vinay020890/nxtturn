@@ -3,7 +3,6 @@
 import { ref, computed } from 'vue';
 import { defineStore } from 'pinia';
 import axiosInstance from '@/services/axiosInstance';
-// import router from '@/router'; // <-- CRITICAL: This top-level import is removed to break the circular dependency.
 
 // Define the shape of the User object. This now matches what our API returns.
 export interface User {
@@ -87,11 +86,8 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       setToken(null);
       
-      // --- THE FIX ---
-      // Dynamically import the router only when it's needed.
       const router = (await import('@/router')).default;
       await router.push('/login');
-      // --- END OF FIX ---
     }
   }
 
@@ -103,7 +99,7 @@ export const useAuthStore = defineStore('auth', () => {
       else setUser(null);
     } catch (error: any) {
       console.error('Failed to fetch user profile:', error);
-      if (error.response && error.response.status === 401) await logout(); // ensure logout is awaited
+      if (error.response && error.response.status === 401) await logout();
       else setUser(null);
     }
   }
@@ -126,6 +122,19 @@ export const useAuthStore = defineStore('auth', () => {
     if (authToken.value && !currentUser.value) await fetchUserProfile();
   }
 
+  // --- THIS IS THE NEW FUNCTION FOR MULTI-TAB SYNC ---
+  /**
+   * Silently resets the client-side auth state.
+   * This is called by the 'storage' event listener in App.vue when another
+   * tab logs out. It does NOT make an API call.
+   */
+  function resetAuthState() {
+    authToken.value = null;
+    currentUser.value = null;
+    console.log('Client-side auth state has been reset by multi-tab sync.');
+  }
+  // --- END OF NEW FUNCTION ---
+
   // --- Return state, getters, and actions ---
   return {
     authToken,
@@ -141,5 +150,6 @@ export const useAuthStore = defineStore('auth', () => {
     register,
     initializeAuth,
     updateCurrentUserPicture,
+    resetAuthState, // <-- Make sure to return the new function here!
   };
 });
