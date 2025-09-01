@@ -1,23 +1,38 @@
+// C:\Users\Vinay\Project\frontend\cypress.config.ts
+
 import { defineConfig } from "cypress";
 import dotenv from "dotenv";
-
-// This logic reads the ENV_FILE variable we will set in our npm script.
-// It defaults to the local file if no variable is set.
-const envFile = process.env.ENV_FILE || '.env.cy.local';
-dotenv.config({ path: envFile });
+import path from "path";
 
 export default defineConfig({
   e2e: {
-    // The baseUrl is now dynamically loaded from our .env files
-    baseUrl: process.env.CYPRESS_BASE_URL,
-    
     setupNodeEvents(on, config) {
-      // You can pass all environment variables to the browser tests
-      // This is useful if you ever need them in your test scripts
-      config.env = {
-        ...config.env,
-        ...process.env,
-      };
+      console.log("--- Loading Cypress Config ---");
+      
+      const envFile = process.env.ENV_FILE || '.env.cy.local';
+      console.log(`[DEBUG] ENV_FILE variable from npm script is: ${envFile}`);
+      
+      const envFilePath = path.resolve(process.cwd(), envFile);
+      console.log(`[DEBUG] Attempting to load .env file from path: ${envFilePath}`);
+
+      const envConfig = dotenv.config({ path: envFilePath });
+
+      if (envConfig.error) {
+        console.error("[DEBUG] ERROR loading .env file:", envConfig.error);
+      } else {
+        console.log("[DEBUG] Successfully loaded .env file. Parsed variables:", envConfig.parsed);
+      }
+      
+      if (envConfig.parsed) {
+        config.env = { ...config.env, ...envConfig.parsed };
+      }
+
+      config.baseUrl = config.env.CYPRESS_BASE_URL;
+
+      console.log("[DEBUG] Final Cypress config.env object:", config.env);
+      console.log(`[DEBUG] Final baseUrl is: ${config.baseUrl}`);
+      console.log("----------------------------");
+
       return config;
     },
   },
