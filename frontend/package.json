@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:network": "vite --mode network --host",
+    "serve:e2e:network": "cross-env VUE_DEVTOOLS_DISABLED=true npm run dev:network",
     "build": "vite build",
     "preview": "vite preview",
     "build-only": "vite build",

@@ -50,7 +50,16 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_extensions',
     'community.apps.CommunityConfig',
+    
 ]
+
+# --- ADD THIS BLOCK RIGHT HERE ---
+# Conditionally add our custom testing app ONLY when in development (DEBUG=True).
+# This ensures no testing code ever makes it into a production environment.
+if DEBUG:
+    INSTALLED_APPS.append('e2e_test_utils')
+# --- END OF BLOCK --
+
 SITE_ID = 1
 # ACCOUNT_EMAIL_VERIFICATION = 'none'
 
@@ -144,9 +153,6 @@ EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 # REST Framework Settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        # ADD THIS LINE: Enables browser-based authentication for the browsable API
-        'rest_framework.authentication.SessionAuthentication', 
-        
         'rest_framework.authentication.TokenAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
@@ -181,6 +187,7 @@ ACCOUNT_EMAIL_VERIFICATION = 'none' # Keep this for development ease
 # This configures dj-rest-auth itself and how it handles registration.
 REST_AUTH = {
     'USE_SESSION_AUTH': False, # We use Token Authentication, not sessions
+    'SESSION_LOGIN': False,
     'USER_DETAILS_SERIALIZER': 'community.serializers.UserSerializer',
     'REGISTER_SERIALIZER': 'community.serializers.CustomRegisterSerializer',
     

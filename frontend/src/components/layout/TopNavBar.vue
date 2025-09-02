@@ -198,11 +198,11 @@ const handleLogout = async () => { await authStore.logout(); };
               <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
               <span v-if="unreadCount > 0" class="absolute top-0 right-0 -mt-1 -mr-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs text-white">{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
             </RouterLink>
-            <RouterLink v-if="currentUser" :to="{ name: 'profile', params: { username: currentUser.username } }" class="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-blue-500">
+            <RouterLink v-if="currentUser" :to="{ name: 'profile', params: { username: currentUser.username } }" class="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-blue-500" data-cy="profile-link">
               <img :src="getAvatarUrl(currentUser.picture, currentUser.first_name, currentUser.last_name)" alt="Your avatar" class="w-7 h-7 rounded-full object-cover">
               <span>Profile</span>
             </RouterLink>
-            <button @click="handleLogout" class="text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-full transition">Logout</button>
+            <button @click="handleLogout" class="text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-full transition" data-cy="logout-button">Logout</button>
           </template>
           <template v-else>
             <RouterLink to="/login" class="text-sm font-medium text-gray-600 hover:text-indigo-500">Login</RouterLink>

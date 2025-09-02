@@ -55,7 +55,7 @@ const handleRegister = async () => {
     await authStore.register({
       email: email.value,
       username: username.value,
-      password: password.value,
+      password1: password.value,
       password2: password2.value,
     });
     alert('Registration successful! Please log in.');

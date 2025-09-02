@@ -192,7 +192,7 @@ const removePollOption = (index: number) => {
           <!-- Main text area (Standard Post Mode) -->
           <div v-if="!showPollCreator">
             <MentionAutocomplete v-model="postContent" placeholder="What's on your mind? Mention users with @" :rows="3"
-              :disabled="isCreatingPost" />
+              :disabled="isCreatingPost" data-cy="create-post-input" />
           </div>
 
           <!-- Poll Creator (Poll Post Mode) -->
@@ -280,7 +280,7 @@ const removePollOption = (index: number) => {
         </div>
 
         <button type="submit" :disabled="isCreatingPost || !isSubmittable"
-          class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-full transition-all duration-200 shadow-sm hover:shadow-md disabled:bg-blue-300 disabled:cursor-not-allowed disabled:shadow-none">
+          class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-full transition-all duration-200 shadow-sm hover:shadow-md disabled:bg-blue-300 disabled:cursor-not-allowed disabled:shadow-none" data-cy="create-post-submit-button">
           {{ isCreatingPost ? 'Posting...' : 'Post' }}
         </button>
       </div>

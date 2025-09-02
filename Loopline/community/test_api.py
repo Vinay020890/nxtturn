@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
 from community.models import StatusPost, Report, Comment, Group, GroupJoinRequest, GroupBlock, Notification, Poll, PollOption 
 from rest_framework import status
+from django.contrib.auth.models import User
 
 # This is a convenient way to apply the @pytest.mark.django_db decorator
 # to every single test function in this file. We know all API tests
@@ -30,7 +31,7 @@ def test_unauthenticated_user_cannot_list_posts():
     # 3. ASSERT: 
     # We check the status code of the response. A '401' code is the
     # standard way for an API to say "You are not logged in."
-    assert response.status_code == 403 # Adjusted to match current DRF behavior
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED # Adjusted to match current DRF behavior
 
 
 def test_authenticated_user_can_list_posts():
@@ -866,7 +867,7 @@ def test_unauthenticated_user_cannot_create_group(api_client):
         'privacy_level': 'public'
     }
     response = api_client.post('/api/groups/', group_data)
-    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
     assert Group.objects.count() == 0
 
 def test_authenticated_user_can_create_group(user_factory, api_client_factory):
@@ -1804,3 +1805,27 @@ def test_approving_join_request_creates_notification_for_requester(join_request_
     assert notification.actor == scenario['creator']
     assert notification.notification_type == Notification.GROUP_JOIN_APPROVED
     assert notification.target == scenario['group']
+
+def test_user_registration_success(api_client):
+    """
+    Ensures a new user can be registered successfully via the API
+    with the correct password1 and password2 fields.
+    """
+    # Define the registration data
+    registration_data = {
+        'username': 'newtestuser',
+        'email': 'newtestuser@example.com',
+        'password1': 'StrongPassword123',
+        'password2': 'StrongPassword123'
+    }
+
+    # Make the POST request to the registration endpoint
+    url = '/api/auth/registration/'
+    response = api_client.post(url, registration_data)
+
+    # Assert that the request was successful (HTTP 201 Created)
+    assert response.status_code == status.HTTP_201_CREATED, \
+        f"Expected status 201, but got {response.status_code}. Response: {response.data}"
+
+    # Assert that the user was actually created in the database
+    assert User.objects.filter(username='newtestuser').exists()

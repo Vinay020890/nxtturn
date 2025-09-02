@@ -124,7 +124,7 @@ export const useProfileStore = defineStore('profile', () => {
     }
   }
 
-  function clearProfileData() {
+  function $reset() {
     currentProfile.value = null
     userPosts.value = []
     errorProfile.value = null
@@ -149,19 +149,19 @@ export const useProfileStore = defineStore('profile', () => {
       ) {
         authStoreInstance.updateCurrentUserPicture(updatedProfile.picture)
       }
-      
+
       // --- THIS IS THE FIX ---
       // Get an instance of the feed store
-      const feedStore = useFeedStore();
-      
+      const feedStore = useFeedStore()
+
       // Tell the feed store to update the author's picture in all cached posts
       if (authStoreInstance.currentUser) {
         feedStore.updateAuthorDetailsInAllPosts(authStoreInstance.currentUser.id, {
           picture: updatedProfile.picture,
-        });
+        })
       }
       // --- END OF FIX ---
-      
+
       return updatedProfile
     } catch (err: any) {
       const errorMessage =
@@ -172,11 +172,29 @@ export const useProfileStore = defineStore('profile', () => {
     }
   }
 
+  function addPostToProfileFeed(post: Post) {
+    if (currentProfile.value?.user.id === post.author.id) {
+      userPosts.value.unshift(post)
+    }
+  }
+
   return {
-    currentProfile, userPosts, isLoadingProfile, isLoadingPosts,
-    errorProfile, errorPosts, userPostsNextPageUrl,
-    isFollowing, isLoadingFollow,
-    fetchProfile, fetchUserPosts, fetchNextPageOfUserPosts,
-    clearProfileData, followUser, unfollowUser, updateProfilePicture,
+    currentProfile,
+    userPosts,
+    isLoadingProfile,
+    isLoadingPosts,
+    errorProfile,
+    errorPosts,
+    userPostsNextPageUrl,
+    isFollowing,
+    isLoadingFollow,
+    fetchProfile,
+    fetchUserPosts,
+    fetchNextPageOfUserPosts,
+    $reset,
+    followUser,
+    unfollowUser,
+    updateProfilePicture,
+    addPostToProfileFeed
   }
 })

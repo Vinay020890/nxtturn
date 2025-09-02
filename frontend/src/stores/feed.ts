@@ -295,58 +295,57 @@ export const useFeedStore = defineStore('feed', () => {
   }
 
   // --- NEW: Smart Refresh Action ---
-    // --- THIS IS THE CORRECTED VERSION ---
+  // --- THIS IS THE CORRECTED VERSION ---
   async function refreshMainFeed() {
-    if (isRefreshingMainFeed.value) return;
+    if (isRefreshingMainFeed.value) return
 
     // Use the main loader for the initial fetch, but not for silent refreshes.
-    const isInitialLoad = mainFeedPosts.value.length === 0;
+    const isInitialLoad = mainFeedPosts.value.length === 0
     if (isInitialLoad) {
-      isLoadingMainFeed.value = true;
+      isLoadingMainFeed.value = true
     }
-    isRefreshingMainFeed.value = true;
-    mainFeedError.value = null;
+    isRefreshingMainFeed.value = true
+    mainFeedError.value = null
 
     try {
-      const authStore = useAuthStore();
-      if (!authStore.isAuthenticated) return;
+      const authStore = useAuthStore()
+      if (!authStore.isAuthenticated) return
 
-      const response = await axiosInstance.get<CursorPaginatedResponse>('/feed/');
-      const freshPosts = response.data.results;
+      const response = await axiosInstance.get<CursorPaginatedResponse>('/feed/')
+      const freshPosts = response.data.results
 
       if (isInitialLoad) {
         // --- INITIAL LOAD LOGIC ---
         // On the very first load, put posts directly into the main feed.
-        mainFeedPosts.value = freshPosts;
-        newPostsFromRefresh.value = []; // Ensure this is empty
+        mainFeedPosts.value = freshPosts
+        newPostsFromRefresh.value = [] // Ensure this is empty
       } else {
         // --- BACKGROUND REFRESH LOGIC ---
-        const existingPostIds = new Set(mainFeedPosts.value.map(p => p.id));
-        const genuinelyNewPosts = freshPosts.filter(p => !existingPostIds.has(p.id));
+        const existingPostIds = new Set(mainFeedPosts.value.map((p) => p.id))
+        const genuinelyNewPosts = freshPosts.filter((p) => !existingPostIds.has(p.id))
 
         if (genuinelyNewPosts.length > 0) {
-          newPostsFromRefresh.value = genuinelyNewPosts;
+          newPostsFromRefresh.value = genuinelyNewPosts
         }
 
-        const freshPostsMap = new Map(freshPosts.map(p => [p.id, p]));
-        mainFeedPosts.value = mainFeedPosts.value.map(oldPost => {
-          const freshVersion = freshPostsMap.get(oldPost.id);
-          return freshVersion ? freshVersion : oldPost;
-        });
+        const freshPostsMap = new Map(freshPosts.map((p) => [p.id, p]))
+        mainFeedPosts.value = mainFeedPosts.value.map((oldPost) => {
+          const freshVersion = freshPostsMap.get(oldPost.id)
+          return freshVersion ? freshVersion : oldPost
+        })
       }
 
       // Always update the cursor
-      mainFeedNextCursor.value = response.data.next;
-
+      mainFeedNextCursor.value = response.data.next
     } catch (err: any) {
-      console.error('FeedStore: Error refreshing main feed:', err);
+      console.error('FeedStore: Error refreshing main feed:', err)
       if (isInitialLoad) {
-        mainFeedError.value = err.response?.data?.detail || 'Failed to load feed.';
+        mainFeedError.value = err.response?.data?.detail || 'Failed to load feed.'
       }
     } finally {
-      isRefreshingMainFeed.value = false;
+      isRefreshingMainFeed.value = false
       if (isInitialLoad) {
-        isLoadingMainFeed.value = false;
+        isLoadingMainFeed.value = false
       }
     }
   }
@@ -355,28 +354,27 @@ export const useFeedStore = defineStore('feed', () => {
   async function handleNewPostSignal(postId: number) {
     try {
       // First, check if we already have this post to avoid duplicates.
-      const isAlreadyPresent = mainFeedPosts.value.some(p => p.id === postId) ||
-                               newPostsFromRefresh.value.some(p => p.id === postId);
+      const isAlreadyPresent =
+        mainFeedPosts.value.some((p) => p.id === postId) ||
+        newPostsFromRefresh.value.some((p) => p.id === postId)
 
       if (isAlreadyPresent) {
-        console.log(`FeedStore: Signal for post ${postId} ignored, already present.`);
-        return; 
+        console.log(`FeedStore: Signal for post ${postId} ignored, already present.`)
+        return
       }
 
       // Fetch the FULL post object from our existing API endpoint.
-      console.log(`FeedStore: Signal for new post ${postId}. Fetching full data...`);
-      const response = await axiosInstance.get<Post>(`/posts/${postId}/`);
-      const fullPostObject = response.data;
+      console.log(`FeedStore: Signal for new post ${postId}. Fetching full data...`)
+      const response = await axiosInstance.get<Post>(`/posts/${postId}/`)
+      const fullPostObject = response.data
 
       // Add the full post object to the `newPostsFromRefresh` array.
       // This will automatically cause the "Show new post(s)" button to appear.
-      newPostsFromRefresh.value.unshift(fullPostObject);
-
+      newPostsFromRefresh.value.unshift(fullPostObject)
     } catch (error) {
-      console.error(`FeedStore: Failed to fetch full post data for ID ${postId}.`, error);
+      console.error(`FeedStore: Failed to fetch full post data for ID ${postId}.`, error)
     }
   }
-  
 
   async function fetchNextPageOfMainFeed() {
     if (mainFeedNextCursor.value && !isLoadingMainFeed.value) {
@@ -472,10 +470,13 @@ export const useFeedStore = defineStore('feed', () => {
       const newPost = { ...response.data, isLiking: false, isDeleting: false, isUpdating: false }
       const groupStore = useGroupStore()
 
-      if (mainFeedPosts.value.length > 0) {
-        mainFeedPosts.value.unshift(newPost)
-      }
+      const profileStore = useProfileStore()
+      profileStore.addPostToProfileFeed(newPost)
 
+      // THIS LINE IS NOW UNWRAPPED, a new post will always be added to the main feed.
+      mainFeedPosts.value.unshift(newPost)
+
+      // Your existing group logic remains the same.
       if (newPost.group && newPost.group.id === groupStore.currentGroup?.id) {
         groupStore.addPostToGroupFeed(newPost)
       }
@@ -754,7 +755,7 @@ export const useFeedStore = defineStore('feed', () => {
     resetMainFeedState,
     resetSavedPostsState,
     updateAuthorDetailsInAllPosts,
-    refreshMainFeed,      // <-- ADD THIS
+    refreshMainFeed, // <-- ADD THIS
     showNewPosts,
     handleNewPostSignal,
   }

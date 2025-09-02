@@ -68,8 +68,12 @@ const router = createRouter({
   ],
 });
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore();
+
+  // Now that the function is async, this 'await' is valid.
+  await authStore.initializeAuth();
+
   const requiresAuth = to.meta.requiresAuth;
   const requiresGuest = to.meta.requiresGuest;
   const isAuthenticated = authStore.isAuthenticated;

@@ -256,7 +256,7 @@ async function handleCommentSubmit() {
 
 <template>
   <article ref="postArticleRef" tabindex="-1"
-    class="bg-white rounded-2xl shadow-sm focus:outline-none border border-gray-100">
+    class="bg-white rounded-2xl shadow-sm focus:outline-none border border-gray-100" data-cy="post-container">
 
     <!-- Header -->
     <header class="flex items-start justify-between p-4">

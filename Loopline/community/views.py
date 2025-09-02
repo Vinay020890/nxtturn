@@ -1,7 +1,9 @@
 # community/views.py
 
 from django.db.models import Q, Count
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth import logout as django_logout
 from django.shortcuts import get_object_or_404
 from django.contrib.contenttypes.models import ContentType
 from django.http import Http404
@@ -15,9 +17,14 @@ from asgiref.sync import async_to_sync
 from rest_framework import generics, status, views, serializers, permissions
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
+
 from rest_framework.views import APIView
 from rest_framework.pagination import PageNumberPagination, CursorPagination # NEW: Import CursorPagination
 from rest_framework.filters import SearchFilter
+from rest_framework.authentication import TokenAuthentication
+
+# from dj_rest_auth.views import LogoutView
+
 
 from .models import (
     UserProfile, Follow, StatusPost,  Group, 
@@ -474,7 +481,8 @@ class CommentRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView)
 class FeedListView(generics.ListAPIView):
     serializer_class = StatusPostSerializer
     permission_classes = [IsAuthenticated]
-    pagination_class = PostCursorPagination # NEW: Use cursor pagination here
+    pagination_class = PostCursorPagination
+    authentication_classes = [TokenAuthentication]
 
     def get_queryset(self):
         user = self.request.user
@@ -488,7 +496,7 @@ class FeedListView(generics.ListAPIView):
             'group'
         ).prefetch_related(
             'media', 'likes', 'poll__options', 'poll__votes'
-        ).order_by('-created_at') # IMPORTANT: Must match cursor pagination ordering
+        ).order_by('-created_at')
 
     def get_serializer_context(self):
         return {'request': self.request}
@@ -799,3 +807,25 @@ class GroupBlockManageView(APIView):
         group_block.delete()
         
         return Response(status=status.HTTP_204_NO_CONTENT)
+    
+# Loopline/community/views.py
+
+# ... (imports) ...
+
+# Replace your existing ForcefulLogoutView with this one
+class ForcefulLogoutView(APIView):
+    """
+    A custom, forceful logout view that takes complete control over the logout process.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        if hasattr(request.user, 'auth_token') and request.user.auth_token is not None:
+            request.user.auth_token.delete()
+
+        django_logout(request)
+
+        response = Response({"detail": "Successfully logged out."}, status=status.HTTP_200_OK)
+        response.delete_cookie('sessionid', path='/')
+        return response
+    

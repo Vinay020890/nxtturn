@@ -75,7 +75,7 @@ onUnmounted(() => {
       </div>
 
       <div v-if="!feedStore.isLoadingMainFeed && feedStore.mainFeedPosts.length === 0 && !feedStore.mainFeedError"
-        class="text-center p-8 text-gray-500">
+        class="text-center p-8 text-gray-500" data-cy="empty-feed-message">
         Your feed is empty. Follow some users or create a post!
       </div>
 
