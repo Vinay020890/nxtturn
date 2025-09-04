@@ -1,69 +1,60 @@
+<!-- C:\Users\Vinay\Project\frontend\src\views\SearchPage.vue -->
+<!-- VERSION 2: DEFINITIVE & CORRECTED -->
+
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { debounce } from 'lodash-es';
 
-// --- 1. IMPORT BOTH STORES ---
-import { useSearchStore } from '@/stores/search'; // For Users
-import { useFeedStore } from '@/stores/feed';     // For Posts
+import { useSearchStore } from '@/stores/search';
+import { useFeedStore } from '@/stores/feed';
 import { useGroupStore } from '@/stores/group';
-
-// --- 2. IMPORT COMPONENTS AND UTILS ---
+import { usePostsStore } from '@/stores/posts';
 import PostItem from '@/components/PostItem.vue';
 import { getAvatarUrl } from '@/utils/avatars';
 
-// --- 3. INITIALIZE STORES AND ROUTER ---
 const route = useRoute();
 const router = useRouter();
 const searchStore = useSearchStore();
 const feedStore = useFeedStore();
 const groupStore = useGroupStore();
+const postsStore = usePostsStore();
 
-// --- 4. LOCAL STATE ---
 const localQuery = ref((route.query.q as string) || '');
 const activeTab = ref<'users' | 'posts' | 'groups'>('users');
 
-// --- 5. CONNECT TO STORE STATE WITH COMPUTED PROPERTIES ---
-// User-related data from the searchStore
+// User-related data
 const userResults = computed(() => searchStore.userResults);
 const isLoadingUsers = computed(() => searchStore.isLoadingUsers);
 const userError = computed(() => searchStore.userError);
 
-// Post-related data from the feedStore (using the new state we created)
-const postResults = computed(() => feedStore.searchResultsPosts);
+// Post-related data, now correctly using searchResultPostIds
+const postResultIds = computed(() => feedStore.searchResultPostIds);
+const postResults = computed(() => postsStore.getPostsByIds(postResultIds.value));
 const isLoadingPosts = computed(() => feedStore.isLoadingSearchResults);
 const postError = computed(() => feedStore.searchError);
 
+// Group-related data
 const groupResults = computed(() => groupStore.groupSearchResults);
 const isLoadingGroups = computed(() => groupStore.isLoadingGroupSearch);
 const groupError = computed(() => groupStore.groupSearchError);
 
-// --- 6. THE MASTER SEARCH ACTION ---
-// This function now calls both stores to get all search results.
 const performSearch = (query: string) => {
   if (query.trim()) {
-    // This assumes your user search store has a 'searchUsers' action.
-    // If it's named differently (like 'performSearch'), use that name.
     searchStore.searchUsers(query);
-
-    // This calls the new action we created in feed.ts
     feedStore.searchPosts(query);
     groupStore.searchGroups(query);
   } else {
-    // Clear results if query is empty
-    searchStore.clearSearch(); // Assuming this clears user results
-    feedStore.searchResultsPosts = []; // Manually clear post results
+    searchStore.clearSearch();
+    feedStore.searchResultPostIds = []; // <-- THE FIX
     groupStore.groupSearchResults = [];
   }
 };
 
-// --- 7. UI LOGIC (No major changes needed here) ---
-// Initial Search on Page Load
 if (localQuery.value) {
   performSearch(localQuery.value);
 }
 
-// Watch for URL Query Changes (e.g., from navbar search)
 watch(() => route.query.q, (newQuery) => {
   const queryStr = (newQuery as string) || '';
   if (localQuery.value !== queryStr) {
@@ -72,7 +63,6 @@ watch(() => route.query.q, (newQuery) => {
   }
 });
 
-// Debounced Search from this page's input
 const debouncedSearch = debounce((query: string) => {
   router.push({ name: 'search', query: { q: query } });
 }, 500);
@@ -86,8 +76,6 @@ const handleInput = (event: Event) => {
 <template>
   <div class="max-w-4xl mx-auto p-4">
     <h1 class="text-3xl font-bold text-gray-800 mb-6">Search</h1>
-
-    <!-- Search Input Bar -->
     <div class="relative mb-6">
       <input type="text" :value="localQuery" @input="handleInput" placeholder="Search for users or content..."
         class="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-full shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -99,8 +87,6 @@ const handleInput = (event: Event) => {
         </svg>
       </div>
     </div>
-
-    <!-- Tabs for Users and Posts -->
     <div class="border-b border-gray-200 mb-6">
       <nav class="-mb-px flex space-x-8" aria-label="Tabs">
         <button @click="activeTab = 'users'"
@@ -111,19 +97,13 @@ const handleInput = (event: Event) => {
           :class="['whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm', activeTab === 'posts' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300']">
           Posts
         </button>
-
-        <!-- ADD THIS NEW BUTTON FOR GROUPS -->
         <button @click="activeTab = 'groups'"
           :class="['whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm', activeTab === 'groups' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300']">
           Groups
         </button>
-
       </nav>
     </div>
-
-    <!-- Search Results Section -->
     <div>
-      <!-- Users Tab Content (This part should continue working as before) -->
       <div v-if="activeTab === 'users'">
         <div v-if="isLoadingUsers" class="text-center py-6 text-gray-500">Searching for users...</div>
         <div v-else-if="userError" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4">
@@ -144,48 +124,34 @@ const handleInput = (event: Event) => {
         </ul>
         <div v-else-if="localQuery" class="text-center py-6 text-gray-500">No users found for "{{ localQuery }}".</div>
       </div>
-
-      <!-- Posts Tab Content (This part is now wired to feedStore) -->
       <div v-if="activeTab === 'posts'">
         <div v-if="isLoadingPosts" class="text-center py-6 text-gray-500">Searching for posts...</div>
         <div v-else-if="postError" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4">
           <p>{{ postError }}</p>
         </div>
         <div v-else-if="postResults.length > 0" class="space-y-6">
-          <!-- This will now work correctly, including likes, edits, etc. -->
           <PostItem v-for="post in postResults" :key="post.id" :post="post" />
         </div>
         <div v-else-if="localQuery" class="text-center py-6 text-gray-500">No posts found for "{{ localQuery }}".</div>
       </div>
-
-      <!-- ADD THIS ENTIRE NEW SECTION FOR GROUP RESULTS -->
       <div v-if="activeTab === 'groups'">
-        <!-- Show a "Searching..." message while loading -->
         <div v-if="isLoadingGroups" class="text-center py-6 text-gray-500">Searching for groups...</div>
-
-        <!-- Show an error message if something went wrong -->
         <div v-else-if="groupError" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4">
           <p>{{ groupError }}</p>
         </div>
-
-        <!-- Show the list of groups if we have results -->
         <ul v-else-if="groupResults.length > 0" class="bg-white rounded-lg shadow-md divide-y divide-gray-200">
           <li v-for="group in groupResults" :key="group.id">
             <router-link :to="{ name: 'group-detail', params: { slug: group.slug } }"
               class="block p-4 hover:bg-gray-50 transition-colors">
               <p class="font-bold text-gray-800">{{ group.name }}</p>
-              <!-- ADD THIS LINE TO SHOW THE SLUG -->
               <p class="text-sm text-gray-500">{{ group.slug }}</p>
               <p class="text-sm text-gray-600 mt-1 truncate">{{ group.description }}</p>
               <p class="text-xs text-gray-500 mt-2">{{ group.member_count }} members</p>
             </router-link>
           </li>
         </ul>
-
-        <!-- Show a "No groups found" message if the search returned nothing -->
         <div v-else-if="localQuery" class="text-center py-6 text-gray-500">No groups found for "{{ localQuery }}".</div>
       </div>
-
     </div>
   </div>
 </template>

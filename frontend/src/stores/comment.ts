@@ -1,10 +1,10 @@
 // C:\Users\Vinay\Project\frontend\src\stores\comment.ts
+// --- FINAL, DEFINITIVE & CORRECTED VERSION ---
 
 import { ref } from 'vue';
 import { defineStore } from 'pinia';
 import axiosInstance from '@/services/axiosInstance';
-import { useFeedStore } from '@/stores/feed';
-// We no longer need to import profileStore here
+import { usePostsStore } from '@/stores/posts';
 
 // --- Define Comment structure ---
 export interface CommentAuthor {
@@ -31,9 +31,12 @@ export interface Comment {
 
 // Define the store
 export const useCommentStore = defineStore('comment', () => {
+  const postsStore = usePostsStore();
+
   // --- State ---
   const commentsByPost = ref<Record<string, Comment[]>>({});
   const isLoading = ref(false);
+  // --- THE FIX: Initialize with `null`, not a number ---
   const error = ref<string | null>(null);
   const isCreatingComment = ref(false);
   const createCommentError = ref<string | null>(null);
@@ -89,9 +92,7 @@ export const useCommentStore = defineStore('comment', () => {
       }
       commentsByPost.value[postKey].unshift(newComment);
 
-      // Call the single, centralized function in feedStore.
-      const feedStore = useFeedStore();
-      feedStore.incrementCommentCount(parentPostActualId, postType); 
+      postsStore.incrementCommentCount(parentPostActualId); 
 
       return newComment;
 
@@ -114,9 +115,7 @@ export const useCommentStore = defineStore('comment', () => {
         commentsByPost.value[postKey] = commentsByPost.value[postKey].filter(c => c.id !== commentId);
       }
       
-      // Call the centralized decrement function in feedStore.
-      const feedStore = useFeedStore();
-      feedStore.decrementCommentCount(parentPostId, postType);
+      postsStore.decrementCommentCount(parentPostId);
       
       return true;
 

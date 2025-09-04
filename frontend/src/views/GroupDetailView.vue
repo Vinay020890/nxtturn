@@ -1,8 +1,11 @@
+<!-- C:\Users\Vinay\Project\frontend\src\views\GroupDetailView.vue -->
+<!-- --- REFACTORED TO FIX CACHING BUG --- -->
 <script setup lang="ts">
-import { onMounted, watch, computed, ref, onUnmounted } from 'vue';
+import { watch, computed, ref, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useGroupStore } from '@/stores/group';
 import { useAuthStore } from '@/stores/auth';
+import { usePostsStore } from '@/stores/posts';
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll';
 import { storeToRefs } from 'pinia';
 import { useToast } from 'vue-toastification';
@@ -15,20 +18,32 @@ const route = useRoute();
 const router = useRouter();
 const groupStore = useGroupStore();
 const authStore = useAuthStore();
+const postsStore = usePostsStore();
 const toast = useToast();
 
 const isTransferModalOpen = ref(false);
 const isEditModalOpen = ref(false);
 
 const {
-  currentGroup, groupPosts, isLoadingGroup, groupError, isJoiningLeaving,
-  joinLeaveError, isLoadingGroupPosts, groupPostsNextCursor, isDeletingGroup,
-  deleteGroupError, isTransferringOwnership, transferOwnershipError,
-  isUpdatingGroup,
+  currentGroup, isLoadingGroup, groupError, isJoiningLeaving,
+  joinLeaveError, isLoadingGroupPosts, isDeletingGroup,
+  isTransferringOwnership, isUpdatingGroup,
 } = storeToRefs(groupStore);
 
 const { isAuthenticated, currentUser } = storeToRefs(authStore);
 const loadMoreGroupPostsTrigger = ref<HTMLElement | null>(null);
+
+const groupSlug = computed(() => route.params.slug as string);
+
+const groupPosts = computed(() => {
+  const ids = groupStore.postIdsByGroupSlug[groupSlug.value] || [];
+  return postsStore.getPostsByIds(ids);
+});
+
+const groupPostsNextCursor = computed(() => {
+  return groupStore.nextCursorByGroupSlug[groupSlug.value];
+});
+
 
 const isCreator = computed(() => currentGroup.value?.membership_status === 'creator');
 const isMember = computed(() => ['creator', 'member'].includes(currentGroup.value?.membership_status || ''));
@@ -71,8 +86,7 @@ async function handleMembershipAction() {
 const showOptionsMenu = ref(false);
 const optionsMenuRef = ref<HTMLDivElement | null>(null);
 
-const nextGroupPostUrl = computed(() => groupPostsNextCursor.value);
-useInfiniteScroll(loadMoreGroupPostsTrigger, groupStore.fetchNextPageOfGroupPosts, nextGroupPostUrl);
+useInfiniteScroll(loadMoreGroupPostsTrigger, groupStore.fetchNextPageOfGroupPosts, groupPostsNextCursor);
 
 function toggleOptionsMenu() {
   showOptionsMenu.value = !showOptionsMenu.value;
@@ -90,24 +104,31 @@ watch(showOptionsMenu, (isOpen) => {
   }
 });
 
+// [FIX] Update loadGroupData to call the two separate actions, just like in ProfileView.
 async function loadGroupData() {
   const slug = route.params.slug as string;
-  await groupStore.fetchGroupDetails(slug);
+  if (slug) {
+    await groupStore.fetchGroupDetails(slug);
+    await groupStore.fetchGroupPosts(slug);
+  }
 }
 
-onMounted(() => {
-  loadGroupData();
-});
-
-onUnmounted(() => {
-  document.removeEventListener('click', closeOnClickOutside, true);
-});
-
-watch(() => route.params.slug, async (newSlug, oldSlug) => {
+// [FIX] Use the new, safer `resetCurrentGroupState` function.
+// This prevents the cache from being destroyed when switching between groups.
+watch(() => route.params.slug, (newSlug, oldSlug) => {
   if (newSlug && newSlug !== oldSlug) {
+    groupStore.resetCurrentGroupState();
     loadGroupData();
   }
-}, { immediate: false });
+}, { immediate: true });
+
+// [FIX] Use the new, safer `resetCurrentGroupState` function on unmount.
+// This correctly cleans up the "current view" state without destroying the cached data for this group,
+// allowing for instant re-loads on revisit.
+onUnmounted(() => {
+  document.removeEventListener('click', closeOnClickOutside, true);
+  groupStore.resetCurrentGroupState();
+});
 
 function handleTransferOwnership() {
   showOptionsMenu.value = false;
@@ -137,7 +158,7 @@ async function handleConfirmTransfer(newOwnerId: number) {
   }
 }
 
-async function handleUpdateGroup(data: { name: string; description: string }) {
+async function handleUpdateGroup(data: { name: string; description?: string }) {
   if (!currentGroup.value) return;
   const success = await groupStore.updateGroupDetails(currentGroup.value.slug, data);
   if (success) {
@@ -153,18 +174,13 @@ const isGroupCreator = isCreator;
 
 <template>
   <div class="max-w-4xl mx-auto">
-    <!-- 1. LOADING STATE -->
     <div v-if="isLoadingGroup && !currentGroup" class="text-center py-10 text-gray-500">
       <p>Loading group...</p>
     </div>
-
-    <!-- 2. ERROR STATE (for 404s or 500s) -->
     <div v-else-if="groupError" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4">
       <p class="font-bold">Error</p>
       <p>{{ groupError }}</p>
     </div>
-
-    <!-- 3. SUCCESS STATE (Renders for everyone) -->
     <div v-else-if="currentGroup">
       <header class="bg-white p-6 rounded-lg shadow-md mb-8">
         <div class="flex justify-between items-start">

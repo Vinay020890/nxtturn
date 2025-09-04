@@ -1,10 +1,11 @@
 // C:\Users\Vinay\Project\frontend\src\stores\profile.ts
+// --- VERSION 5: CORRECTED RETURN STATEMENT ---
 
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import axiosInstance from '@/services/axiosInstance'
-import { useFeedStore, type Post } from '@/stores/feed' // <-- IMPORT useFeedStore
 import { useAuthStore, type User } from '@/stores/auth'
+import { usePostsStore, type Post, type PostAuthor } from '@/stores/posts'
 
 export interface UserProfile {
   user: User
@@ -31,31 +32,37 @@ interface PaginatedPostsResponse {
 }
 
 export const useProfileStore = defineStore('profile', () => {
-  const authStoreInstance = useAuthStore()
+  const authStore = useAuthStore()
+  const postsStore = usePostsStore()
 
+  // --- State ---
   const currentProfile = ref<UserProfile | null>(null)
-  const userPosts = ref<Post[]>([])
+  const postIdsByUsername = ref<{ [username: string]: number[] }>({})
+  const nextPageUrlByUsername = ref<{ [username: string]: string | null }>({})
+  const profilesByUsername = ref<{ [username: string]: UserProfile }>({})
+  const hasFetchedPostsByUsername = ref<{ [username: string]: boolean }>({})
   const isLoadingProfile = ref(false)
   const isLoadingPosts = ref(false)
   const errorProfile = ref<string | null>(null)
   const errorPosts = ref<string | null>(null)
-  const userPostsNextPageUrl = ref<string | null>(null)
   const isFollowing = ref(false)
   const isLoadingFollow = ref(false)
 
+  // --- Actions & Functions ---
   async function fetchProfile(username: string) {
+    if (profilesByUsername.value[username]) {
+      currentProfile.value = profilesByUsername.value[username];
+      isFollowing.value = currentProfile.value.is_followed_by_request_user;
+      return;
+    }
     isLoadingProfile.value = true
     errorProfile.value = null
-    isFollowing.value = false
     try {
       const response = await axiosInstance.get<UserProfile>(`/profiles/${username}/`)
-      currentProfile.value = response.data
-      if (
-        authStoreInstance.isAuthenticated &&
-        currentProfile.value?.user?.username !== authStoreInstance.currentUser?.username
-      ) {
-        isFollowing.value = response.data.is_followed_by_request_user
-      }
+      const profile = response.data;
+      profilesByUsername.value[username] = profile;
+      currentProfile.value = profile;
+      isFollowing.value = profile.is_followed_by_request_user;
     } catch (err: any) {
       errorProfile.value = err.response?.data?.detail || `Profile not found for user "${username}".`
     } finally {
@@ -64,137 +71,116 @@ export const useProfileStore = defineStore('profile', () => {
   }
 
   async function fetchUserPosts(username: string, url: string | null = null) {
+    if (!url && hasFetchedPostsByUsername.value[username]) return
     if (isLoadingPosts.value) return
     isLoadingPosts.value = true
     errorPosts.value = null
-
     const apiUrl = url || `/users/${username}/posts/`
-
     try {
       const response = await axiosInstance.get<PaginatedPostsResponse>(apiUrl)
-      const fetchedPosts = response.data.results.map((post) => ({
-        ...post,
-        isLiking: false,
-        isDeleting: false,
-        isUpdating: false,
-      }))
-
+      postsStore.addOrUpdatePosts(response.data.results)
+      const newIds = response.data.results.map((post) => post.id)
       if (url) {
-        userPosts.value.push(...fetchedPosts)
+        postIdsByUsername.value[username] = [...(postIdsByUsername.value[username] || []), ...newIds]
       } else {
-        userPosts.value = fetchedPosts
+        postIdsByUsername.value[username] = newIds
       }
-      userPostsNextPageUrl.value = response.data.next
+      nextPageUrlByUsername.value[username] = response.data.next
+      if(!url) hasFetchedPostsByUsername.value[username] = true;
     } catch (err: any) {
       errorPosts.value = err.response?.data?.detail || 'Failed to fetch user posts.'
     } finally {
       isLoadingPosts.value = false
     }
   }
-
-  async function fetchNextPageOfUserPosts(username: string) {
-    if (userPostsNextPageUrl.value && !isLoadingPosts.value) {
-      await fetchUserPosts(username, userPostsNextPageUrl.value)
+  
+  function addPostToProfileFeed(post: Post) {
+    const username = post.author.username;
+    if (postIdsByUsername.value[username]) {
+      postIdsByUsername.value[username].unshift(post.id);
     }
   }
 
-  async function followUser(usernameToFollow: string) {
-    if (isLoadingFollow.value || !authStoreInstance.isAuthenticated) return
-    isLoadingFollow.value = true
-    try {
-      await axiosInstance.post(`/users/${usernameToFollow}/follow/`)
-      isFollowing.value = true
-    } catch (err: any) {
-      console.error(`Error following ${usernameToFollow}:`, err)
-    } finally {
-      isLoadingFollow.value = false
-    }
-  }
-
-  async function unfollowUser(usernameToUnfollow: string) {
-    if (isLoadingFollow.value || !authStoreInstance.isAuthenticated) return
-    isLoadingFollow.value = true
-    try {
-      await axiosInstance.delete(`/users/${usernameToUnfollow}/follow/`)
-      isFollowing.value = false
-    } catch (err: any) {
-      console.error(`Error unfollowing ${usernameToUnfollow}:`, err)
-    } finally {
-      isLoadingFollow.value = false
-    }
-  }
-
-  function $reset() {
-    currentProfile.value = null
-    userPosts.value = []
-    errorProfile.value = null
-    errorPosts.value = null
-    userPostsNextPageUrl.value = null
-    isFollowing.value = false
-  }
-
-  // --- THIS FUNCTION IS MODIFIED ---
   async function updateProfilePicture(username: string, pictureFile: File) {
     const formData = new FormData()
     formData.append('picture', pictureFile)
     try {
       const response = await axiosInstance.patch<UserProfile>(`/profiles/${username}/`, formData)
       const updatedProfile = response.data
-      currentProfile.value = updatedProfile
-
-      if (
-        authStoreInstance.currentUser &&
-        authStoreInstance.currentUser.username === username &&
-        updatedProfile.picture
-      ) {
-        authStoreInstance.updateCurrentUserPicture(updatedProfile.picture)
+      
+      profilesByUsername.value[username] = updatedProfile;
+      if (currentProfile.value?.user.username === username) {
+        currentProfile.value = updatedProfile
+      }
+      if (authStore.currentUser?.username === username) {
+        authStore.updateCurrentUserPicture(updatedProfile.picture!)
       }
 
-      // --- THIS IS THE FIX ---
-      // Get an instance of the feed store
-      const feedStore = useFeedStore()
-
-      // Tell the feed store to update the author's picture in all cached posts
-      if (authStoreInstance.currentUser) {
-        feedStore.updateAuthorDetailsInAllPosts(authStoreInstance.currentUser.id, {
-          picture: updatedProfile.picture,
-        })
-      }
-      // --- END OF FIX ---
-
+      const authorUpdates: Partial<PostAuthor> = { picture: updatedProfile.picture };
+      const allPosts = Object.values(postsStore.posts);
+      const postsToUpdate = allPosts.filter(p => p.author.id === updatedProfile.user.id);
+      const partialPostsToUpdate = postsToUpdate.map(p => ({
+          id: p.id,
+          author: { ...p.author, ...authorUpdates }
+      }));
+      postsStore.addOrUpdatePosts(partialPostsToUpdate);
+      
       return updatedProfile
     } catch (err: any) {
-      const errorMessage =
-        err.response?.data?.picture?.join(' ') ||
-        err.response?.data?.detail ||
-        'Failed to update profile picture.'
-      throw new Error(errorMessage)
+      throw new Error(err.response?.data?.picture?.join(' ') || err.response?.data?.detail || 'Failed to update picture.');
     }
   }
 
-  function addPostToProfileFeed(post: Post) {
-    if (currentProfile.value?.user.id === post.author.id) {
-      userPosts.value.unshift(post)
+  async function followUser(usernameToFollow: string) {
+    if (isLoadingFollow.value) return;
+    isLoadingFollow.value = true;
+    try {
+        await axiosInstance.post(`/users/${usernameToFollow}/follow/`);
+        if (currentProfile.value) currentProfile.value.is_followed_by_request_user = true;
+        isFollowing.value = true;
+    } finally {
+        isLoadingFollow.value = false;
+    }
+  }
+  async function unfollowUser(usernameToUnfollow: string) {
+    if (isLoadingFollow.value) return;
+    isLoadingFollow.value = true;
+    try {
+        await axiosInstance.delete(`/users/${usernameToUnfollow}/follow/`);
+        if (currentProfile.value) currentProfile.value.is_followed_by_request_user = false;
+        isFollowing.value = false;
+    } finally {
+        isLoadingFollow.value = false;
     }
   }
 
+  function $reset() {
+    currentProfile.value = null;
+    postIdsByUsername.value = {};
+    nextPageUrlByUsername.value = {};
+    profilesByUsername.value = {};
+    hasFetchedPostsByUsername.value = {};
+    isLoadingProfile.value = false;
+    isLoadingPosts.value = false;
+    errorProfile.value = null;
+    errorPosts.value = null;
+    isFollowing.value = false;
+    isLoadingFollow.value = false;
+  }
+
+  // --- THIS IS THE FIX ---
+  // We must return the state properties so the view can access them.
   return {
-    currentProfile,
-    userPosts,
-    isLoadingProfile,
-    isLoadingPosts,
-    errorProfile,
-    errorPosts,
-    userPostsNextPageUrl,
-    isFollowing,
-    isLoadingFollow,
-    fetchProfile,
-    fetchUserPosts,
-    fetchNextPageOfUserPosts,
-    $reset,
-    followUser,
-    unfollowUser,
-    updateProfilePicture,
-    addPostToProfileFeed
+    // State
+    currentProfile, postIdsByUsername, nextPageUrlByUsername, // <-- ADD THESE
+    isLoadingProfile, isLoadingPosts, errorProfile, errorPosts,
+    isFollowing, isLoadingFollow,
+
+    // Actions
+    fetchProfile, fetchUserPosts,
+    fetchNextPageOfUserPosts: (username: string) => fetchUserPosts(username, nextPageUrlByUsername.value[username]),
+    updateProfilePicture, followUser, unfollowUser,
+    addPostToProfileFeed,
+    $reset
   }
 })

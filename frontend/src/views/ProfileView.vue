@@ -1,68 +1,61 @@
 <script setup lang="ts">
 import { getAvatarUrl } from '@/utils/avatars';
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import PostItem from '@/components/PostItem.vue';
 import { useProfileStore } from '@/stores/profile';
 import { useAuthStore } from '@/stores/auth';
+import { usePostsStore } from '@/stores/posts';
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll';
 import { storeToRefs } from 'pinia';
 
 const route = useRoute();
 const profileStore = useProfileStore();
 const authStore = useAuthStore();
+const postsStore = usePostsStore();
 
 const { 
-  currentProfile, userPosts, isLoadingProfile, isLoadingPosts, 
-  errorProfile, errorPosts, userPostsNextPageUrl,
+  currentProfile, isLoadingProfile, isLoadingPosts,
+  errorProfile, errorPosts,
   isFollowing, isLoadingFollow 
 } = storeToRefs(profileStore);
 
 const { currentUser, isAuthenticated } = storeToRefs(authStore);
+const username = computed(() => route.params.username as string || '');
+
+// --- THIS IS THE FIX ---
+// We access the state directly instead of using the deleted getter functions.
+const userPostIds = computed(() => profileStore.postIdsByUsername[username.value] || []);
+const userPostsNextPageUrl = computed(() => profileStore.nextPageUrlByUsername[username.value]);
+
+const userPosts = computed(() => postsStore.getPostsByIds(userPostIds.value));
+// --- END OF FIX ---
+
+
+const isOwnProfile = computed(() => isAuthenticated.value && currentUser.value?.username === username.value);
+const loadMoreTrigger = ref<HTMLElement | null>(null);
+
+useInfiniteScroll(
+  loadMoreTrigger,
+  () => profileStore.fetchNextPageOfUserPosts(username.value),
+  userPostsNextPageUrl
+);
+
+const loadProfileData = () => {
+  if (username.value) {
+    profileStore.fetchProfile(username.value);
+    profileStore.fetchUserPosts(username.value);
+  }
+};
+
+watch(username, () => {
+  loadProfileData();
+}, { immediate: true });
+
 const selectedFile = ref<File | null>(null);
 const picturePreviewUrl = ref<string | null>(null);
 const isUploadingPicture = ref(false);
 const uploadError = ref<string |null>(null);
-const username = computed(() => route.params.username as string || '');
-const isOwnProfile = computed(() => isAuthenticated.value && currentUser.value?.username === username.value);
-const loadMoreTrigger = ref<HTMLElement | null>(null);
-
-// Setup reusable infinite scroll with the CORRECT watcher
-const nextProfilePostUrl = computed(() => userPostsNextPageUrl.value);
-useInfiniteScroll(
-  loadMoreTrigger,
-  () => profileStore.fetchNextPageOfUserPosts(username.value),
-  nextProfilePostUrl
-);
-
-const loadProfileData = async () => {
-  if (username.value) {
-    if (!currentProfile.value || currentProfile.value.user.username !== username.value) {
-      if (currentProfile.value) {
-          profileStore.clearProfileData();
-      }
-      await Promise.all([
-          profileStore.fetchProfile(username.value),
-          profileStore.fetchUserPosts(username.value)
-      ]);
-    }
-  }
-};
-
-onMounted(() => {
-  loadProfileData();
-});
-
-watch(username, (newUsername, oldUsername) => {
-  if (newUsername && newUsername !== oldUsername) {
-    profileStore.clearProfileData();
-    loadProfileData();
-  }
-});
-
-onUnmounted(() => {
-  // Cleanup is now automatic in the composable
-});
 
 function handleFileChange(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0];
@@ -94,7 +87,7 @@ async function uploadProfilePicture() {
 
 <template>
   <div>
-    <div v-if="isLoadingProfile || (!currentProfile && !errorProfile)" class="text-center p-10 text-gray-500 pt-20">
+    <div v-if="isLoadingProfile && !currentProfile" class="text-center p-10 text-gray-500 pt-20">
       Loading profile...
     </div>
     

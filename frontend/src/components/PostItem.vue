@@ -2,8 +2,8 @@
 // --- Imports ---
 import { getAvatarUrl, buildMediaUrl } from '@/utils/avatars';
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
-import type { Post, PostMedia } from '@/stores/feed';
 import { useFeedStore } from '@/stores/feed';
+import { usePostsStore, type Post, type PostMedia } from '@/stores/posts';
 import { formatDistanceToNow } from 'date-fns';
 import { useCommentStore } from '@/stores/comment';
 import CommentItem from '@/components/CommentItem.vue';
@@ -13,11 +13,13 @@ import PollDisplay from './PollDisplay.vue';
 import MentionAutocomplete from './MentionAutocomplete.vue';
 import eventBus from '@/services/eventBus';
 import ReportFormModal from './ReportFormModal.vue';
+import axiosInstance from '@/services/axiosInstance';
 
 // --- Props, Stores, and Basic State ---
 const props = defineProps<{ post: Post; hideGroupContext?: boolean; }>();
 
 const feedStore = useFeedStore();
+const postsStore = usePostsStore();
 const commentStore = useCommentStore();
 const authStore = useAuthStore();
 const { currentUser, isAuthenticated } = storeToRefs(authStore);
@@ -25,15 +27,9 @@ const { isCreatingComment, createCommentError } = storeToRefs(commentStore);
 const showComments = ref(false);
 const newCommentContent = ref('');
 const localDeleteError = ref<string | null>(null);
-
-// --- *** NEW: ADD LOCAL LOADING STATE FOR LIKE ACTION *** ---
-const isLiking = ref(false);
-
-// --- State for Media Gallery Display ---
+const isLiking = ref(false); // Was missing, now correctly added back
 const activeMediaIndex = ref(0);
 watch(() => props.post.id, () => { activeMediaIndex.value = 0; });
-
-// --- State for Edit Mode ---
 const isEditing = ref(false);
 const localEditError = ref<string | null>(null);
 const editContent = ref('');
@@ -45,17 +41,12 @@ const editTextAreaRef = ref<{ blur: () => void; focus: () => void; } | null>(nul
 const editPollQuestion = ref('');
 const editPollOptions = ref<{ id: number | null, text: string }[]>([]);
 const deletedOptionIds = ref<number[]>([]);
-
-// --- State for Options Dropdown Menu ---
 const showOptionsMenu = ref(false);
 const optionsMenuRef = ref<HTMLDivElement | null>(null);
 const postArticleRef = ref<HTMLElement | null>(null);
-
-// --- State for Report Modal ---
 const isReportModalOpen = ref(false);
 const reportTarget = ref<{ ct_id: number, obj_id: number } | null>(null);
 
-// --- Computed Properties ---
 const isOwner = computed(() => isAuthenticated.value && currentUser.value?.id === props.post.author.id);
 const commentPostKey = computed(() => `${props.post.post_type}_${props.post.object_id}`);
 const commentsForThisPost = computed(() => (commentStore.commentsByPost[commentPostKey.value] || []).filter(c => !c.parent));
@@ -63,38 +54,25 @@ const isLoadingComments = computed(() => commentStore.isLoading);
 const commentError = computed(() => commentStore.error);
 const activeMedia = computed(() => props.post.media?.[activeMediaIndex.value]);
 const hasMultipleMedia = computed(() => (props.post.media?.length ?? 0) > 1);
-const formattedTimestamp = computed(() => formatDistanceToNow(new Date(props.post.created_at), { addSuffix: true }));
+const formattedTimestamp = computed(() => props.post.created_at ? formatDistanceToNow(new Date(props.post.created_at), { addSuffix: true }) : '');
 
-// --- Methods ---
 function toggleOptionsMenu() { showOptionsMenu.value = !showOptionsMenu.value; }
 function handleEditClick() { toggleEditMode(); showOptionsMenu.value = false; }
 function handleDeleteClick() { handleDeletePost(); showOptionsMenu.value = false; }
-
-// --- THIS FUNCTION HANDLES REPORTING THE POST ITSELF ---
 function handleReportClick() {
-  reportTarget.value = {
-    ct_id: props.post.content_type_id,
-    obj_id: props.post.object_id
-  };
+  reportTarget.value = { ct_id: props.post.content_type_id, obj_id: props.post.object_id };
   isReportModalOpen.value = true;
   showOptionsMenu.value = false;
 }
-
-// --- THIS NEW FUNCTION HANDLES REPORTS EMITTED FROM CHILD COMMENTS ---
 function handleCommentReport(payload: { content_type_id: number, object_id: number }) {
-  reportTarget.value = {
-    ct_id: payload.content_type_id,
-    obj_id: payload.object_id
-  };
+  reportTarget.value = { ct_id: payload.content_type_id, obj_id: payload.object_id };
   isReportModalOpen.value = true;
 }
-
 const closeOnClickOutside = (event: MouseEvent) => { if (optionsMenuRef.value && !optionsMenuRef.value.contains(event.target as Node)) showOptionsMenu.value = false; };
 watch(showOptionsMenu, (isOpen) => {
   if (isOpen) document.addEventListener('click', closeOnClickOutside, true);
   else document.removeEventListener('click', closeOnClickOutside, true);
 });
-
 const handleNavigation = () => { if (isEditing.value) isEditing.value = false; };
 onMounted(() => eventBus.on('navigation-started', handleNavigation));
 onUnmounted(() => {
@@ -111,15 +89,8 @@ function toggleCommentDisplay() {
 
 async function toggleLike() {
   if (!isAuthenticated.value) return alert('Please login to like posts.');
-  if (isLiking.value) return; // Prevents double-clicks if the button is somehow clicked again
-
-  isLiking.value = true; // Immediately disable the button
-  try {
-    // This is the same line you had before
-    await feedStore.toggleLike(props.post.id, props.post.post_type, props.post.content_type_id, props.post.object_id);
-  } finally {
-    isLiking.value = false; // Re-enable the button when the action is complete
-  }
+  if (props.post.isLiking) return;
+  await feedStore.toggleLike(props.post.id);
 }
 
 async function toggleSave() {
@@ -134,14 +105,14 @@ async function toggleSave() {
 async function handleDeletePost() {
   if (!isOwner.value) return;
   if (window.confirm("Are you sure you want to delete this post? This action cannot be undone.")) {
-    const success = await feedStore.deletePost(props.post.id, props.post.post_type);
-    if (!success) localDeleteError.value = feedStore.deletePostError || "Failed to delete post.";
+    const success = await feedStore.deletePost(props.post.id);
+    if (!success) localDeleteError.value = "Failed to delete post.";
   }
 }
+
 function nextMedia() { activeMediaIndex.value = (activeMediaIndex.value + 1) % props.post.media.length; }
 function prevMedia() { activeMediaIndex.value = (activeMediaIndex.value - 1 + props.post.media.length) % props.post.media.length; }
 function setActiveMedia(index: number) { activeMediaIndex.value = index; }
-
 function toggleEditMode() {
   isEditing.value = !isEditing.value;
   localEditError.value = null;
@@ -164,7 +135,6 @@ function toggleEditMode() {
     nextTick(() => editTextAreaRef.value?.focus());
   }
 }
-
 function addPollOptionToEdit() { if (editPollOptions.value.length < 5) editPollOptions.value.push({ id: null, text: '' }); }
 function removePollOptionFromEdit(index: number) {
   if (editPollOptions.value.length <= 2) return;
@@ -191,40 +161,27 @@ function getObjectURL(file: File): string { return URL.createObjectURL(file); }
 
 async function handleUpdatePost() {
   localEditError.value = null;
-  feedStore.updatePostError = null;
-  const finalMediaCount = editableMedia.value.length + newImageFiles.value.length + newVideoFiles.value.length;
-  if (!editContent.value.trim() && finalMediaCount === 0) {
-    localEditError.value = "A post cannot be empty. It must have text or at least one media file.";
-    return;
-  }
+  postsStore.addOrUpdatePosts([{ id: props.post.id, isUpdating: true }]);
   const formData = new FormData();
   if (editContent.value !== (props.post.content || '')) formData.append('content', editContent.value);
   newImageFiles.value.forEach(file => formData.append('images', file));
   newVideoFiles.value.forEach(file => formData.append('videos', file));
   if (mediaToDeleteIds.value.length > 0) formData.append('media_to_delete', JSON.stringify(mediaToDeleteIds.value));
-  let hasChanges = false;
-  for (const _ of formData.entries()) { hasChanges = true; break; }
-  if (!hasChanges) {
-    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  
+  try {
+    const response = await axiosInstance.patch<Post>(`/posts/${props.post.id}/`, formData);
+    postsStore.addOrUpdatePosts([response.data]);
     isEditing.value = false;
-    return;
-  }
-  const success = await feedStore.updatePost(props.post.id, props.post.post_type, formData);
-  if (success) {
-    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-    window.getSelection()?.removeAllRanges();
-    postArticleRef.value?.focus();
-    isEditing.value = false;
-  } else {
-    localEditError.value = feedStore.updatePostError || 'Failed to update post.';
+  } catch(err: any) {
+    localEditError.value = err.response?.data?.detail || 'Failed to update post.';
+  } finally {
+    postsStore.addOrUpdatePosts([{ id: props.post.id, isUpdating: false }]);
   }
 }
 
 async function handleUpdatePoll() {
   localEditError.value = null;
-  feedStore.updatePostError = null;
-  if (!editPollQuestion.value.trim()) { localEditError.value = "Poll question cannot be empty."; return; }
-  if (editPollOptions.value.some(opt => !opt.text.trim())) { localEditError.value = "Poll options cannot be empty."; return; }
+  postsStore.addOrUpdatePosts([{ id: props.post.id, isUpdating: true }]);
   const pollPayload = {
     question: editPollQuestion.value,
     options_to_update: editPollOptions.value.filter(opt => opt.id !== null),
@@ -233,9 +190,16 @@ async function handleUpdatePoll() {
   };
   const formData = new FormData();
   formData.append('poll_data', JSON.stringify(pollPayload));
-  const success = await feedStore.updatePost(props.post.id, props.post.post_type, formData);
-  if (success) isEditing.value = false;
-  else localEditError.value = feedStore.updatePostError || 'Failed to update poll.';
+
+  try {
+    const response = await axiosInstance.patch<Post>(`/posts/${props.post.id}/`, formData);
+    postsStore.addOrUpdatePosts([response.data]);
+    isEditing.value = false;
+  } catch(err: any) {
+    localEditError.value = err.response?.data?.detail || 'Failed to update poll.';
+  } finally {
+    postsStore.addOrUpdatePosts([{ id: props.post.id, isUpdating: false }]);
+  }
 }
 
 function linkifyContent(text: string | null | undefined): string {

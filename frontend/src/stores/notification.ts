@@ -1,13 +1,14 @@
 // C:\Users\Vinay\Project\frontend\src\stores\notification.ts
-// --- FINAL CORRECTED VERSION ---
+// --- DEFINITIVE, COMPLETE & CORRECTED VERSION ---
 
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import axiosInstance from '@/services/axiosInstance'
 import { useToast } from 'vue-toastification'
 import type { User } from './auth'
+import { useAuthStore } from './auth'
 
-// Your interfaces remain unchanged
+// --- Interface Definitions ---
 export interface NotificationActor extends User {}
 export interface NotificationRelatedObject {
   type: string
@@ -36,6 +37,7 @@ export interface PaginatedNotificationResponse {
 
 export const useNotificationStore = defineStore('notification', () => {
   const toast = useToast()
+  const authStore = useAuthStore()
 
   const notifications = ref<Notification[]>([])
   const unreadCount = ref<number>(0)
@@ -51,13 +53,11 @@ export const useNotificationStore = defineStore('notification', () => {
     pageSize: 10,
   })
   const ITEMS_PER_PAGE_NOTIFICATIONS = 10
-
-  // --- 1. NEW STATE PROPERTY ADDED ---
-  // This flag is the key to solving the race condition.
   const hasLoadedInitialList = ref<boolean>(false)
 
   async function fetchUnreadCount() {
-    // ... (This function is unchanged)
+    if (!authStore.isAuthenticated) return;
+    
     isLoadingCount.value = true
     try {
       const response = await axiosInstance.get<{ unread_count: number }>(
@@ -73,7 +73,11 @@ export const useNotificationStore = defineStore('notification', () => {
   }
 
   async function fetchNotifications(page: number = 1) {
-    // ... (This function is unchanged, except for one line)
+    if (!authStore.isAuthenticated) {
+      error.value = "You must be logged in to view notifications.";
+      return;
+    }
+
     isLoadingList.value = true
     error.value = null
     if (page === 1) {
@@ -96,8 +100,6 @@ export const useNotificationStore = defineStore('notification', () => {
       pagination.value.totalPages =
         data.count > 0 ? Math.ceil(data.count / ITEMS_PER_PAGE_NOTIFICATIONS) : 0
         
-      // --- 2. NEW LINE ADDED ON SUCCESS ---
-      // If we successfully fetched any page, we mark the initial load as complete.
       hasLoadedInitialList.value = true
 
     } catch (err: any) {
@@ -108,8 +110,8 @@ export const useNotificationStore = defineStore('notification', () => {
     }
   }
 
-  // ... (markNotificationsAsRead and markAllAsRead are unchanged)
   async function markNotificationsAsRead(notificationIds: number[]) {
+    if (!authStore.isAuthenticated) return { success: false };
     if (!notificationIds || notificationIds.length === 0) return { success: false }
     try {
       await axiosInstance.post('/notifications/mark-as-read/', {
@@ -128,7 +130,9 @@ export const useNotificationStore = defineStore('notification', () => {
       return { success: false, error: error.value }
     }
   }
+  
   async function markAllAsRead() {
+    if (!authStore.isAuthenticated) return { success: false };
     try {
       await axiosInstance.post('/notifications/mark-all-as-read/')
       notifications.value.forEach((notification) => {
@@ -143,7 +147,6 @@ export const useNotificationStore = defineStore('notification', () => {
     }
   }
 
-  // ... (addLiveNotification is unchanged)
   function addLiveNotification(newNotification: Notification) {
     notifications.value.unshift(newNotification)
     unreadCount.value++
@@ -151,7 +154,6 @@ export const useNotificationStore = defineStore('notification', () => {
   }
 
   function resetState() {
-    // ... (This function is unchanged, except for one line)
     notifications.value = []
     unreadCount.value = 0
     isLoadingList.value = false
@@ -165,8 +167,6 @@ export const useNotificationStore = defineStore('notification', () => {
       totalPages: 0,
       pageSize: 10,
     }
-    // --- 3. NEW LINE ADDED TO RESET ---
-    // Ensure the flag is reset on logout.
     hasLoadedInitialList.value = false
   }
 
@@ -177,7 +177,6 @@ export const useNotificationStore = defineStore('notification', () => {
     isLoadingCount,
     error,
     pagination,
-    // --- 4. EXPOSE THE NEW PROPERTY ---
     hasLoadedInitialList,
     fetchNotifications,
     fetchUnreadCount,

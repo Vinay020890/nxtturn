@@ -2,34 +2,36 @@
 import { onMounted, onUnmounted, watch, ref, computed } from 'vue';
 import { useRouter, RouterLink, useRoute } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
-import { useNotificationStore } from '@/stores/notification'; // Corrected path
+import { useNotificationStore } from '@/stores/notification';
 import { storeToRefs } from 'pinia';
 import { debounce } from 'lodash-es';
 import { getAvatarUrl } from '@/utils/avatars';
 import type { User } from '@/stores/auth';
-import type { Post } from '@/stores/feed';
-import eventBus from '@/services/eventBus';
 import { useSearchStore } from '@/stores/search';
 import { useFeedStore } from '@/stores/feed';
 import { useGroupStore } from '@/stores/group';
+import { usePostsStore, type Post } from '@/stores/posts';
+import eventBus from '@/services/eventBus';
 
 const authStore = useAuthStore();
 const notificationStore = useNotificationStore();
 const searchStore = useSearchStore();
 const feedStore = useFeedStore();
 const groupStore = useGroupStore();
+const postsStore = usePostsStore();
 const router = useRouter();
 const route = useRoute();
 
-// --- CHANGE 1 of 3: Create a reactive reference for the badge count ---
 const { unreadCount } = storeToRefs(notificationStore);
-
 const { currentUser } = storeToRefs(authStore);
 const { userResults, isLoadingUsers } = storeToRefs(searchStore);
-const { searchResultsPosts: postResults, isLoadingSearchResults: isLoadingPosts } = storeToRefs(feedStore);
+
+const { isLoadingSearchResults: isLoadingPosts } = storeToRefs(feedStore);
+const postResultIds = computed(() => feedStore.searchResultPostIds);
+const postResults = computed(() => postsStore.getPostsByIds(postResultIds.value));
+
 const { groupSearchResults: groupResults, isLoadingGroupSearch } = storeToRefs(groupStore);
 
-// ALL YOUR ORIGINAL SEARCH STATE AND LOGIC IS PRESERVED
 const searchQuery = ref('');
 const showSearchDropdown = ref(false);
 const searchContainerRef = ref<HTMLDivElement | null>(null);
@@ -54,7 +56,8 @@ const handleFullSearchSubmit = () => {
 const debouncedSearch = debounce(async (query: string) => {
   if (query.length < 1) {
     searchStore.clearSearch();
-    feedStore.searchResultsPosts = [];
+    feedStore.searchResultPostIds = [];
+    groupStore.groupSearchResults = [];
     return;
   }
   await Promise.all([
@@ -71,7 +74,7 @@ const handleSearchInput = () => {
   } else {
     showSearchDropdown.value = false;
     searchStore.clearSearch();
-    feedStore.searchResultsPosts = [];
+    feedStore.searchResultPostIds = [];
     groupStore.groupSearchResults = [];
   }
 };
@@ -108,7 +111,6 @@ onMounted(async () => {
   }
 });
 
-// --- CHANGE 2 of 3: Call the proper store action on logout ---
 watch(() => authStore.isAuthenticated, (newIsAuthenticated) => {
   if (newIsAuthenticated) {
     notificationStore.fetchUnreadCount();
@@ -123,20 +125,14 @@ const handleLogout = async () => { await authStore.logout(); };
 <template>
   <header class="bg-white shadow-sm flex-shrink-0 z-40 fixed top-0 left-0 w-full">
     <nav class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-      <!-- 
-        THIS IS THE FIX: The three main sections (Logo, Search, User Menu) are now
-        direct children of this 'flex' container, restoring the correct layout.
-      -->
       <div class="flex items-center justify-between h-16">
         
-        <!-- Section 1: Logo -->
         <div class="flex-shrink-0">
           <RouterLink to="/" @click="handleLogoClick" class="text-2xl font-bold tracking-tight">
             <span class="bg-gradient-to-r from-blue-600 to-purple-500 bg-clip-text text-transparent">NxtTurn</span>
           </RouterLink>
         </div>
 
-        <!-- Section 2: Search Bar -->
         <div class="flex-grow flex justify-center px-4" ref="searchContainerRef">
           <div class="relative w-full max-w-lg">
             <form @submit.prevent="handleFullSearchSubmit" v-if="authStore.isAuthenticated">
@@ -146,10 +142,11 @@ const handleLogout = async () => { await authStore.logout(); };
               </div>
             </form>
             <div v-if="showSearchDropdown && searchQuery" class="absolute top-full mt-2 w-full rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
-              <!-- The full dropdown content is here -->
-              <ul class="py-1 text-base max-h-96 overflow-y-auto">
+              <!-- THE FIX IS HERE: `max-h-96` has been removed to let content define the height -->
+              <ul class="py-1 text-base overflow-y-auto">
                 <li v-if="isSearching" class="px-4 py-2 text-sm text-gray-500">Searching...</li>
                 <li v-else-if="!isSearching && !hasAnyResults" class="px-4 py-2 text-sm text-gray-500">No results found.</li>
+                
                 <template v-if="userResults.length > 0">
                   <li class="px-4 pt-2 pb-1 text-xs font-bold text-gray-500 uppercase">Users</li>
                   <li v-for="user in userResults.slice(0, 2)" :key="`user-${user.id}`">
@@ -162,6 +159,7 @@ const handleLogout = async () => { await authStore.logout(); };
                     </a>
                   </li>
                 </template>
+
                 <template v-if="groupResults.length > 0">
                   <li class="px-4 pt-2 pb-1 text-xs font-bold text-gray-500 uppercase border-t border-gray-100 mt-1">Groups</li>
                   <li v-for="group in groupResults.slice(0, 2)" :key="`group-${group.id}`">
@@ -171,6 +169,7 @@ const handleLogout = async () => { await authStore.logout(); };
                     </router-link>
                   </li>
                 </template>
+
                 <template v-if="postResults.length > 0">
                   <li class="px-4 pt-2 pb-1 text-xs font-bold text-gray-500 uppercase border-t border-gray-100 mt-1">Posts</li>
                   <li v-for="post in postResults.slice(0, 2)" :key="`post-${post.id}`">
@@ -179,6 +178,7 @@ const handleLogout = async () => { await authStore.logout(); };
                     </a>
                   </li>
                 </template>
+
                 <li v-if="!isSearching && hasAnyResults" class="border-t border-gray-200">
                   <button @click="handleFullSearchSubmit" class="w-full text-left px-4 py-2 text-sm font-medium text-blue-600 hover:bg-gray-100">
                     See all results for "{{ searchQuery }}"

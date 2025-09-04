@@ -1,14 +1,14 @@
 // C:\Users\Vinay\Project\frontend\src\stores\group.ts
+// --- REFACTORED TO FIX CACHING BUG ---
 
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import axiosInstance from '@/services/axiosInstance'
 import type { User } from './auth'
-import type { Post } from './feed'
 import { useAuthStore } from './auth'
+import { usePostsStore, type Post } from './posts'
 
 // --- Interface Definitions ---
-
 export interface Group {
   id: number
   slug: string
@@ -21,20 +21,17 @@ export interface Group {
   created_at: string
   privacy_level: 'public' | 'private'
 }
-
 interface PaginatedGroupResponse {
   count: number
   next: string | null
   previous: string | null
   results: Group[]
 }
-
 interface CursorPaginatedGroupPostResponse {
   next: string | null
   previous: string | null
   results: Post[]
 }
-
 export interface GroupJoinRequest {
   id: number
   user: User
@@ -42,7 +39,6 @@ export interface GroupJoinRequest {
   status: 'pending' | 'approved' | 'denied'
   created_at: string
 }
-
 export interface GroupBlock {
   id: number
   user: User
@@ -51,63 +47,68 @@ export interface GroupBlock {
   created_at: string
 }
 
-// --- Store Definition ---
-
 export const useGroupStore = defineStore('group', () => {
+  const postsStore = usePostsStore()
+  const authStore = useAuthStore()
+
   // --- State ---
   const currentGroup = ref<Group | null>(null)
-  const groupPosts = ref<Post[]>([])
+  const postIdsByGroupSlug = ref<{ [slug: string]: number[] }>({})
+  const nextCursorByGroupSlug = ref<{ [slug: string]: string | null }>({})
+  const groupsBySlug = ref<{ [slug: string]: Group }>({})
+  
+  // [FIX] Add the explicit flag for tracking fetched state, mirroring profile.ts
+  const hasFetchedPostsByGroupSlug = ref<{ [slug: string]: boolean }>({})
+
   const isLoadingGroup = ref(false)
+  const isLoadingGroupPosts = ref(false)
   const groupError = ref<string | null>(null)
+  const groupPostsError = ref<string | null>(null)
+
   const isJoiningLeaving = ref(false)
   const joinLeaveError = ref<string | null>(null)
-
-  const isLoadingGroupPosts = ref(false)
-  const groupPostsNextCursor = ref<string | null>(null)
-
+  
+  // (Other state properties remain the same)
   const allGroups = ref<Group[]>([])
   const isLoadingAllGroups = ref(false)
   const allGroupsError = ref<string | null>(null)
   const allGroupsNextPageUrl = ref<string | null>(null)
   const allGroupsHasNextPage = ref(false)
-
   const isCreatingGroup = ref(false)
   const createGroupError = ref<string | object | null>(null)
-
   const isDeletingGroup = ref(false)
   const deleteGroupError = ref<string | null>(null)
-
   const isTransferringOwnership = ref(false)
   const transferOwnershipError = ref<string | null>(null)
-
   const joinRequests = ref<GroupJoinRequest[]>([])
   const isLoadingRequests = ref(false)
   const requestsError = ref<string | null>(null)
   const isManagingRequest = ref(false)
   const manageRequestError = ref<string | null>(null)
-
   const blockedUsers = ref<GroupBlock[]>([])
   const isLoadingBlockedUsers = ref(false)
   const blockedUsersError = ref<string | null>(null)
   const isUnblockingUser = ref(false)
   const unblockUserError = ref<string | null>(null)
-
   const groupSearchResults = ref<Group[]>([])
   const isLoadingGroupSearch = ref(false)
   const groupSearchError = ref<string | null>(null)
-
   const isUpdatingGroup = ref(false)
   const updateGroupError = ref<string | null>(null)
 
+
   function $reset() {
     currentGroup.value = null
-    groupPosts.value = []
+    postIdsByGroupSlug.value = {}
+    nextCursorByGroupSlug.value = {}
+    groupsBySlug.value = {}
+    hasFetchedPostsByGroupSlug.value = {} // [FIX] Reset the new state
     isLoadingGroup.value = false
+    isLoadingGroupPosts.value = false
     groupError.value = null
+    groupPostsError.value = null
     isJoiningLeaving.value = false
     joinLeaveError.value = null
-    isLoadingGroupPosts.value = false
-    groupPostsNextCursor.value = null
     allGroups.value = []
     isLoadingAllGroups.value = false
     allGroupsError.value = null
@@ -119,49 +120,38 @@ export const useGroupStore = defineStore('group', () => {
     deleteGroupError.value = null
   }
 
-  function resetGroupFeedState() {
+  // [FIX] Rename and simplify the reset function. It now ONLY resets the 'current' view state.
+  // This is safe to call when navigating between groups and on unmount. It does NOT destroy the cache.
+  function resetCurrentGroupState() {
     currentGroup.value = null
-    groupPosts.value = []
-    groupPostsNextCursor.value = null
+    isLoadingGroup.value = false
     isLoadingGroupPosts.value = false
     groupError.value = null
-    console.log('Individual group feed state has been reset.')
+    groupPostsError.value = null
   }
-
+  
   function resetAllGroupsState() {
     allGroups.value = []
     allGroupsNextPageUrl.value = null
     allGroupsHasNextPage.value = false
     isLoadingAllGroups.value = false
     allGroupsError.value = null
-    console.log('"All Groups" discovery state has been reset.')
   }
 
-  // --- Actions ---
+  // [FIX] Simplify fetchGroupDetails. Its ONLY job is to fetch group details.
   async function fetchGroupDetails(groupSlug: string) {
+    if (groupsBySlug.value[groupSlug]) {
+      currentGroup.value = groupsBySlug.value[groupSlug];
+      return;
+    }
+
     isLoadingGroup.value = true
     groupError.value = null
-    // Reset state for the new group
-    currentGroup.value = null
-    groupPosts.value = []
-    groupPostsNextCursor.value = null
-
     try {
-      // This call will now always succeed for existing groups
       const response = await axiosInstance.get<Group>(`/groups/${groupSlug}/`)
+      groupsBySlug.value[groupSlug] = response.data
       currentGroup.value = response.data
-
-      // *** THIS IS THE KEY LOGIC CHANGE ***
-      // Only fetch posts if the group is public, OR if the user is a member/creator of a private group.
-      const canViewPosts =
-        response.data.privacy_level === 'public' ||
-        ['creator', 'member'].includes(response.data.membership_status)
-
-      if (canViewPosts) {
-        await fetchGroupPosts(response.data.slug)
-      }
     } catch (err: any) {
-      console.error(`Error fetching details for group slug ${groupSlug}:`, err)
       groupError.value = err.response?.data?.detail || 'Failed to load group details.'
       currentGroup.value = null
     } finally {
@@ -169,6 +159,74 @@ export const useGroupStore = defineStore('group', () => {
     }
   }
 
+  // [FIX] Refactor fetchGroupPosts to be a standalone action with the caching guard clause.
+  async function fetchGroupPosts(groupSlug: string, url: string | null = null) {
+    // The critical guard clause. If we have fetched posts before (and are not paginating), do nothing.
+    if (!url && hasFetchedPostsByGroupSlug.value[groupSlug]) {
+      return
+    }
+    if (isLoadingGroupPosts.value) return
+
+    // Ensure we can view posts before attempting to fetch
+    const group = groupsBySlug.value[groupSlug]
+    if (group) {
+        const canViewPosts =
+            group.privacy_level === 'public' ||
+            ['creator', 'member'].includes(group.membership_status)
+        if (!canViewPosts) {
+            // Set empty state but don't error, this is an expected outcome for private groups
+            postIdsByGroupSlug.value[groupSlug] = []
+            hasFetchedPostsByGroupSlug.value[groupSlug] = true
+            return
+        }
+    }
+
+    isLoadingGroupPosts.value = true
+    groupPostsError.value = null
+    try {
+      const apiUrl = url || `/groups/${groupSlug}/status-posts/`
+      const response = await axiosInstance.get<CursorPaginatedGroupPostResponse>(apiUrl)
+      const fetchedPosts = response.data.results
+      postsStore.addOrUpdatePosts(fetchedPosts)
+      const newIds = fetchedPosts.map((post) => post.id)
+      
+      if (url) { // We are paginating
+        if (!postIdsByGroupSlug.value[groupSlug]) postIdsByGroupSlug.value[groupSlug] = []
+        postIdsByGroupSlug.value[groupSlug].push(...newIds)
+      } else { // This is the first fetch
+        postIdsByGroupSlug.value[groupSlug] = newIds
+      }
+      
+      nextCursorByGroupSlug.value[groupSlug] = response.data.next
+      
+      // Set the flag to true only on the initial, successful fetch
+      if (!url) {
+        hasFetchedPostsByGroupSlug.value[groupSlug] = true
+      }
+    } catch (err: any) {
+      groupPostsError.value = err.response?.data?.detail || 'Failed to load group posts.'
+    } finally {
+      isLoadingGroupPosts.value = false
+    }
+  }
+
+  async function fetchNextPageOfGroupPosts() {
+    if (currentGroup.value) {
+      const nextCursor = nextCursorByGroupSlug.value[currentGroup.value.slug]
+      if (nextCursor && !isLoadingGroupPosts.value) {
+        await fetchGroupPosts(currentGroup.value.slug, nextCursor)
+      }
+    }
+  }
+
+  function addPostToGroupFeed(post: Post) {
+    if (post.group && postIdsByGroupSlug.value[post.group.slug]) {
+      postsStore.addOrUpdatePosts([post])
+      postIdsByGroupSlug.value[post.group.slug].unshift(post.id)
+    }
+  }
+  
+  // (All other actions: fetchBlockedUsers, joinGroup, createGroup, etc., remain the same)
   async function fetchBlockedUsers(groupSlug: string) {
     isLoadingBlockedUsers.value = true
     blockedUsersError.value = null
@@ -176,28 +234,20 @@ export const useGroupStore = defineStore('group', () => {
       const response = await axiosInstance.get(`/groups/${groupSlug}/blocks/`)
       blockedUsers.value = response.data.results
     } catch (err: any) {
-      console.error(`Error fetching blocked users for group ${groupSlug}:`, err)
       blockedUsersError.value = err.response?.data?.detail || 'Failed to load blocked users.'
     } finally {
       isLoadingBlockedUsers.value = false
     }
   }
 
-  // In C:\Users\Vinay\Project\frontend\src\stores\group.ts
-
   async function unblockUser(groupSlug: string, userId: number): Promise<boolean> {
     isUnblockingUser.value = true
     unblockUserError.value = null
     try {
-      // This is the real API call to the endpoint we just built and tested.
       await axiosInstance.delete(`/groups/${groupSlug}/blocks/${userId}/`)
-
-      // On success, optimistically remove the user from the local list.
       blockedUsers.value = blockedUsers.value.filter((block) => block.user.id !== userId)
-
       return true
     } catch (err: any) {
-      console.error(`Error unblocking user ${userId} from group ${groupSlug}:`, err)
       unblockUserError.value = err.response?.data?.detail || 'Failed to unblock user.'
       return false
     } finally {
@@ -216,44 +266,10 @@ export const useGroupStore = defineStore('group', () => {
       const response = await axiosInstance.get<PaginatedGroupResponse>(`/groups/?search=${query}`)
       groupSearchResults.value = response.data.results
     } catch (err: any) {
-      console.error('Error searching groups:', err)
       groupSearchError.value = err.response?.data?.detail || 'Failed to search for groups.'
       groupSearchResults.value = []
     } finally {
       isLoadingGroupSearch.value = false
-    }
-  }
-
-  async function fetchGroupPosts(groupSlug: string, url: string | null = null) {
-    if (isLoadingGroupPosts.value) return
-    isLoadingGroupPosts.value = true
-    groupError.value = null
-    try {
-      const apiUrl = url || `/groups/${groupSlug}/status-posts/`
-      const response = await axiosInstance.get<CursorPaginatedGroupPostResponse>(apiUrl)
-      if (!url) {
-        groupPosts.value = response.data.results
-      } else {
-        groupPosts.value.push(...response.data.results)
-      }
-      groupPostsNextCursor.value = response.data.next
-    } catch (err: any) {
-      console.error(`Error fetching posts for group ${groupSlug}:`, err)
-      groupError.value = err.response?.data?.detail || 'Failed to load group posts.'
-    } finally {
-      isLoadingGroupPosts.value = false
-    }
-  }
-
-  async function fetchNextPageOfGroupPosts() {
-    if (groupPostsNextCursor.value && !isLoadingGroupPosts.value && currentGroup.value) {
-      await fetchGroupPosts(currentGroup.value.slug, groupPostsNextCursor.value)
-    }
-  }
-
-  function addPostToGroupFeed(post: Post) {
-    if (currentGroup.value && post.group?.id === currentGroup.value.id) {
-      groupPosts.value.unshift(post)
     }
   }
 
@@ -272,7 +288,6 @@ export const useGroupStore = defineStore('group', () => {
       allGroupsNextPageUrl.value = response.data.next
       allGroupsHasNextPage.value = response.data.next !== null
     } catch (err: any) {
-      console.error('Error fetching groups:', err)
       allGroupsError.value = err.response?.data?.detail || 'Failed to load groups.'
     } finally {
       isLoadingAllGroups.value = false
@@ -293,7 +308,6 @@ export const useGroupStore = defineStore('group', () => {
     isCreatingGroup.value = true
     createGroupError.value = null
     try {
-      const authStore = useAuthStore()
       if (!authStore.isAuthenticated) {
         createGroupError.value = 'You must be logged in to create a group.'
         return null
@@ -303,7 +317,6 @@ export const useGroupStore = defineStore('group', () => {
       allGroups.value.unshift(newGroup)
       return newGroup
     } catch (err: any) {
-      console.error('Error creating group:', err)
       let errorMessage = 'Failed to create group. Please check the details.'
       if (err.response && err.response.data) {
         const errorData = err.response.data
@@ -314,11 +327,8 @@ export const useGroupStore = defineStore('group', () => {
             fieldErrors.push(`Description: ${errorData.description[0]}`)
           if (errorData.privacy_level?.[0])
             fieldErrors.push(`Privacy Level: ${errorData.privacy_level[0]}`)
-          if (fieldErrors.length > 0) {
-            errorMessage = fieldErrors.join(' ')
-          } else if (errorData.detail) {
-            errorMessage = errorData.detail
-          }
+          if (fieldErrors.length > 0) errorMessage = fieldErrors.join(' ')
+          else if (errorData.detail) errorMessage = errorData.detail
         } else if (typeof errorData === 'string') {
           errorMessage = errorData
         }
@@ -336,7 +346,6 @@ export const useGroupStore = defineStore('group', () => {
     isJoiningLeaving.value = true
     joinLeaveError.value = null
     try {
-      const authStore = useAuthStore()
       if (!authStore.isAuthenticated) {
         joinLeaveError.value = 'You must be logged in to join a group.'
         return false
@@ -344,23 +353,18 @@ export const useGroupStore = defineStore('group', () => {
       const response = await axiosInstance.post(`/groups/${groupSlug}/membership/`)
       const outcomeStatus = response.data.status
       const handleStateUpdate = (group: Group) => {
-        if (outcomeStatus === 'request sent') {
-          group.membership_status = 'pending'
-        } else if (outcomeStatus === 'member added') {
+        if (outcomeStatus === 'request sent') group.membership_status = 'pending'
+        else if (outcomeStatus === 'member added') {
           group.membership_status = 'member'
           group.member_count++
         }
       }
-      if (currentGroup.value && currentGroup.value.slug === groupSlug) {
+      if (currentGroup.value && currentGroup.value.slug === groupSlug)
         handleStateUpdate(currentGroup.value)
-      }
       const groupInAllList = allGroups.value.find((g) => g.slug === groupSlug)
-      if (groupInAllList) {
-        handleStateUpdate(groupInAllList)
-      }
+      if (groupInAllList) handleStateUpdate(groupInAllList)
       return true
     } catch (err: any) {
-      console.error(`Error joining group ${groupSlug}:`, err)
       joinLeaveError.value = err.response?.data?.detail || 'Failed to join group.'
       return false
     } finally {
@@ -372,7 +376,6 @@ export const useGroupStore = defineStore('group', () => {
     isJoiningLeaving.value = true
     joinLeaveError.value = null
     try {
-      const authStore = useAuthStore()
       if (!authStore.isAuthenticated) {
         joinLeaveError.value = 'You must be logged in to leave a group.'
         return false
@@ -382,16 +385,12 @@ export const useGroupStore = defineStore('group', () => {
         group.membership_status = 'none'
         group.member_count--
       }
-      if (currentGroup.value && currentGroup.value.slug === groupSlug) {
+      if (currentGroup.value && currentGroup.value.slug === groupSlug)
         handleStateUpdate(currentGroup.value)
-      }
       const groupInAllList = allGroups.value.find((g) => g.slug === groupSlug)
-      if (groupInAllList) {
-        handleStateUpdate(groupInAllList)
-      }
+      if (groupInAllList) handleStateUpdate(groupInAllList)
       return true
     } catch (err: any) {
-      console.error(`Error leaving group ${groupSlug}:`, err)
       joinLeaveError.value = err.response?.data?.detail || 'Failed to leave group.'
       return false
     } finally {
@@ -410,7 +409,6 @@ export const useGroupStore = defineStore('group', () => {
       }
       return true
     } catch (err: any) {
-      console.error(`Error deleting group ${groupSlug}:`, err)
       deleteGroupError.value = err.response?.data?.detail || 'Could not delete the group.'
       return false
     } finally {
@@ -430,7 +428,6 @@ export const useGroupStore = defineStore('group', () => {
       }
       return true
     } catch (err: any) {
-      console.error(`Error transferring ownership for group ${groupSlug}:`, err)
       transferOwnershipError.value = err.response?.data?.detail || 'Could not transfer ownership.'
       return false
     } finally {
@@ -445,36 +442,28 @@ export const useGroupStore = defineStore('group', () => {
       const response = await axiosInstance.get(`/groups/${groupSlug}/requests/`)
       joinRequests.value = response.data.results
     } catch (err: any) {
-      console.error(`Error fetching join requests for group ${groupSlug}:`, err)
       requestsError.value = err.response?.data?.detail || 'Failed to load join requests.'
     } finally {
       isLoadingRequests.value = false
     }
   }
 
-  // In C:\Users\Vinay\Project\frontend\src\stores\group.ts
-
   async function manageJoinRequest(
     groupSlug: string,
     requestId: number,
-    // THIS IS THE FIX. We add the new action type here.
     action: 'approve' | 'deny' | 'deny_and_block',
   ): Promise<boolean> {
     isManagingRequest.value = true
     manageRequestError.value = null
     try {
-      const payload = { action } // The rest of the function is already correct
+      const payload = { action }
       await axiosInstance.patch(`/groups/${groupSlug}/requests/${requestId}/`, payload)
-
       joinRequests.value = joinRequests.value.filter((req) => req.id !== requestId)
-
       if (action === 'approve' && currentGroup.value && currentGroup.value.slug === groupSlug) {
         currentGroup.value.member_count++
       }
-
       return true
     } catch (err: any) {
-      console.error(`Error managing request ${requestId}:`, err)
       manageRequestError.value = err.response?.data?.detail || `Failed to ${action} request.`
       return false
     } finally {
@@ -492,14 +481,10 @@ export const useGroupStore = defineStore('group', () => {
       }
       return true
     } catch (error: any) {
-      console.error('Failed to update group details:', error)
       let errorMessage = 'An unknown error occurred.'
       if (error.response?.data) {
-        if (error.response.data.name) {
-          errorMessage = `Name: ${error.response.data.name[0]}`
-        } else if (error.response.data.detail) {
-          errorMessage = error.response.data.detail
-        }
+        if (error.response.data.name) errorMessage = `Name: ${error.response.data.name[0]}`
+        else if (error.response.data.detail) errorMessage = error.response.data.detail
       }
       updateGroupError.value = errorMessage
       return false
@@ -507,13 +492,15 @@ export const useGroupStore = defineStore('group', () => {
       isUpdatingGroup.value = false
     }
   }
-
+  
   return {
-    // --- Existing State ---
     currentGroup,
-    groupPosts,
+    postIdsByGroupSlug,
+    nextCursorByGroupSlug,
+    hasFetchedPostsByGroupSlug, // [FIX] Expose the new state
     isLoadingGroup,
     groupError,
+    groupPostsError, // [FIX] Expose new error state
     joinRequests,
     isLoadingRequests,
     requestsError,
@@ -522,7 +509,6 @@ export const useGroupStore = defineStore('group', () => {
     isJoiningLeaving,
     joinLeaveError,
     isLoadingGroupPosts,
-    groupPostsNextCursor,
     allGroups,
     isLoadingAllGroups,
     allGroupsError,
@@ -539,15 +525,11 @@ export const useGroupStore = defineStore('group', () => {
     groupSearchError,
     isUpdatingGroup,
     updateGroupError,
-
-    // --- NEW STATE TO EXPOSE ---
     blockedUsers,
     isLoadingBlockedUsers,
     blockedUsersError,
     isUnblockingUser,
     unblockUserError,
-
-    // --- Existing Actions ---
     fetchGroupDetails,
     fetchGroupPosts,
     fetchNextPageOfGroupPosts,
@@ -563,14 +545,10 @@ export const useGroupStore = defineStore('group', () => {
     fetchJoinRequests,
     manageJoinRequest,
     updateGroupDetails,
-
-    // --- NEW ACTIONS TO EXPOSE ---
     fetchBlockedUsers,
     unblockUser,
-
-    // --- Existing Reset Functions ---
     $reset,
-    resetGroupFeedState,
+    resetCurrentGroupState, // [FIX] Expose the new, safer reset function
     resetAllGroupsState,
   }
 })

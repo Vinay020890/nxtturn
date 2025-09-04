@@ -1,51 +1,57 @@
 <script setup lang="ts">
-import { watch, onUnmounted } from 'vue'; // <-- 1. Import 'onUnmounted'
+import { ref, watch, computed } from 'vue';
 import { useRoute } from 'vue-router';
-import { useFeedStore } from '@/stores/feed';
-import { storeToRefs } from 'pinia';
+import { usePostsStore } from '@/stores/posts';
 import PostItem from '@/components/PostItem.vue';
+import PostItemSkeleton from '@/components/PostItemSkeleton.vue';
 
 const route = useRoute();
-const feedStore = useFeedStore();
+const postsStore = usePostsStore();
 
-const { singlePost, isLoadingSinglePost, singlePostError } = storeToRefs(feedStore);
+const postId = computed(() => Number(route.params.postId));
+const post = computed(() => postsStore.getPostById(postId.value));
 
-// This watcher is the single source of truth for loading data for this page.
+const isLoading = ref(false);
+const error = ref<string | null>(null);
+
 watch(
-  () => route.params.postId,
-  (newPostId) => {
-    if (newPostId) {
-      feedStore.ensureFullPostData(Number(newPostId));
+  postId,
+  async (newPostId) => {
+    if (!newPostId || isNaN(newPostId)) return;
+
+    // Only show the full skeleton if we have no cached version at all
+    if (!post.value) {
+      isLoading.value = true;
+    }
+    error.value = null;
+    
+    try {
+      await postsStore.fetchPostById(newPostId);
+    } catch (e: any) {
+      error.value = e.response?.data?.detail || 'Post could not be loaded.';
+    } finally {
+      isLoading.value = false;
     }
   },
   { immediate: true }
 );
-
-// --- THIS IS THE FIX ---
-// 2. Add the onUnmounted hook to clean up the store state.
-// This runs automatically whenever the user navigates away from this page.
-onUnmounted(() => {
-  feedStore.singlePost = null;
-  feedStore.singlePostError = null;
-  console.log('SinglePostView unmounted. Cleared singlePost state.');
-});
-// --- END OF FIX ---
 </script>
 
 <template>
-  <!-- FIX: Removed the "p-4" class from this top-level container -->
   <div class="max-w-4xl mx-auto">
-    <div v-if="isLoadingSinglePost" class="text-center py-10 text-gray-500">
-      Loading post...
+    <div v-if="isLoading && !post">
+      <PostItemSkeleton />
     </div>
-    <div v-else-if="singlePostError" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4">
+
+    <div v-else-if="error" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4">
       <p class="font-bold">Error loading post</p>
-      <p>{{ singlePostError }}</p>
+      <p>{{ error }}</p>
     </div>
-    <div v-else-if="singlePost">
-      <!-- We reuse our excellent PostItem component to display the post -->
-      <PostItem :post="singlePost" />
+
+    <div v-else-if="post">
+      <PostItem :post="post" />
     </div>
+    
     <div v-else class="text-center py-10 text-gray-500">
       Post not found.
     </div>
