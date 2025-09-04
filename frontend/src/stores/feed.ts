@@ -1,53 +1,38 @@
 // C:\Users\Vinay\Project\frontend\src\stores\feed.ts
-// --- FIX FOR REACTIVITY BUG ---
+// --- ADDED REAL-TIME POST DELETION LOGIC ---
 
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import axiosInstance from '@/services/axiosInstance'
 import { useAuthStore } from './auth'
 import { usePostsStore, type Post } from './posts'
-// --- FIX: Import the other stores we need to notify ---
 import { useProfileStore } from './profile'
 import { useGroupStore } from './group'
 
-// --- Interface Definitions for API responses ---
-interface CursorPaginatedResponse {
-  next: string | null
-  previous: string | null
-  results: Post[]
-}
-interface OffsetPaginatedResponse {
-  count: number
-  next: string | null
-  previous: string | null
-  results: Post[]
-}
+interface CursorPaginatedResponse { next: string | null; previous: string | null; results: Post[]; }
+interface OffsetPaginatedResponse { count: number; next: string | null; previous: string | null; results: Post[]; }
 
 export const useFeedStore = defineStore('feed', () => {
   const postsStore = usePostsStore()
   const authStore = useAuthStore()
-  // --- FIX: Get instances of the other stores ---
   const profileStore = useProfileStore()
   const groupStore = useGroupStore()
 
-  // --- State ---
+  // --- State (is unchanged) ---
   const mainFeedPostIds = ref<number[]>([])
   const newPostIdsFromRefresh = ref<number[]>([])
   const mainFeedNextCursor = ref<string | null>(null)
   const isLoadingMainFeed = ref(false)
   const mainFeedError = ref<string | null>(null)
   const isRefreshingMainFeed = ref(false)
-  
   const savedPostIds = ref<number[]>([])
   const savedPostsNextPageUrl = ref<string | null>(null)
   const isLoadingSavedPosts = ref(false)
   const savedPostsError = ref<string | null>(null)
   const hasFetchedSavedPosts = ref(false)
-
   const searchResultPostIds = ref<number[]>([])
   const isLoadingSearchResults = ref(false)
   const searchError = ref<string | null>(null)
-
   const createPostError = ref<string | null>(null)
   const isCreatingPost = ref(false)
 
@@ -71,6 +56,16 @@ export const useFeedStore = defineStore('feed', () => {
   }
 
   // --- ACTIONS ---
+  
+  // [GHOST POST FIX] This new action will be called by our WebSocket listener.
+  function handlePostDeletedSignal(postId: number) {
+    console.log(`FeedStore: Received signal to delete post ID ${postId}`);
+    // Remove the post ID from every list this store manages.
+    mainFeedPostIds.value = mainFeedPostIds.value.filter((id) => id !== postId);
+    newPostIdsFromRefresh.value = newPostIdsFromRefresh.value.filter((id) => id !== postId);
+    savedPostIds.value = savedPostIds.value.filter((id) => id !== postId);
+    searchResultPostIds.value = searchResultPostIds.value.filter((id) => id !== postId);
+  }
 
   async function fetchFeed(url: string | null = null) {
     if (isLoadingMainFeed.value) return
@@ -168,21 +163,10 @@ export const useFeedStore = defineStore('feed', () => {
     try {
       const response = await axiosInstance.post<Post>('/posts/', postData)
       const newPost = { ...response.data, isLiking: false, isDeleting: false, isUpdating: false }
-      
-      // Step 1: Add to the central data cache
       postsStore.addOrUpdatePosts([newPost])
-      
-      // Step 2: Add to the main feed
       mainFeedPostIds.value.unshift(newPost.id)
-
-      // --- FIX: Update other relevant stores to ensure reactivity across the app ---
-      // This will add the new post ID to the user's profile feed if it's currently cached
       profileStore.addPostToProfileFeed(newPost)
-      
-      // This will add the new post ID to the group's feed if it was posted in a group and that group is cached
       groupStore.addPostToGroupFeed(newPost)
-      // --- END OF FIX ---
-
       return newPost
     } catch (err: any) {
       createPostError.value = 'An unexpected error occurred while creating the post.'
@@ -196,12 +180,12 @@ export const useFeedStore = defineStore('feed', () => {
     postsStore.addOrUpdatePosts([{id: postId, isDeleting: true} as Partial<Post>]);
     try {
       await axiosInstance.delete(`/posts/${postId}/`)
-      postsStore.removePost(postId)
-      mainFeedPostIds.value = mainFeedPostIds.value.filter((id) => id !== postId)
-      savedPostIds.value = savedPostIds.value.filter((id) => id !== postId)
-      searchResultPostIds.value = searchResultPostIds.value.filter((id) => id !== postId)
-      // Note: This does not remove the post from profile or group feeds.
-      // That will be handled by the Real-Time Post Deletion feature.
+      // This is now handled globally by the WebSocket signal, but we keep it here
+      // for instant feedback for the user who initiated the delete.
+      postsStore.removePost(postId);
+      handlePostDeletedSignal(postId);
+      // We no longer need to manually remove from other stores here,
+      // as the signal will handle that for all users, including this one.
       return true
     } catch (err: any) {
       postsStore.addOrUpdatePosts([{id: postId, isDeleting: false} as Partial<Post>]);
@@ -212,17 +196,9 @@ export const useFeedStore = defineStore('feed', () => {
   async function toggleLike(postId: number) {
     const post = postsStore.getPostById(postId);
     if (!post || post.isLiking) return;
-
     const originalState = { is_liked_by_user: post.is_liked_by_user, like_count: post.like_count };
     const newLikeCount = (post.like_count ?? 0) + (post.is_liked_by_user ? -1 : 1);
-    
-    postsStore.addOrUpdatePosts([{ 
-      id: postId, 
-      isLiking: true, 
-      is_liked_by_user: !post.is_liked_by_user,
-      like_count: newLikeCount
-    } as Partial<Post>]);
-
+    postsStore.addOrUpdatePosts([{ id: postId, isLiking: true, is_liked_by_user: !post.is_liked_by_user, like_count: newLikeCount } as Partial<Post>]);
     try {
       const response = await axiosInstance.post<{ liked: boolean; like_count: number }>(`/content/${post.content_type_id}/${post.object_id}/like/`);
       postsStore.addOrUpdatePosts([{ id: postId, is_liked_by_user: response.data.liked, like_count: response.data.like_count } as Partial<Post>]);
@@ -255,7 +231,6 @@ export const useFeedStore = defineStore('feed', () => {
     try {
       const isAlreadyPresent = mainFeedPostIds.value.includes(postId) || newPostIdsFromRefresh.value.includes(postId)
       if (isAlreadyPresent) return
-
       const response = await axiosInstance.get<Post>(`/posts/${postId}/`)
       postsStore.addOrUpdatePosts([response.data])
       newPostIdsFromRefresh.value.unshift(response.data.id)
@@ -280,5 +255,6 @@ export const useFeedStore = defineStore('feed', () => {
     toggleSavePost,
     $reset,
     handleNewPostSignal,
+    handlePostDeletedSignal, // [GHOST POST FIX] Expose the new action
   }
 })

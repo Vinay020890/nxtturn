@@ -1,11 +1,14 @@
 # C:\Users\Vinay\Project\Loopline\community\consumers.py
-# --- UPGRADED AND GENERALIZED VERSION ---
+# --- FINAL FIX for Global and Private Channels ---
 
 import json
 from urllib.parse import parse_qs
 from asgiref.sync import async_to_sync
 from channels.generic.websocket import WebsocketConsumer
 from rest_framework.authtoken.models import Token
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
 
 def get_user_from_token(token_key):
     try:
@@ -14,53 +17,83 @@ def get_user_from_token(token_key):
     except Token.DoesNotExist:
         return None
 
-# --- RENAMED: from NotificationConsumer to UserActivityConsumer ---
 class UserActivityConsumer(WebsocketConsumer):
+    
+    # [FIX] Define group names as class attributes for clarity and reuse
+    GLOBAL_GROUP_NAME = "global_notifications"
+
     def connect(self):
-        # ... (Connect logic is unchanged)
         query_string = self.scope['query_string'].decode('utf-8')
         query_params = parse_qs(query_string)
         token_key = query_params.get('token', [None])[0]
+        
         if token_key is None:
             self.close()
             return
+            
         user = get_user_from_token(token_key)
+        
         if user is None:
             self.close()
             return
 
         self.scope['user'] = user
-        # --- RENAMED: from 'notifications_{id}' to 'user_{id}' for broader use ---
-        self.room_group_name = f'user_{user.id}'
         
+        # [FIX] Keep track of the user-specific group name
+        self.user_group_name = f'user_{user.id}'
+        
+        # [FIX] Subscribe the user to THEIR PRIVATE group
         async_to_sync(self.channel_layer.group_add)(
-            self.room_group_name,
+            self.user_group_name,
             self.channel_name
         )
+        
+        # [FIX] Subscribe the user to THE GLOBAL group as well
+        async_to_sync(self.channel_layer.group_add)(
+            self.GLOBAL_GROUP_NAME,
+            self.channel_name
+        )
+        
         self.accept()
-        print(f"CONSUMER-DEBUG: User '{user.username}' successfully CONNECTED and JOINED group '{self.room_group_name}'.\n")
+        print(f"CONSUMER-DEBUG: User '{user.username}' CONNECTED. Joined groups: '{self.user_group_name}' and '{self.GLOBAL_GROUP_NAME}'.\n")
 
     def disconnect(self, close_code):
-        if hasattr(self, 'room_group_name'):
+        # [FIX] Unsubscribe from both groups on disconnect
+        if hasattr(self, 'user_group_name'):
             async_to_sync(self.channel_layer.group_discard)(
-                self.room_group_name,
+                self.user_group_name,
                 self.channel_name
             )
+        
+        # Always unsubscribe from the global group
+        async_to_sync(self.channel_layer.group_discard)(
+            self.GLOBAL_GROUP_NAME,
+            self.channel_name
+        )
+        print(f"CONSUMER-DEBUG: User '{self.scope['user'].username}' DISCONNECTED.")
+
 
     # --- EXISTING METHOD: Handles receiving notification events from signals ---
     def send_notification(self, event):
         message_data = event['message']
-        self.send(text_data=json.dumps({
-            'type': 'notification',
-            'message': message_data
-        }))
-        print(f"!!! CONSUMER-DEBUG: Sent 'new_notification' to browser for group '{self.room_group_name}'")
+        # The frontend now expects a flat structure, so we send the inner message directly
+        self.send(text_data=json.dumps(message_data))
+        print(f"!!! CONSUMER-DEBUG: Sent 'new_notification' to browser for group '{self.user_group_name}'")
 
-    # --- NEW METHOD: Handles receiving new post events from signals ---
+    # --- EXISTING METHOD: Handles receiving new post events from signals ---
     def send_live_post(self, event):
         message_data = event['message']
-        self.send(text_data=json.dumps({
-            'type': 'live_post',
-            'message': message_data
-        }))
-        print(f"!!! CONSUMER-DEBUG: Sent 'new_post' to browser for group '{self.room_group_name}'")
+        # The frontend now expects a flat structure, so we send the inner message directly
+        self.send(text_data=json.dumps(message_data))
+        print(f"!!! CONSUMER-DEBUG: Sent 'new_post' to browser for group '{self.user_group_name}'")
+
+    # --- [FIX] NEW GENERIC METHOD: Handles global broadcast events ---
+    def broadcast_message(self, event):
+        """
+        Handles any message sent to the global group.
+        It forwards the 'payload' of the message directly to the client.
+        This is what our post_delete signal uses.
+        """
+        payload = event['payload']
+        self.send(text_data=json.dumps(payload))
+        print(f"!!! CONSUMER-DEBUG: BROADCASTED event of type '{payload.get('type')}' to ALL connected clients.")

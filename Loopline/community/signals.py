@@ -1,8 +1,8 @@
 # C:\Users\Vinay\Project\Loopline\community\signals.py
-# --- FINAL, FULLY CORRECTED VERSION ---
+# --- ADDED REAL-TIME POST DELETION SIGNAL (Corrected Model Name) ---
 
 import re
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, post_delete # <--- ADD post_delete
 from django.dispatch import receiver
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
@@ -15,7 +15,37 @@ from .serializers import NotificationSerializer, LivePostSerializer
 User = get_user_model()
 
 # =================================================================================
-# === CENTRALIZED REAL-TIME NOTIFICATION SIGNAL (This part is correct) ===
+# === NEW REAL-TIME POST DELETION SIGNAL ===
+# =================================================================================
+
+@receiver(post_delete, sender=StatusPost) # <--- CORRECTED to use StatusPost
+def post_deleted_signal(sender, instance, **kwargs):
+    """
+    Handles the deletion of a StatusPost instance.
+
+    Broadcasts a 'post_deleted' event to the global channel group
+    so that clients can remove the post from their state in real-time.
+    """
+    channel_layer = get_channel_layer()
+    
+    payload = {
+        "type": "post_deleted",
+        "post_id": instance.id
+    }
+
+    async_to_sync(channel_layer.group_send)(
+        "global_notifications",
+        {
+            "type": "broadcast.message",
+            "payload": payload,
+        },
+    )
+    print(f"!!! REAL-TIME (Post Deleted): Sent post_deleted signal for ID {instance.id} to global_notifications !!!")
+# =================================================================================
+
+
+# =================================================================================
+# === CENTRALIZED REAL-TIME NOTIFICATION SIGNAL (Unchanged) ===
 # =================================================================================
 @receiver(post_save, sender=Notification)
 def send_new_notification_signal(sender, instance, created, **kwargs):
@@ -35,7 +65,7 @@ def send_new_notification_signal(sender, instance, created, **kwargs):
 # =================================================================================
 
 
-# --- SIGNAL HANDLERS WITH CORRECTED DUPLICATE CHECKING ---
+# --- SIGNAL HANDLERS WITH CORRECTED DUPLICATE CHECKING (Unchanged) ---
 
 @receiver(post_save, sender=User, dispatch_uid="create_user_profile_signal")
 def create_or_update_user_profile(sender, instance, created, **kwargs):
@@ -52,7 +82,6 @@ def create_like_notification(sender, instance, created, **kwargs):
         recipient, verb, notification_target = liked_object.author, "liked your reply" if liked_object.parent else "liked your comment", liked_object
     else: return
     if recipient and recipient != liker:
-        # --- REVERTED TO THE ORIGINAL, RELIABLE CHECK ---
         action_object_content_type = ContentType.objects.get_for_model(instance)
         if not Notification.objects.filter(
             recipient=recipient, actor=liker,
@@ -71,7 +100,6 @@ def create_follow_notification(sender, instance, created, **kwargs):
     if not created: return
     followed_user, follower = instance.following, instance.follower
     if followed_user != follower:
-        # --- REVERTED TO THE ORIGINAL, RELIABLE CHECK ---
         action_object_content_type = ContentType.objects.get_for_model(instance)
         if not Notification.objects.filter(
             recipient=followed_user, actor=follower,
@@ -94,7 +122,6 @@ def create_comment_and_reply_notification(sender, instance, created, **kwargs):
         recipient, verb, notification_type = post.author, "commented on your post", Notification.COMMENT
     mentioned_usernames = set(re.findall(r'@(\w+)', instance.content or ''))
     if recipient != commenter and recipient.username not in mentioned_usernames:
-        # --- REVERTED TO THE ORIGINAL, RELIABLE CHECK ---
         action_object_content_type = ContentType.objects.get_for_model(instance)
         if not Notification.objects.filter(
             recipient=recipient, actor=commenter,
@@ -122,7 +149,6 @@ def create_mention_notifications(sender, instance, created, **kwargs):
         try:
             recipient = User.objects.get(username=username)
             if recipient != actor:
-                # --- REVERTED TO THE ORIGINAL, RELIABLE CHECK ---
                 action_object_content_type = ContentType.objects.get_for_model(instance)
                 if not Notification.objects.filter(
                     recipient=recipient, actor=actor,
@@ -137,55 +163,26 @@ def create_mention_notifications(sender, instance, created, **kwargs):
                     print(f"Notification DB (Mention): Created for {recipient.username}")
         except User.DoesNotExist: continue
 
-# In community/signals.py
-
 @receiver(post_save, sender=GroupJoinRequest)
 def create_group_join_request_notification(sender, instance, created, **kwargs):
-    """
-    Creates a notification for the group owner when a new join request is made
-    OR when an old one is reset to 'pending'.
-    """
-    # We need to know if the status field changed to 'pending'.
-    # The 'update_fields' kwarg tells us which fields were passed to save().
     update_fields = kwargs.get('update_fields') or set()
-
-    # --- THIS IS THE NEW LOGIC ---
-    # Trigger if:
-    # 1. The request is newly created (and is pending by default).
-    # 2. OR the request was updated AND the 'status' field was part of the update,
-    #    AND the new status is 'pending'.
     is_new_request = created
     is_revived_request = 'status' in update_fields and instance.status == 'pending'
-
     if not (is_new_request or is_revived_request):
         return
-    # ----------------------------
-
-    join_request = instance
-    group = join_request.group
-    requester = join_request.user
-    group_owner = group.creator
-
+    join_request, group, requester, group_owner = instance, instance.group, instance.user, instance.group.creator
     if requester == group_owner:
         return
-
-    # Use the reliable duplicate check
     if not Notification.objects.filter(
-        recipient=group_owner, 
-        actor=requester,
+        recipient=group_owner, actor=requester,
         action_object_content_type=ContentType.objects.get_for_model(join_request),
         action_object_object_id=join_request.id,
-        # We add this check to ensure we don't create a new notification
-        # if the request is just being saved for other reasons.
         verb="sent a request to join" 
     ).exists():
-        notification = Notification.objects.create(
-            recipient=group_owner,
-            actor=requester,
-            verb="sent a request to join",
+        Notification.objects.create(
+            recipient=group_owner, actor=requester, verb="sent a request to join",
             notification_type=Notification.GROUP_JOIN_REQUEST,
-            target=group,
-            action_object=join_request
+            target=group, action_object=join_request
         )
         print(f"Notification DB (Group Join Request): Created for {group_owner.username}")
 

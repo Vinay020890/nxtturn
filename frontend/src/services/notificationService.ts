@@ -1,5 +1,5 @@
 // C:\Users\Vinay\Project\frontend\src\services\notificationService.ts
-// --- UPGRADED VERSION ---
+// --- FIX for TypeScript null error ---
 
 class NotificationService {
   private socket: WebSocket | null = null;
@@ -21,9 +21,8 @@ class NotificationService {
       return;
     }
     
-    // --- CHANGE 1: Update the WebSocket endpoint URL ---
     const baseUrl = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000/ws/';
-    const url = `${baseUrl}activity/?token=${authToken}`; // Use the new 'activity' path
+    const url = `${baseUrl}activity/?token=${authToken}`;
     console.log(`Service: Attempting to connect to WebSocket at: ${url}`);
 
     this.socket = new WebSocket(url);
@@ -33,36 +32,71 @@ class NotificationService {
       this.isConnecting = false;
     };
 
-    // --- CHANGE 2: Create a powerful message handler that dispatches to multiple stores ---
     this.socket.onmessage = async (event) => {
       try {
         const data = JSON.parse(event.data);
+        
         const eventType = data.type;
-        const message = data.message;
-
-        if (!eventType || !message) {
-            console.warn("Service: Received malformed message", data);
+        const payload = data.payload || data;
+        
+        if (!eventType) {
+            console.warn("Service: Received malformed message, missing 'type'", data);
             return;
         }
 
-        console.log(`Service: Received event type: '${eventType}'`, message);
+        console.log(`Service: Received event type: '${eventType}'`, payload);
         
         switch (eventType) {
-          case 'notification': {
+          case 'new_notification': {
             const { useNotificationStore } = await import('@/stores/notification');
             const store = useNotificationStore();
-            store.addLiveNotification(message.payload);
+            store.addLiveNotification(payload);
             break;
           }
-          case 'live_post': {
+          case 'new_post': {
             const { useFeedStore } = await import('@/stores/feed');
             const store = useFeedStore();
-            // The payload now just has an 'id'. Pass it to our new handler.
-            store.handleNewPostSignal(message.payload.id);
+            store.handleNewPostSignal(payload.id);
+            break;
+          }
+          case 'post_deleted': {
+            const postId = payload.post_id;
+            if (!postId) {
+              console.warn("Service: Received post_deleted event but missing post_id", payload);
+              return;
+            }
+
+            console.log(`🚀 Service: Dispatching delete for post ID ${postId} to all stores.`);
+
+            const { usePostsStore } = await import('@/stores/posts');
+            const { useFeedStore } = await import('@/stores/feed');
+            const { useProfileStore } = await import('@/stores/profile');
+            const { useGroupStore } = await import('@/stores/group');
+
+            const postsStore = usePostsStore();
+            const feedStore = useFeedStore();
+            const profileStore = useProfileStore();
+            const groupStore = useGroupStore();
+
+            postsStore.removePost(postId);
+            feedStore.handlePostDeletedSignal(postId);
+            profileStore.handlePostDeletedSignal(postId);
+            groupStore.handlePostDeletedSignal(postId);
             break;
           }
           default:
-            console.warn(`Service: Unhandled event type: '${eventType}'`);
+            // This handles the older message format gracefully
+            if (data.type === 'send_notification' || data.type === 'send_live_post') {
+                console.log(`Service: Handling legacy message format for ${data.type}`);
+                
+                // [TYPESCRIPT FIX] Add a null check before calling onmessage
+                if (this.socket && this.socket.onmessage) {
+                  this.socket.onmessage(new MessageEvent('message', {data: JSON.stringify(data.message)}));
+                }
+
+            } else {
+                console.warn(`Service: Unhandled event type: '${eventType}'`);
+            }
         }
       } catch (e) {
           console.error("Service: Error processing message or importing store:", e);

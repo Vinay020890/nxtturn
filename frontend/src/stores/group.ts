@@ -1,5 +1,5 @@
 // C:\Users\Vinay\Project\frontend\src\stores\group.ts
-// FINAL HYBRID FIX
+// --- ADDED REAL-TIME POST DELETION LOGIC ---
 import { ref } from 'vue';
 import { defineStore } from 'pinia';
 import axiosInstance from '@/services/axiosInstance';
@@ -54,6 +54,15 @@ export const useGroupStore = defineStore('group', () => {
   const groupSearchError = ref<string | null>(null);
   const isUpdatingGroup = ref(false);
   const updateGroupError = ref<string | null>(null);
+
+  // [GHOST POST FIX] New action to handle deletion signal
+  function handlePostDeletedSignal(postId: number) {
+    console.log(`GroupStore: Received signal to delete post ID ${postId}`);
+    // Iterate over all cached group feeds and remove the ID if it exists.
+    for (const slug in postIdsByGroupSlug.value) {
+      postIdsByGroupSlug.value[slug] = postIdsByGroupSlug.value[slug].filter(id => id !== postId);
+    }
+  }
 
   function $reset() {
     currentGroup.value = null;
@@ -150,7 +159,6 @@ export const useGroupStore = defineStore('group', () => {
     }
   }
 
-  // [HYBRID FIX] NEW ACTION FOR BACKGROUND RE-VALIDATION
   async function refreshGroupPosts(groupSlug: string) {
     const group = groupsBySlug.value[groupSlug];
     if (!group) return; 
@@ -193,7 +201,7 @@ export const useGroupStore = defineStore('group', () => {
       postIdsByGroupSlug.value[post.group.slug].unshift(post.id);
     }
   }
-
+  
   async function fetchBlockedUsers(groupSlug: string) {
     isLoadingBlockedUsers.value = true;
     blockedUsersError.value = null;
@@ -506,5 +514,6 @@ export const useGroupStore = defineStore('group', () => {
     $reset,
     resetCurrentGroupState,
     resetAllGroupsState,
+    handlePostDeletedSignal,
   };
 });
