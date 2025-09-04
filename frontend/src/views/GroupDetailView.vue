@@ -1,5 +1,5 @@
 <!-- C:\Users\Vinay\Project\frontend\src\views\GroupDetailView.vue -->
-<!-- --- REFACTORED TO FIX CACHING BUG --- -->
+<!-- FINAL HYBRID FIX -->
 <script setup lang="ts">
 import { watch, computed, ref, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -44,10 +44,31 @@ const groupPostsNextCursor = computed(() => {
   return groupStore.nextCursorByGroupSlug[groupSlug.value];
 });
 
-
 const isCreator = computed(() => currentGroup.value?.membership_status === 'creator');
 const isMember = computed(() => ['creator', 'member'].includes(currentGroup.value?.membership_status || ''));
 const hasPendingRequest = computed(() => currentGroup.value?.membership_status === 'pending');
+
+// [HYBRID FIX] This function now calls the dedicated 'refresh' action for posts
+async function loadGroupData() {
+  const slug = route.params.slug as string;
+  if (slug) {
+    // Await details first to ensure we know privacy status before fetching posts
+    await groupStore.fetchGroupDetails(slug);
+    groupStore.refreshGroupPosts(slug);
+  }
+}
+
+watch(() => route.params.slug, (newSlug, oldSlug) => {
+  if (newSlug && newSlug !== oldSlug) {
+    groupStore.resetCurrentGroupState();
+    loadGroupData();
+  }
+}, { immediate: true });
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeOnClickOutside, true);
+  groupStore.resetCurrentGroupState();
+});
 
 const joinButtonText = computed(() => {
   if (isJoiningLeaving.value) return 'Processing...';
@@ -102,32 +123,6 @@ watch(showOptionsMenu, (isOpen) => {
   } else {
     document.removeEventListener('click', closeOnClickOutside, true);
   }
-});
-
-// [FIX] Update loadGroupData to call the two separate actions, just like in ProfileView.
-async function loadGroupData() {
-  const slug = route.params.slug as string;
-  if (slug) {
-    await groupStore.fetchGroupDetails(slug);
-    await groupStore.fetchGroupPosts(slug);
-  }
-}
-
-// [FIX] Use the new, safer `resetCurrentGroupState` function.
-// This prevents the cache from being destroyed when switching between groups.
-watch(() => route.params.slug, (newSlug, oldSlug) => {
-  if (newSlug && newSlug !== oldSlug) {
-    groupStore.resetCurrentGroupState();
-    loadGroupData();
-  }
-}, { immediate: true });
-
-// [FIX] Use the new, safer `resetCurrentGroupState` function on unmount.
-// This correctly cleans up the "current view" state without destroying the cached data for this group,
-// allowing for instant re-loads on revisit.
-onUnmounted(() => {
-  document.removeEventListener('click', closeOnClickOutside, true);
-  groupStore.resetCurrentGroupState();
 });
 
 function handleTransferOwnership() {

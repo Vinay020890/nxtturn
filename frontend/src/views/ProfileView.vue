@@ -1,3 +1,5 @@
+<!-- C:\Users\Vinay\Project\frontend\src\views\ProfileView.vue -->
+<!-- FINAL HYBRID FIX -->
 <script setup lang="ts">
 import { getAvatarUrl } from '@/utils/avatars';
 import { ref, watch, computed } from 'vue';
@@ -23,15 +25,10 @@ const {
 const { currentUser, isAuthenticated } = storeToRefs(authStore);
 const username = computed(() => route.params.username as string || '');
 
-// --- THIS IS THE FIX ---
-// We access the state directly instead of using the deleted getter functions.
 const userPostIds = computed(() => profileStore.postIdsByUsername[username.value] || []);
 const userPostsNextPageUrl = computed(() => profileStore.nextPageUrlByUsername[username.value]);
 
 const userPosts = computed(() => postsStore.getPostsByIds(userPostIds.value));
-// --- END OF FIX ---
-
-
 const isOwnProfile = computed(() => isAuthenticated.value && currentUser.value?.username === username.value);
 const loadMoreTrigger = ref<HTMLElement | null>(null);
 
@@ -41,10 +38,11 @@ useInfiniteScroll(
   userPostsNextPageUrl
 );
 
+// [HYBRID FIX] This function now calls the dedicated 'refresh' action for posts
 const loadProfileData = () => {
   if (username.value) {
     profileStore.fetchProfile(username.value);
-    profileStore.fetchUserPosts(username.value);
+    profileStore.refreshUserPosts(username.value); // Re-validates the post list on every load
   }
 };
 
