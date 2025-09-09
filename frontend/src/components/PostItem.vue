@@ -27,7 +27,7 @@ const { isCreatingComment, createCommentError } = storeToRefs(commentStore);
 const showComments = ref(false);
 const newCommentContent = ref('');
 const localDeleteError = ref<string | null>(null);
-const isLiking = ref(false); // Was missing, now correctly added back
+const isLiking = ref(false);
 const activeMediaIndex = ref(0);
 watch(() => props.post.id, () => { activeMediaIndex.value = 0; });
 const isEditing = ref(false);
@@ -246,7 +246,7 @@ async function handleCommentSubmit() {
       </div>
       <div v-if="isAuthenticated" class="relative" ref="optionsMenuRef">
         <button @click.stop="toggleOptionsMenu"
-          class="p-2 rounded-full text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"><svg
+          class="p-2 rounded-full text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500" data-cy="post-options-button"><svg
             class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
             <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z">
             </path>
@@ -271,8 +271,8 @@ async function handleCommentSubmit() {
                 </svg><span>{{ isEditing ? 'Cancel Edit' : 'Edit Post' }}</span></button><button
                 @click="handleDeleteClick" :disabled="post.isDeleting || isEditing"
                 class="w-full text-left flex items-center px-4 py-2 text-sm text-red-700 hover:bg-red-50"
-                role="menuitem"><svg class="w-5 h-5 mr-3 text-red-400" fill="none" stroke="currentColor"
-                  viewBox="0 0 24 24">
+                role="menuitem" data-cy="delete-post-button"><svg class="w-5 h-5 mr-3 text-red-400" fill="none"
+                  stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
                   </path>
@@ -432,15 +432,15 @@ async function handleCommentSubmit() {
       <div class="border-t border-gray-200 pt-3 flex items-center gap-x-6 text-gray-600">
         <button @click="toggleLike" :disabled="isLiking"
           class="flex items-center gap-x-1.5 transition-colors duration-150 hover:text-red-500 disabled:opacity-50"
-          :class="{ 'text-red-500 font-semibold': post.is_liked_by_user }">
+          :class="{ 'text-red-500 font-semibold': post.is_liked_by_user }" data-cy="like-button">
           <svg class="h-5 w-5" :fill="post.is_liked_by_user ? 'currentColor' : 'none'" viewBox="0 0 24 24"
             stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.5l1.318-1.182a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z">
             </path>
           </svg>
-          <span class="text-sm font-medium">Like</span><span v-if="(post.like_count ?? 0) > 0"
-            class="text-sm font-medium">{{ post.like_count }}</span>
+          <span class="text-sm font-medium">Like</span>
+          <span data-cy="like-count" class="text-sm font-medium">{{ post.like_count ?? 0 }}</span>
         </button>
         <button @click="toggleCommentDisplay"
           class="flex items-center gap-x-1.5 transition-colors duration-150 hover:text-blue-600">
@@ -460,10 +460,9 @@ async function handleCommentSubmit() {
       <div v-if="isLoadingComments">Loading...</div>
       <div v-else-if="commentError" class="text-red-600">Error: {{ commentError }}</div>
       <div v-else>
-        <!-- THIS IS THE LINE THAT NEEDS TO BE FIXED -->
         <CommentItem v-for="comment in commentsForThisPost" :key="comment.id" :comment="comment"
           :parentPostType="props.post.post_type" :parentObjectId="props.post.object_id"
-          :parentPostActualId="props.post.id" @report-content="handleCommentReport" />
+          :parentPostActualId="props.post.id" @report-content="handleCommentReport" data-cy="comment-container" />
         <p v-if="commentsForThisPost.length === 0" class="text-sm text-gray-500 py-4 text-center">No comments yet.</p>
       </div>
       <form v-if="isAuthenticated" @submit.prevent="handleCommentSubmit" class="mt-4 flex items-start gap-3">
@@ -472,15 +471,16 @@ async function handleCommentSubmit() {
           alt="your avatar" class="w-8 h-8 rounded-full object-cover flex-shrink-0 bg-gray-200">
         <div class="flex-grow">
           <MentionAutocomplete v-model="newCommentContent" placeholder="Add a comment... Mention with @" :rows="1"
-            class="text-sm" />
+            class="text-sm" data-cy="comment-input" />
           <div v-if="createCommentError" class="text-red-600 text-sm mt-1">{{ createCommentError }}</div>
           <button type="submit" :disabled="isCreatingComment || !newCommentContent.trim()"
-            class="mt-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold py-1 px-4 rounded-full float-right disabled:bg-blue-300">Submit</button>
+            class="mt-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold py-1 px-4 rounded-full float-right disabled:bg-blue-300"
+            data-cy="comment-submit-button">Submit</button>
         </div>
       </form>
     </section>
 
-    <!-- The Report Modal (already added in your code) -->
+    <!-- The Report Modal -->
     <ReportFormModal :is-open="isReportModalOpen" :target="reportTarget" @close="isReportModalOpen = false" />
 
   </article>

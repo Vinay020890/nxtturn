@@ -40,7 +40,7 @@ function loadMoreGroups() {
 
     <header class="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex justify-between items-center mb-6">
       <h1 class="text-2xl font-bold text-gray-800">Discover Groups</h1>
-      <button @click="openCreateGroupModal"
+      <button data-cy="create-group-button" @click="openCreateGroupModal"
         class="px-5 py-2 bg-blue-600 text-white rounded-full font-semibold hover:bg-blue-700 transition-colors">
         + Create New Group
       </button>

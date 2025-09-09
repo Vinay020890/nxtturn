@@ -47,8 +47,15 @@ class PollSerializer(serializers.ModelSerializer):
         model = Poll
         fields = ['id', 'question', 'options', 'total_votes', 'user_vote']
 
+    # --- THIS IS THE CORRECTED METHOD ---
     def get_total_votes(self, obj):
-        return obj.votes.count()
+        """
+        Calculates the total votes by summing the pre-calculated counts
+        from the context, which was populated by to_representation.
+        This avoids a redundant database query.
+        """
+        vote_counts_dict = self.context.get('vote_counts', {})
+        return sum(vote_counts_dict.values())
 
     def get_user_vote(self, obj):
         request = self.context.get('request')
@@ -58,19 +65,16 @@ class PollSerializer(serializers.ModelSerializer):
         vote = obj.votes.filter(user=request.user).first()
         return vote.option_id if vote else None
 
-   # CORRECTED CODE
     def to_representation(self, instance):
         """
         Optimize vote counting to avoid N+1 queries.
         We count all votes for all options in one go.
         """
-        # Get vote counts for all options of this poll, grouped by the option's ID
         vote_counts = {
-            item['id']: item['count'] # <--- CORRECTED: Use the option's ID as the key
-            for item in instance.options.annotate(count=Count('votes')).values('id', 'count') # <--- CORRECTED: Value is 'id', not 'option'
+            item['id']: item['count']
+            for item in instance.options.annotate(count=Count('votes')).values('id', 'count')
         }
         
-        # Pass the pre-calculated counts to the child serializer via context
         self.context['vote_counts'] = vote_counts
         return super().to_representation(instance)
 

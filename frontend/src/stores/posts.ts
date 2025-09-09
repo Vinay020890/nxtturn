@@ -1,10 +1,9 @@
 // C:\Users\Vinay\Project\frontend\src\stores\posts.ts
-// --- CONFIRMING REAL-TIME POST DELETION LOGIC ---
-
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import axiosInstance from '@/services/axiosInstance';
 
+// --- DEFINITIONS (All are now correctly exported for other files to use) ---
 export interface PostAuthor { id: number; username: string; first_name: string; last_name: string; picture: string | null; }
 export interface PostMedia { id: number; media_type: 'image' | 'video'; file_url: string; }
 export interface PollOption { id: number; text: string; vote_count: number; }
@@ -29,16 +28,25 @@ export const usePostsStore = defineStore('posts', () => {
       if (post && post.id) {
         const existingPost = posts.value[post.id]
         if (existingPost) {
+          // Merge new data into the existing post object
           posts.value[post.id] = { ...existingPost, ...post }
         } else {
+          // Or add it as a new post
           posts.value[post.id] = post as Post
         }
       }
     }
   }
 
-  // [GHOST POST FIX] This is the core action that removes the post's data.
-  // It will be called by our WebSocket listener.
+  // --- NEW FUNCTION TO HANDLE POLL UPDATES ---
+  function processVoteUpdate(updatedPost: Post) {
+    if (posts.value[updatedPost.id] && updatedPost.poll) {
+      // This specifically updates the poll object inside the post,
+      // which is crucial for Vue's reactivity to work correctly.
+      posts.value[updatedPost.id].poll = updatedPost.poll;
+    }
+  }
+
   function removePost(postId: number) {
     console.log(`PostsStore: Deleting post data for ID ${postId} from central cache.`);
     delete posts.value[postId]
@@ -73,14 +81,16 @@ export const usePostsStore = defineStore('posts', () => {
     }
   }
 
+  // --- UPDATED RETURN STATEMENT ---
   return {
     posts,
     getPostById,
     getPostsByIds,
     addOrUpdatePosts,
-    removePost, // Ensure this is returned
+    removePost,
     incrementCommentCount,
     decrementCommentCount,
     fetchPostById,
+    processVoteUpdate, // Expose the new function
   }
 })

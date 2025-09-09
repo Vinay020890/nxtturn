@@ -66,7 +66,8 @@ urlpatterns = [
     path('messages/send/', views.SendMessageView.as_view(), name='send-message'),
 
      # NEW: URL for casting a vote on a poll
-    path('polls/<int:poll_id>/options/<int:option_id>/vote/', views.PollVoteAPIView.as_view(), name='poll-vote'),
+     path('polls/<int:poll_id>/options/<int:option_id>/vote/', views.PollVoteAPIView.as_view(), name='poll-vote'),
+    
 
      # === NEW: URLS FOR SAVED POSTS ===
     # ================================================

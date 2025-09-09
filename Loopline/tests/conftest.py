@@ -3,24 +3,38 @@
 import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
-from .models import Group, GroupJoinRequest
+from community.models import Group, GroupJoinRequest
 from channels.layers import get_channel_layer
 
 User = get_user_model()
+
+# In tests/conftest.py
 
 @pytest.fixture
 def user_factory():
     """
     A factory fixture to create unique users for tests.
+    Can create a user with a specific username or a prefixed one.
+    
+    Usage:
+    user_factory() -> user_1
+    user_factory(username_prefix='test') -> test_2
+    user_factory(username='specific_user') -> specific_user
     """
-    # This is a 'factory as a function'.
-    def create_user(username_prefix='user'):
-        # Keep track of how many users we've made to ensure uniqueness.
-        if not hasattr(create_user, "counter"):
-            create_user.counter = 0
-        create_user.counter += 1
+    def create_user(username_prefix='user', **kwargs):
+        # --- THIS IS THE NEW LOGIC ---
+        # Check if a specific username was passed in kwargs.
+        username = kwargs.get('username')
         
-        username = f"{username_prefix}_{create_user.counter}"
+        if not username:
+            # If no specific username, use the original prefix logic.
+            if not hasattr(create_user, "counter"):
+                create_user.counter = 0
+            create_user.counter += 1
+            username = f"{username_prefix}_{create_user.counter}"
+        # --- END OF NEW LOGIC ---
+        
+        # This part remains the same.
         return User.objects.create_user(username=username, password='password123')
     
     # Reset counter for each test run to ensure isolation.

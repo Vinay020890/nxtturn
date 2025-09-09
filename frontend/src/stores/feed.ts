@@ -1,6 +1,4 @@
 // C:\Users\Vinay\Project\frontend\src\stores\feed.ts
-// --- ADDED REAL-TIME POST DELETION LOGIC ---
-
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import axiosInstance from '@/services/axiosInstance'
@@ -9,8 +7,17 @@ import { usePostsStore, type Post } from './posts'
 import { useProfileStore } from './profile'
 import { useGroupStore } from './group'
 
-interface CursorPaginatedResponse { next: string | null; previous: string | null; results: Post[]; }
-interface OffsetPaginatedResponse { count: number; next: string | null; previous: string | null; results: Post[]; }
+interface CursorPaginatedResponse {
+  next: string | null
+  previous: string | null
+  results: Post[]
+}
+interface OffsetPaginatedResponse {
+  count: number
+  next: string | null
+  previous: string | null
+  results: Post[]
+}
 
 export const useFeedStore = defineStore('feed', () => {
   const postsStore = usePostsStore()
@@ -56,15 +63,13 @@ export const useFeedStore = defineStore('feed', () => {
   }
 
   // --- ACTIONS ---
-  
-  // [GHOST POST FIX] This new action will be called by our WebSocket listener.
+
   function handlePostDeletedSignal(postId: number) {
-    console.log(`FeedStore: Received signal to delete post ID ${postId}`);
-    // Remove the post ID from every list this store manages.
-    mainFeedPostIds.value = mainFeedPostIds.value.filter((id) => id !== postId);
-    newPostIdsFromRefresh.value = newPostIdsFromRefresh.value.filter((id) => id !== postId);
-    savedPostIds.value = savedPostIds.value.filter((id) => id !== postId);
-    searchResultPostIds.value = searchResultPostIds.value.filter((id) => id !== postId);
+    console.log(`FeedStore: Received signal to delete post ID ${postId}`)
+    mainFeedPostIds.value = mainFeedPostIds.value.filter((id) => id !== postId)
+    newPostIdsFromRefresh.value = newPostIdsFromRefresh.value.filter((id) => id !== postId)
+    savedPostIds.value = savedPostIds.value.filter((id) => id !== postId)
+    searchResultPostIds.value = searchResultPostIds.value.filter((id) => id !== postId)
   }
 
   async function fetchFeed(url: string | null = null) {
@@ -76,7 +81,7 @@ export const useFeedStore = defineStore('feed', () => {
       const apiUrl = url || '/feed/'
       const response = await axiosInstance.get<CursorPaginatedResponse>(apiUrl)
       postsStore.addOrUpdatePosts(response.data.results)
-      const newIds = response.data.results.map(post => post.id)
+      const newIds = response.data.results.map((post) => post.id)
       if (!url) mainFeedPostIds.value = newIds
       else mainFeedPostIds.value.push(...newIds)
       mainFeedNextCursor.value = response.data.next
@@ -99,13 +104,15 @@ export const useFeedStore = defineStore('feed', () => {
       const freshPosts = response.data.results
       postsStore.addOrUpdatePosts(freshPosts)
       if (isInitialLoad) {
-        mainFeedPostIds.value = freshPosts.map(p => p.id)
+        mainFeedPostIds.value = freshPosts.map((p) => p.id)
         newPostIdsFromRefresh.value = []
       } else {
         const existingPostIds = new Set([...mainFeedPostIds.value, ...newPostIdsFromRefresh.value])
-        const genuinelyNewPostIds = freshPosts.map(p => p.id).filter(id => !existingPostIds.has(id))
+        const genuinelyNewPostIds = freshPosts
+          .map((p) => p.id)
+          .filter((id) => !existingPostIds.has(id))
         if (genuinelyNewPostIds.length > 0) {
-            newPostIdsFromRefresh.value.unshift(...genuinelyNewPostIds)
+          newPostIdsFromRefresh.value.unshift(...genuinelyNewPostIds)
         }
       }
       mainFeedNextCursor.value = response.data.next
@@ -116,7 +123,7 @@ export const useFeedStore = defineStore('feed', () => {
       if (isInitialLoad) isLoadingMainFeed.value = false
     }
   }
-  
+
   async function fetchSavedPosts(url: string | null = null) {
     if (!url && hasFetchedSavedPosts.value) return
     if (isLoadingSavedPosts.value) return
@@ -127,12 +134,13 @@ export const useFeedStore = defineStore('feed', () => {
       const apiUrl = url || '/posts/saved/'
       const response = await axiosInstance.get<OffsetPaginatedResponse>(apiUrl)
       postsStore.addOrUpdatePosts(response.data.results)
-      const newIds = response.data.results.map(post => post.id)
+      const newIds = response.data.results.map((post) => post.id)
       if (!url) savedPostIds.value = newIds
       else savedPostIds.value.push(...newIds)
       savedPostsNextPageUrl.value = response.data.next
     } catch (err: any) {
-      savedPostsError.value = err.response?.data?.detail || err.message || 'Failed to fetch saved posts.'
+      savedPostsError.value =
+        err.response?.data?.detail || err.message || 'Failed to fetch saved posts.'
     } finally {
       isLoadingSavedPosts.value = false
       if (!url) hasFetchedSavedPosts.value = true
@@ -177,35 +185,46 @@ export const useFeedStore = defineStore('feed', () => {
   }
 
   async function deletePost(postId: number): Promise<boolean> {
-    postsStore.addOrUpdatePosts([{id: postId, isDeleting: true} as Partial<Post>]);
+    postsStore.addOrUpdatePosts([{ id: postId, isDeleting: true } as Partial<Post>])
     try {
       await axiosInstance.delete(`/posts/${postId}/`)
-      // This is now handled globally by the WebSocket signal, but we keep it here
-      // for instant feedback for the user who initiated the delete.
-      postsStore.removePost(postId);
-      handlePostDeletedSignal(postId);
-      // We no longer need to manually remove from other stores here,
-      // as the signal will handle that for all users, including this one.
+      postsStore.removePost(postId)
+      handlePostDeletedSignal(postId)
       return true
     } catch (err: any) {
-      postsStore.addOrUpdatePosts([{id: postId, isDeleting: false} as Partial<Post>]);
+      postsStore.addOrUpdatePosts([{ id: postId, isDeleting: false } as Partial<Post>])
       return false
     }
   }
-  
+
   async function toggleLike(postId: number) {
-    const post = postsStore.getPostById(postId);
-    if (!post || post.isLiking) return;
-    const originalState = { is_liked_by_user: post.is_liked_by_user, like_count: post.like_count };
-    const newLikeCount = (post.like_count ?? 0) + (post.is_liked_by_user ? -1 : 1);
-    postsStore.addOrUpdatePosts([{ id: postId, isLiking: true, is_liked_by_user: !post.is_liked_by_user, like_count: newLikeCount } as Partial<Post>]);
+    const post = postsStore.getPostById(postId)
+    if (!post || post.isLiking) return
+    const originalState = { is_liked_by_user: post.is_liked_by_user, like_count: post.like_count }
+    const newLikeCount = (post.like_count ?? 0) + (post.is_liked_by_user ? -1 : 1)
+    postsStore.addOrUpdatePosts([
+      {
+        id: postId,
+        isLiking: true,
+        is_liked_by_user: !post.is_liked_by_user,
+        like_count: newLikeCount,
+      } as Partial<Post>,
+    ])
     try {
-      const response = await axiosInstance.post<{ liked: boolean; like_count: number }>(`/content/${post.content_type_id}/${post.object_id}/like/`);
-      postsStore.addOrUpdatePosts([{ id: postId, is_liked_by_user: response.data.liked, like_count: response.data.like_count } as Partial<Post>]);
+      const response = await axiosInstance.post<{ liked: boolean; like_count: number }>(
+        `/content/${post.content_type_id}/${post.object_id}/like/`,
+      )
+      postsStore.addOrUpdatePosts([
+        {
+          id: postId,
+          is_liked_by_user: response.data.liked,
+          like_count: response.data.like_count,
+        } as Partial<Post>,
+      ])
     } catch (err) {
-      postsStore.addOrUpdatePosts([{ id: postId, ...originalState } as Partial<Post>]);
+      postsStore.addOrUpdatePosts([{ id: postId, ...originalState } as Partial<Post>])
     } finally {
-      postsStore.addOrUpdatePosts([{ id: postId, isLiking: false } as Partial<Post>]);
+      postsStore.addOrUpdatePosts([{ id: postId, isLiking: false } as Partial<Post>])
     }
   }
 
@@ -216,7 +235,9 @@ export const useFeedStore = defineStore('feed', () => {
     postsStore.addOrUpdatePosts([{ id: postId, is_saved: !originalIsSaved } as Partial<Post>])
     try {
       const response = await axiosInstance.post<Post>(`/posts/${postId}/save/`)
-      postsStore.addOrUpdatePosts([{ id: postId, is_saved: response.data.is_saved } as Partial<Post>])
+      postsStore.addOrUpdatePosts([
+        { id: postId, is_saved: response.data.is_saved } as Partial<Post>,
+      ])
       if (response.data.is_saved) {
         if (!savedPostIds.value.includes(postId)) savedPostIds.value.unshift(postId)
       } else {
@@ -227,9 +248,26 @@ export const useFeedStore = defineStore('feed', () => {
     }
   }
 
+  // Replace the castVote function in feed.ts with this one
+
+  async function castVote(pollId: number, optionId: number) {
+    const postsStore = usePostsStore()
+    try {
+      // This URL is now correct. It does NOT start with /api/.
+      const url = `polls/${pollId}/options/${optionId}/vote/`
+
+      const response = await axiosInstance.post<Post>(url, {})
+
+      postsStore.addOrUpdatePosts([response.data])
+    } catch (error) {
+      console.error('Failed to cast vote:', error)
+    }
+  }
+
   async function handleNewPostSignal(postId: number) {
     try {
-      const isAlreadyPresent = mainFeedPostIds.value.includes(postId) || newPostIdsFromRefresh.value.includes(postId)
+      const isAlreadyPresent =
+        mainFeedPostIds.value.includes(postId) || newPostIdsFromRefresh.value.includes(postId)
       if (isAlreadyPresent) return
       const response = await axiosInstance.get<Post>(`/posts/${postId}/`)
       postsStore.addOrUpdatePosts([response.data])
@@ -239,22 +277,40 @@ export const useFeedStore = defineStore('feed', () => {
     }
   }
 
+  // --- UPDATED RETURN STATEMENT ---
   return {
-    mainFeedPostIds, mainFeedNextCursor, isLoadingMainFeed, mainFeedError, newPostIdsFromRefresh,
-    savedPostIds, savedPostsNextPageUrl, isLoadingSavedPosts, savedPostsError, hasFetchedSavedPosts,
-    searchResultPostIds, isLoadingSearchResults, searchError,
-    createPostError, isCreatingPost,
-    fetchFeed, refreshMainFeed,
+    mainFeedPostIds,
+    mainFeedNextCursor,
+    isLoadingMainFeed,
+    mainFeedError,
+    newPostIdsFromRefresh,
+    savedPostIds,
+    savedPostsNextPageUrl,
+    isLoadingSavedPosts,
+    savedPostsError,
+    hasFetchedSavedPosts,
+    searchResultPostIds,
+    isLoadingSearchResults,
+    searchError,
+    createPostError,
+    isCreatingPost,
+    fetchFeed,
+    refreshMainFeed,
     fetchNextPageOfMainFeed: () => fetchFeed(mainFeedNextCursor.value),
-    showNewPosts: () => { mainFeedPostIds.value.unshift(...newPostIdsFromRefresh.value); newPostIdsFromRefresh.value = [] },
-    fetchSavedPosts, fetchNextPageOfSavedPosts: () => fetchSavedPosts(savedPostsNextPageUrl.value),
+    showNewPosts: () => {
+      mainFeedPostIds.value.unshift(...newPostIdsFromRefresh.value)
+      newPostIdsFromRefresh.value = []
+    },
+    fetchSavedPosts,
+    fetchNextPageOfSavedPosts: () => fetchSavedPosts(savedPostsNextPageUrl.value),
     searchPosts,
     createPost,
     deletePost,
     toggleLike,
     toggleSavePost,
+    castVote, // Expose the new function
     $reset,
     handleNewPostSignal,
-    handlePostDeletedSignal, // [GHOST POST FIX] Expose the new action
+    handlePostDeletedSignal,
   }
 })

@@ -136,7 +136,7 @@ const handleLogout = async () => { await authStore.logout(); };
         <div class="flex-grow flex justify-center px-4" ref="searchContainerRef">
           <div class="relative w-full max-w-lg">
             <form @submit.prevent="handleFullSearchSubmit" v-if="authStore.isAuthenticated">
-              <input type="text" v-model="searchQuery" @input="handleSearchInput" @focus="handleSearchInput" placeholder="Search for users or content..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-full bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition" />
+              <input data-cy="global-search-input" type="text" v-model="searchQuery" @input="handleSearchInput" @focus="handleSearchInput" placeholder="Search for users or content..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-full bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition" />
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <svg class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
               </div>

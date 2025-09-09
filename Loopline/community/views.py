@@ -248,27 +248,36 @@ class ReportCreateAPIView(generics.CreateAPIView):
         context['view'] = self
         return context
     
+# In community/views.py
+
+# Replace your existing PollVoteAPIView with this one.
 class PollVoteAPIView(APIView):
     permission_classes = [IsAuthenticated]
+
     def post(self, request, poll_id, option_id, format=None):
         poll = get_object_or_404(Poll, pk=poll_id)
         option = get_object_or_404(PollOption, pk=option_id, poll=poll)
         
+        # Use a database transaction to ensure data integrity
         with transaction.atomic():
-            PollVote.objects.update_or_create(
-                user=request.user,
-                poll=poll,
-                defaults={'option': option}
-            )
+            # Find out if the current user has already voted on this specific poll
+            existing_vote = PollVote.objects.filter(user=request.user, poll=poll).first()
+
+            if existing_vote:
+                if existing_vote.option == option:
+                    # CASE 1: User clicked the same option again. We un-cast the vote.
+                    existing_vote.delete()
+                else:
+                    # CASE 2: User changed their mind. We update the vote to the new option.
+                    existing_vote.option = option
+                    existing_vote.save()
+            else:
+                # CASE 3: User has not voted yet. We create a new vote.
+                PollVote.objects.create(user=request.user, poll=poll, option=option)
         
-        post_instance = poll.post
-        context = {'request': request}
-        serializer = StatusPostSerializer(instance=post_instance, context=context)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    
-    def delete(self, request, poll_id, option_id, format=None):
-        poll = get_object_or_404(Poll, pk=poll_id)
-        PollVote.objects.filter(user=request.user, poll=poll).delete()
+        # After any change, we serialize the parent POST object. The serializer
+        # is responsible for fetching the latest vote counts from the related 'votes' manager.
+        # This is the "source of truth".
         post_instance = poll.post
         context = {'request': request}
         serializer = StatusPostSerializer(instance=post_instance, context=context)

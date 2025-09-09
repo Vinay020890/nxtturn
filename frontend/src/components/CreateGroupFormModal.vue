@@ -124,7 +124,8 @@ async function handleSubmit() {
           <!-- Group Name -->
           <div>
             <label for="group-name" class="block text-sm font-medium text-gray-700">Group Name</label>
-            <input 
+            <input
+              data-cy="group-name-input" 
               type="text" 
               id="group-name" 
               v-model="groupData.name" 
@@ -139,6 +140,7 @@ async function handleSubmit() {
           <div>
             <label for="group-description" class="block text-sm font-medium text-gray-700">Description</label>
             <textarea
+              data-cy="group-description-input"
               id="group-description"
               v-model="groupData.description"
               rows="3"
@@ -154,6 +156,7 @@ async function handleSubmit() {
             <div class="flex items-center space-x-4">
               <div>
                 <input 
+                  data-cy="privacy-private-radio"
                   type="radio" 
                   id="privacyPublic" 
                   value="public" 
@@ -188,6 +191,7 @@ async function handleSubmit() {
               Cancel
             </button>
             <button 
+              data-cy="create-group-submit-button"
               type="submit" 
               :disabled="isCreatingGroup" 
               class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"

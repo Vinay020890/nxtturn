@@ -1,5 +1,3 @@
-<!-- C:\Users\Vinay\Project\frontend\src\views\GroupDetailView.vue -->
-<!-- FINAL HYBRID FIX -->
 <script setup lang="ts">
 import { watch, computed, ref, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -48,11 +46,9 @@ const isCreator = computed(() => currentGroup.value?.membership_status === 'crea
 const isMember = computed(() => ['creator', 'member'].includes(currentGroup.value?.membership_status || ''));
 const hasPendingRequest = computed(() => currentGroup.value?.membership_status === 'pending');
 
-// [HYBRID FIX] This function now calls the dedicated 'refresh' action for posts
 async function loadGroupData() {
   const slug = route.params.slug as string;
   if (slug) {
-    // Await details first to ensure we know privacy status before fetching posts
     await groupStore.fetchGroupDetails(slug);
     groupStore.refreshGroupPosts(slug);
   }
@@ -89,7 +85,7 @@ const isJoinButtonDisabled = computed(() => {
 });
 
 async function handleMembershipAction() {
-  if (!currentGroup.value || isJoinButtonDisabled.value) return;
+  if (!currentGroup.value || (isJoinButtonDisabled.value && !isMember.value)) return;
 
   if (isMember.value) {
     if (isCreator.value) {
@@ -163,8 +159,6 @@ async function handleUpdateGroup(data: { name: string; description?: string }) {
     toast.error(groupStore.updateGroupError || 'Failed to update group details.');
   }
 }
-
-const isGroupCreator = isCreator;
 </script>
 
 <template>
@@ -180,44 +174,42 @@ const isGroupCreator = isCreator;
       <header class="bg-white p-6 rounded-lg shadow-md mb-8">
         <div class="flex justify-between items-start">
           <div>
-            <h1 class="text-3xl font-bold text-gray-900">{{ currentGroup.name }}</h1>
+            <h1 data-cy="group-name-header" class="text-3xl font-bold text-gray-900">{{ currentGroup.name }}</h1>
             <p class="text-md text-gray-500 mt-1">@{{ currentGroup.slug }}</p>
             <p class="text-gray-600 mt-2">{{ currentGroup.description }}</p>
           </div>
           <div class="flex-shrink-0 ml-4 flex space-x-2">
-            <button v-if="isAuthenticated && currentGroup && !isCreator" @click="handleMembershipAction()"
-              :disabled="isJoinButtonDisabled" :class="[
+            <!-- This is now the SINGLE, primary membership button -->
+            <button v-if="isAuthenticated && !isMember" 
+              data-cy="group-membership-button" 
+              @click="handleMembershipAction()"
+              :disabled="isJoinButtonDisabled" 
+              :class="[
                 'px-6 py-2 rounded-full font-semibold transition-colors duration-200',
                 joinButtonClass,
                 isJoiningLeaving ? 'opacity-50' : ''
               ]">
               {{ joinButtonText }}
             </button>
-            <div v-if="isAuthenticated && isGroupCreator" class="relative" ref="optionsMenuRef">
+            
+            <!-- This is the admin options dropdown for the creator -->
+            <div v-if="isAuthenticated && isCreator" class="relative" ref="optionsMenuRef">
               <button @click.stop="toggleOptionsMenu"
                 class="p-2 rounded-full text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
                 <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                  <path
-                    d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z">
-                  </path>
+                  <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path>
                 </svg>
               </button>
               <div v-if="showOptionsMenu"
                 class="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-10">
                 <div class="py-1" role="menu" aria-orientation="vertical">
-                  <a href="#" @click.prevent="openEditModal"
-                    class="text-gray-700 block px-4 py-2 text-sm hover:bg-gray-100" role="menuitem">Edit Group</a>
-                  <router-link :to="{ name: 'group-requests', params: { slug: currentGroup.slug } }"
-                    class="text-gray-700 block px-4 py-2 text-sm hover:bg-gray-100" role="menuitem">
+                  <a href="#" @click.prevent="openEditModal" class="text-gray-700 block px-4 py-2 text-sm hover:bg-gray-100" role="menuitem">Edit Group</a>
+                  <router-link :to="{ name: 'group-requests', params: { slug: currentGroup.slug } }" class="text-gray-700 block px-4 py-2 text-sm hover:bg-gray-100" role="menuitem">
                     Manage Requests
                   </router-link>
-                  <a href="#" @click.prevent="handleTransferOwnership"
-                    class="text-gray-700 block px-4 py-2 text-sm hover:bg-gray-100" role="menuitem">Transfer
-                    Ownership</a>
-                  <a href="#" @click.prevent="handleMembershipAction"
-                    class="text-gray-700 block px-4 py-2 text-sm hover:bg-gray-100" role="menuitem">Leave Group</a>
-                  <a href="#" @click.prevent="handleDeleteGroup"
-                    class="text-red-700 block px-4 py-2 text-sm hover:bg-red-50" role="menuitem">Delete Group</a>
+                  <a href="#" @click.prevent="handleTransferOwnership" class="text-gray-700 block px-4 py-2 text-sm hover:bg-gray-100" role="menuitem">Transfer Ownership</a>
+                  <a href="#" @click.prevent="handleMembershipAction" class="text-gray-700 block px-4 py-2 text-sm hover:bg-gray-100" role="menuitem">Leave Group</a>
+                  <a href="#" @click.prevent="handleDeleteGroup" class="text-red-700 block px-4 py-2 text-sm hover:bg-red-50" role="menuitem">Delete Group</a>
                 </div>
               </div>
             </div>
@@ -225,8 +217,7 @@ const isGroupCreator = isCreator;
         </div>
         <div class="mt-4 text-sm text-gray-500">
           <span>Created by:
-            <router-link :to="{ name: 'profile', params: { username: currentGroup.creator.username } }"
-              class="font-semibold hover:underline">
+            <router-link :to="{ name: 'profile', params: { username: currentGroup.creator.username } }" class="font-semibold hover:underline">
               {{ currentGroup.creator.username }}
             </router-link>
           </span>
@@ -238,20 +229,22 @@ const isGroupCreator = isCreator;
         </div>
       </header>
       
+      <!-- This block is for members -->
       <div v-if="isMember" class="mb-8">
         <CreatePostForm :group-slug="currentGroup.slug" />
       </div>
+      
+      <!-- THIS IS THE CORRECTED BLOCK for non-members -->
       <div v-else-if="isAuthenticated && !isMember"
         class="bg-white p-6 rounded-lg shadow-md mb-8 text-center text-gray-500">
-        <p v-if="currentGroup.privacy_level === 'private'">You must be a member to create posts.</p>
+        <!-- The message is kept -->
+        <p v-if="currentGroup.privacy_level === 'private'">You must be a member to view and create posts in this private group.</p>
         <p v-else>You must join this group to create posts.</p>
-        <button v-if="!isCreator" @click="handleMembershipAction()" :disabled="isJoinButtonDisabled"
-          class="mt-4 px-6 py-2 text-white rounded-full font-semibold transition-colors"
-          :class="[joinButtonClass, isJoiningLeaving ? 'opacity-50' : '']">
-          {{ joinButtonText }}
-        </button>
+        <!-- The redundant button is removed -->
         <p v-if="hasPendingRequest" class="mt-4 text-yellow-600">Your request to join is pending approval.</p>
       </div>
+
+      <!-- This block is for unauthenticated guests -->
       <div v-else-if="!isAuthenticated" class="bg-white p-6 rounded-lg shadow-md mb-8 text-center text-gray-500">
         <p>Please log in to join this group and create posts.</p>
       </div>

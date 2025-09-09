@@ -2,8 +2,6 @@
 
 /// <reference types="cypress" />
 
-// --- Command Implementations ---
-
 Cypress.Commands.add('login', (username = 'abc1', password = 'Airtel@123') => {
   cy.session([username, password], () => {
     const apiBaseUrl = Cypress.env('CYPRESS_API_BASE_URL');
@@ -17,45 +15,33 @@ Cypress.Commands.add('login', (username = 'abc1', password = 'Airtel@123') => {
   });
 });
 
-Cypress.Commands.add('createTestUser', (username, password) => {
+/**
+ * A powerful command to interact with the backend test setup endpoint.
+ * It sends a specific action and data payload to the backend.
+ * @example
+ * cy.testSetup('create_user', { username: 'test1', password: 'pw' })
+ * cy.testSetup('create_post', { username: 'test1', content: 'Hello!' })
+ * cy.testSetup('create_follow', { follower: 'test1', following: 'abc1' })
+ */
+Cypress.Commands.add('testSetup', (action, data) => {
   const apiBaseUrl = Cypress.env('CYPRESS_API_BASE_URL');
   cy.request({
     method: 'POST',
-    url: `${apiBaseUrl}/api/test/create-user/`,
-    body: {
-      username,
-      password,
-    },
+    // This URL points to the new endpoint we just created
+    url: `${apiBaseUrl}/api/test/setup/`,
+    body: { action, data },
   });
 });
-
-// --- NEW COMMAND ADDED FOR FOLLOWING ---
-Cypress.Commands.add('createFollow', (follower, following) => {
-  const apiBaseUrl = Cypress.env('CYPRESS_API_BASE_URL');
-  cy.request({
-    method: 'POST',
-    url: `${apiBaseUrl}/api/test/create-follow/`,
-    body: {
-      follower,
-      following,
-    },
-  });
-});
-// --- END OF NEW COMMAND ---
-
 
 // --- TypeScript Type Definitions ---
-// This block is the "dictionary" that tells TypeScript about all our custom commands.
+// This part makes sure TypeScript understands our new command.
 declare global {
   namespace Cypress {
     interface Chainable {
       login(username?: string, password?: string): Chainable<void>
-      createTestUser(username: string, password: string): Chainable<void>
-      // --- NEW TYPE DECLARATION ADDED HERE ---
-      createFollow(follower: string, following: string): Chainable<void>
+      testSetup(action: string, data?: any): Chainable<void>
     }
   }
 }
 
-// This line is required to make the file a module.
 export {}

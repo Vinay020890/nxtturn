@@ -6,6 +6,15 @@ import axiosInstance from '@/services/axiosInstance';
 import { useAuthStore, type User } from '@/stores/auth';
 import { usePostsStore, type Post, type PostAuthor } from '@/stores/posts';
 
+export type ProfileUpdatePayload = {
+  bio?: string;
+  location_city?: string;
+  location_state?: string;
+  skills?: string[];
+  interests?: string[];
+  // Add other editable fields here as you implement them
+};
+
 export interface UserProfile { user: User; bio: string | null; location_city: string | null; location_state: string | null; college_name: string | null; major: string | null; graduation_year: number | null; linkedin_url: string | null; portfolio_url: string | null; skills: string[]; interests: string[]; picture: string | null; updated_at: string; is_followed_by_request_user: boolean; }
 interface PaginatedPostsResponse { count: number; next: string | null; previous: string | null; results: Post[]; }
 
@@ -87,6 +96,55 @@ export const useProfileStore = defineStore('profile', () => {
 
   async function unfollowUser(usernameToUnfollow: string) { if (isLoadingFollow.value) return; isLoadingFollow.value = true; try { await axiosInstance.delete(`/users/${usernameToUnfollow}/follow/`); if (currentProfile.value) currentProfile.value.is_followed_by_request_user = false; isFollowing.value = false; } finally { isLoadingFollow.value = false; } }
   
+  async function updateProfile(username: string, payload: ProfileUpdatePayload) {
+    try {
+      const response = await axiosInstance.patch<UserProfile>(`/profiles/${username}/`, payload);
+      
+      // On success, update the local cache with the fresh data from the server.
+      const updatedProfile = response.data;
+      profilesByUsername.value[username] = updatedProfile;
+
+      // If the profile being updated is the one currently being viewed, update it.
+      if (currentProfile.value?.user.username === username) {
+        currentProfile.value = updatedProfile;
+      }
+      
+    } catch (err: any) {
+      console.error('Failed to update profile:', err);
+      // Re-throw a user-friendly error message for the component to display.
+      throw new Error(err.response?.data?.detail || 'An unexpected error occurred while updating the profile.');
+    }
+  }
+
+  async function removeProfilePicture(username: string) {
+    try {
+      // Send the PATCH request with `picture: null` to signal deletion.
+      const response = await axiosInstance.patch<UserProfile>(`/profiles/${username}/`, { picture: null });
+      
+      // On success, update all local state for instant UI feedback.
+      const updatedProfile = response.data;
+      profilesByUsername.value[username] = updatedProfile;
+
+      if (currentProfile.value?.user.username === username) {
+        currentProfile.value = updatedProfile;
+      }
+      if (authStore.currentUser?.username === username) {
+        authStore.updateCurrentUserPicture(null); // Update the navbar avatar
+      }
+
+      // Update the author's picture across all their posts in the postsStore
+      const authorUpdates: Partial<PostAuthor> = { picture: null };
+      const allPosts = Object.values(postsStore.posts);
+      const postsToUpdate = allPosts.filter(p => p.author.id === updatedProfile.user.id);
+      const partialPostsToUpdate = postsToUpdate.map(p => ({ id: p.id, author: { ...p.author, ...authorUpdates } }));
+      postsStore.addOrUpdatePosts(partialPostsToUpdate);
+
+    } catch (err: any) {
+      console.error('Failed to remove profile picture:', err);
+      throw new Error(err.response?.data?.detail || 'An unexpected error occurred while removing the picture.');
+    }
+  }
+
   function $reset() { currentProfile.value = null; postIdsByUsername.value = {}; nextPageUrlByUsername.value = {}; profilesByUsername.value = {}; hasFetchedPostsByUsername.value = {}; isLoadingProfile.value = false; isLoadingPosts.value = false; errorProfile.value = null; errorPosts.value = null; isFollowing.value = false; isLoadingFollow.value = false; }
 
   return {
@@ -108,6 +166,8 @@ export const useProfileStore = defineStore('profile', () => {
     unfollowUser,
     addPostToProfileFeed,
     handlePostDeletedSignal, // [GHOST POST FIX] Expose the new action
+    updateProfile,
+    removeProfilePicture,
     $reset
   }
 });

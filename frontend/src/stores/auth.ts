@@ -53,7 +53,7 @@ export const useAuthStore = defineStore('auth', () => {
     currentUser.value = user
   }
 
-  function updateCurrentUserPicture(newPictureUrl: string) {
+  function updateCurrentUserPicture(newPictureUrl: string | null) {
     if (currentUser.value) {
       currentUser.value.picture = newPictureUrl
     }
