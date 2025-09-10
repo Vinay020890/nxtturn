@@ -87,17 +87,31 @@ const isJoinButtonDisabled = computed(() => {
 async function handleMembershipAction() {
   if (!currentGroup.value || (isJoinButtonDisabled.value && !isMember.value)) return;
 
-  if (isMember.value) {
-    if (isCreator.value) {
-      alert('As the group creator, you must transfer ownership before you can leave.');
-      isTransferModalOpen.value = true;
-      showOptionsMenu.value = false;
-      return;
-    }
-    await groupStore.leaveGroup(currentGroup.value.slug);
-  } else {
+  // Case for a non-member joining
+  if (!isMember.value) {
     await groupStore.joinGroup(currentGroup.value.slug);
+    return;
   }
+
+  // Case for a member leaving
+  if (isCreator.value) {
+    // Creator needs to transfer ownership if other members exist
+    if (currentGroup.value.member_count > 1) {
+        alert('As the group creator, you must transfer ownership before you can leave.');
+        isTransferModalOpen.value = true;
+        showOptionsMenu.value = false;
+        return;
+    } else {
+        // THE NEW LOGIC: First alert, then confirm.
+        alert('As the sole member, leaving the group will permanently delete it.');
+        // Now, call the existing delete handler which has its own confirmation.
+        await handleDeleteGroup();
+        return;
+    }
+  } 
+  
+  // Regular member leaving
+  await groupStore.leaveGroup(currentGroup.value.slug);
 }
 
 const showOptionsMenu = ref(false);

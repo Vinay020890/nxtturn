@@ -184,14 +184,11 @@ describe('Group Creation and Interaction', () => {
       cy.visit('/groups');
       cy.get('[data-cy="create-group-button"]').click();
       cy.get('[data-cy="group-name-input"]').type(groupName);
-      // THE FIX: Added the missing description to satisfy form validation.
       cy.get('[data-cy="group-description-input"]').type('A group for testing posting.');
       cy.get('[data-cy="create-group-submit-button"]').click();
-
       cy.url().should('include', `/groups/${groupSlug}`).as('groupPageUrl');
       cy.get('[data-cy="group-name-header"]').should('be.visible');
 
-      // Assert creator can post
       cy.intercept('POST', '**/api/posts/').as('createPost');
       cy.get('[data-cy="create-post-input"]').type(creatorPost);
       cy.get('[data-cy="create-post-submit-button"]').click();
@@ -207,19 +204,112 @@ describe('Group Creation and Interaction', () => {
       });
       cy.wait('@getGroupDetails');
 
-      // Join the group first
       cy.intercept('POST', `**/api/groups/${groupSlug}/membership/`).as('joinGroup');
       cy.get('[data-cy="group-membership-button"]').click();
       cy.wait('@joinGroup');
 
-      // Assert regular member can now post
       cy.get('[data-cy="create-post-input"]').type(memberPost);
       cy.get('[data-cy="create-post-submit-button"]').click();
       cy.wait('@createPost');
       cy.contains(memberPost).should('be.visible');
-
-      // Final check: Assert both posts are visible on the page
       cy.contains(creatorPost).should('be.visible');
+    });
+  });
+
+  it('a post made in a public group appears on the group, profile, and home feeds', () => {
+    const testId = Date.now();
+    const creatorUsername = `creator_${testId}`;
+    const followerUsername = `follower_${testId}`;
+    const groupName = `Feed Propagation Test Group ${testId}`;
+    const groupSlug = `feed-propagation-test-group-${testId}`;
+    const postContent = `This post should propagate to all feeds. ID: ${testId}`;
+
+    cy.testSetup('create_user', {
+      email: `${creatorUsername}@test.com`,
+      username: creatorUsername,
+      password: 'password',
+    }).then(() => {
+      cy.testSetup('create_user', {
+        email: `${followerUsername}@test.com`,
+        username: followerUsername,
+        password: 'password',
+      });
+    }).then(() => {
+      cy.testSetup('create_follow', { follower: followerUsername, following: creatorUsername });
+    }).then(() => {
+      // Part 1: Creator makes the group and the post
+      cy.login(creatorUsername, 'password');
+      cy.visit('/groups');
+      cy.get('[data-cy="create-group-button"]').click();
+      cy.get('[data-cy="group-name-input"]').type(groupName);
+      cy.get('[data-cy="group-description-input"]').type('A group for testing feed propagation.');
+      cy.get('[data-cy="create-group-submit-button"]').click();
+      cy.url().should('include', `/groups/${groupSlug}`);
+      cy.get('[data-cy="group-name-header"]').should('be.visible');
+
+      cy.intercept('POST', '**/api/posts/').as('createPost');
+      cy.get('[data-cy="create-post-input"]').type(postContent);
+      cy.get('[data-cy="create-post-submit-button"]').click();
+      cy.wait('@createPost');
+
+      cy.contains(postContent).should('be.visible');
+      cy.visit(`/profile/${creatorUsername}`);
+      cy.contains(postContent).should('be.visible');
+      cy.logout();
+
+      cy.login(followerUsername, 'password');
+      cy.visit('/');
+      cy.contains(postContent).should('be.visible');
+    });
+  });
+
+  it('a sole creator is warned and then prompted to delete when trying to leave', () => {
+    const testId = Date.now();
+    const creatorUsername = `creator_${testId}`;
+    const groupName = `Solo Creator Final Test ${testId}`;
+    const groupSlug = `solo-creator-final-test-${testId}`;
+
+    cy.testSetup('create_user', {
+      email: `${creatorUsername}@test.com`,
+      username: creatorUsername,
+      password: 'password',
+    }).then(() => {
+      // Part 1: Create the group
+      cy.login(creatorUsername, 'password');
+      cy.visit('/groups');
+      cy.get('[data-cy="create-group-button"]').click();
+      cy.get('[data-cy="group-name-input"]').type(groupName);
+      cy.get('[data-cy="group-description-input"]').type('A group for testing the final solo creator flow.');
+      cy.get('[data-cy="create-group-submit-button"]').click();
+      cy.url().should('include', `/groups/${groupSlug}`);
+      cy.get('[data-cy="group-name-header"]').should('be.visible');
+
+      // Part 2: Verify the new two-step confirmation process
+      cy.get('[data-cy="group-options-button"]').click();
+      
+      // Set up a listener for the FIRST dialog (the alert)
+      cy.on('window:alert', (alertText) => {
+        expect(alertText).to.contain('As the sole member, leaving the group will permanently delete it.');
+      });
+
+      // Set up a listener for the SECOND dialog (the confirm) and agree to it
+      cy.on('window:confirm', (confirmText) => {
+        expect(confirmText).to.contain(`Are you sure you want to permanently delete the group "${groupName}"?`);
+        return true; // Click "OK"
+      });
+
+      // Intercept the final DELETE request
+      cy.intercept('DELETE', `**/api/groups/${groupSlug}/`).as('deleteGroup');
+      
+      // Click the "Leave Group" button to trigger the entire flow
+      cy.contains('a[role="menuitem"]', 'Leave Group').click();
+      
+      // Wait for the DELETE request to complete
+      cy.wait('@deleteGroup');
+
+      // Assert the final state
+      cy.url().should('eq', `${Cypress.config().baseUrl}/groups`);
+      cy.contains(groupName).should('not.exist');
     });
   });
 });
