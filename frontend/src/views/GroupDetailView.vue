@@ -180,7 +180,7 @@ async function handleUpdateGroup(data: { name: string; description?: string }) {
           </div>
           <div class="flex-shrink-0 ml-4 flex space-x-2">
             <!-- This is now the SINGLE, primary membership button -->
-            <button v-if="isAuthenticated && !isMember" 
+            <button v-if="isAuthenticated && !isCreator"
               data-cy="group-membership-button" 
               @click="handleMembershipAction()"
               :disabled="isJoinButtonDisabled" 
