@@ -25,11 +25,13 @@ function openCreateGroupModal() {
   isCreateGroupModalOpen.value = true;
 }
 
-function handleGroupCreated(newGroup: Group) {
+async function handleGroupCreated(newGroup: Group) {
+  // Wait for the navigation to complete before doing anything else.
+  await router.push({ name: 'group-detail', params: { slug: newGroup.slug } });
+  
+  // Now that the redirect is done, it is safe to close the modal.
   isCreateGroupModalOpen.value = false;
-  router.push({ name: 'group-detail', params: { slug: newGroup.slug } });
 }
-
 function loadMoreGroups() {
   groupStore.fetchNextPageOfGroups();
 }

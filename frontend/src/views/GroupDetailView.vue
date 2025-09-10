@@ -179,8 +179,8 @@ async function handleUpdateGroup(data: { name: string; description?: string }) {
             <p class="text-gray-600 mt-2">{{ currentGroup.description }}</p>
           </div>
           <div class="flex-shrink-0 ml-4 flex space-x-2">
-            <!-- This is now the SINGLE, primary membership button -->
-            <button v-if="isAuthenticated && !isCreator"
+            <!-- Button for NON-MEMBERS ONLY -->
+            <button v-if="isAuthenticated && !isMember" 
               data-cy="group-membership-button" 
               @click="handleMembershipAction()"
               :disabled="isJoinButtonDisabled" 
@@ -192,9 +192,9 @@ async function handleUpdateGroup(data: { name: string; description?: string }) {
               {{ joinButtonText }}
             </button>
             
-            <!-- This is the admin options dropdown for the creator -->
+            <!-- Admin options dropdown for the CREATOR -->
             <div v-if="isAuthenticated && isCreator" class="relative" ref="optionsMenuRef">
-              <button @click.stop="toggleOptionsMenu"
+              <button data-cy="group-options-button" @click.stop="toggleOptionsMenu"
                 class="p-2 rounded-full text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
                 <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path>
@@ -210,6 +210,22 @@ async function handleUpdateGroup(data: { name: string; description?: string }) {
                   <a href="#" @click.prevent="handleTransferOwnership" class="text-gray-700 block px-4 py-2 text-sm hover:bg-gray-100" role="menuitem">Transfer Ownership</a>
                   <a href="#" @click.prevent="handleMembershipAction" class="text-gray-700 block px-4 py-2 text-sm hover:bg-gray-100" role="menuitem">Leave Group</a>
                   <a href="#" @click.prevent="handleDeleteGroup" class="text-red-700 block px-4 py-2 text-sm hover:bg-red-50" role="menuitem">Delete Group</a>
+                </div>
+              </div>
+            </div>
+            
+            <!-- NEW: Options dropdown for regular MEMBERS -->
+            <div v-if="isAuthenticated && isMember && !isCreator" class="relative" ref="optionsMenuRef">
+              <button data-cy="group-options-button" @click.stop="toggleOptionsMenu"
+                class="p-2 rounded-full text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path>
+                </svg>
+              </button>
+              <div v-if="showOptionsMenu"
+                class="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-10">
+                <div class="py-1" role="menu" aria-orientation="vertical">
+                  <a href="#" data-cy="leave-group-button" @click.prevent="handleMembershipAction" class="text-gray-700 block px-4 py-2 text-sm hover:bg-gray-100" role="menuitem">Leave Group</a>
                 </div>
               </div>
             </div>
@@ -229,22 +245,17 @@ async function handleUpdateGroup(data: { name: string; description?: string }) {
         </div>
       </header>
       
-      <!-- This block is for members -->
       <div v-if="isMember" class="mb-8">
         <CreatePostForm :group-slug="currentGroup.slug" />
       </div>
       
-      <!-- THIS IS THE CORRECTED BLOCK for non-members -->
       <div v-else-if="isAuthenticated && !isMember"
         class="bg-white p-6 rounded-lg shadow-md mb-8 text-center text-gray-500">
-        <!-- The message is kept -->
         <p v-if="currentGroup.privacy_level === 'private'">You must be a member to view and create posts in this private group.</p>
         <p v-else>You must join this group to create posts.</p>
-        <!-- The redundant button is removed -->
         <p v-if="hasPendingRequest" class="mt-4 text-yellow-600">Your request to join is pending approval.</p>
       </div>
 
-      <!-- This block is for unauthenticated guests -->
       <div v-else-if="!isAuthenticated" class="bg-white p-6 rounded-lg shadow-md mb-8 text-center text-gray-500">
         <p>Please log in to join this group and create posts.</p>
       </div>
