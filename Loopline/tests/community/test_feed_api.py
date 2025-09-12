@@ -147,3 +147,42 @@ def test_feed_excludes_posts_from_private_groups_user_is_not_in(feed_scenario, a
     
     # We must NOT see the private post from user_b
     assert feed_scenario['post_b_private'].content not in feed_contents
+
+
+def test_feed_pagination_works_correctly(user_factory, api_client_factory):
+    """Verifies that the feed correctly paginates results."""
+    user = user_factory()
+    client = api_client_factory(user=user)
+    
+    # The default page size is 10. Let's create 12 posts.
+    post_contents = [f"Post number {i}" for i in range(12)]
+    
+    # --- THIS IS THE FIX ---
+    # Create posts in natural order: 0 is oldest, 11 is newest.
+    for content in post_contents:
+        StatusPost.objects.create(author=user, content=content)
+    # --- END OF FIX ---
+    
+    # 1. Fetch the first page
+    response_page1 = client.get('/api/feed/')
+    assert response_page1.status_code == status.HTTP_200_OK
+    
+    data_page1 = response_page1.json()
+    assert len(data_page1['results']) == 10  # Should return the first 10 posts
+    assert data_page1['next'] is not None   # Should provide a URL for the next page
+    
+    # The first result should be the newest post ("Post number 11")
+    assert data_page1['results'][0]['content'] == "Post number 11"
+
+    # 2. Fetch the second page using the 'next' URL
+    next_page_url = data_page1['next']
+    response_page2 = client.get(next_page_url)
+    assert response_page2.status_code == status.HTTP_200_OK
+
+    data_page2 = response_page2.json()
+    assert len(data_page2['results']) == 2   # Should return the remaining 2 posts
+    assert data_page2['next'] is None      # There should be no next page after this
+    
+    # The first result on the second page should be "Post number 1",
+    # as page 1 contained posts 11 down to 2.
+    assert data_page2['results'][0]['content'] == "Post number 1"
