@@ -612,16 +612,21 @@ class GroupSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['creator', 'member_count', 'created_at']
 
+    # NEW, FIXED METHOD
     def get_membership_status(self, obj):
-        """
-        Determines the requesting user's status relative to the group.
-        (This method remains unchanged, it is already correct)
-        """
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
             return 'none'
         
         user = request.user
+
+        # --- THIS IS THE FIX ---
+        # Check for a block record first. It's the highest priority status.
+        # The related_name on the Group model for GroupBlock is likely 'blocked_users_info' or similar.
+        # Let's use the explicit model query which is safer.
+        if GroupBlock.objects.filter(group=obj, user=user).exists():
+            return 'blocked'
+        # --- END OF FIX ---
         
         if obj.creator == user:
             return 'creator'

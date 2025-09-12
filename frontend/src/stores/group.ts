@@ -7,7 +7,7 @@ import type { User } from './auth';
 import { useAuthStore } from './auth';
 import { usePostsStore, type Post } from './posts';
 
-export interface Group { id: number; slug: string; name: string; description: string | null; creator: User; members: User[]; member_count: number; membership_status: 'creator' | 'member' | 'pending' | 'none'; created_at: string; privacy_level: 'public' | 'private'; }
+export interface Group { id: number; slug: string; name: string; description: string | null; creator: User; members: User[]; member_count: number; membership_status: 'creator' | 'member' | 'pending' | 'none' | 'blocked'; created_at: string; privacy_level: 'public' | 'private'; }
 interface PaginatedGroupResponse { count: number; next: string | null; previous: string | null; results: Group[]; }
 interface CursorPaginatedGroupPostResponse { next: string | null; previous: string | null; results: Post[]; }
 export interface GroupJoinRequest { id: number; user: User; group: number; status: 'pending' | 'approved' | 'denied'; created_at: string; }

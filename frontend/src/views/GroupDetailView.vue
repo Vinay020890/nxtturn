@@ -46,11 +46,25 @@ const isCreator = computed(() => currentGroup.value?.membership_status === 'crea
 const isMember = computed(() => ['creator', 'member'].includes(currentGroup.value?.membership_status || ''));
 const hasPendingRequest = computed(() => currentGroup.value?.membership_status === 'pending');
 
+// THIS IS THE NEW, FIXED CODE
 async function loadGroupData() {
   const slug = route.params.slug as string;
   if (slug) {
+    groupStore.joinLeaveError = null;
+
+    // First, get the group details. This is correct.
     await groupStore.fetchGroupDetails(slug);
-    groupStore.refreshGroupPosts(slug);
+
+    // NEW: Check if the user is a member OR if the group is public.
+    // Only then try to get the posts. This prevents the state from being overwritten.
+    const canViewPosts = 
+      groupStore.currentGroup?.membership_status === 'member' ||
+      groupStore.currentGroup?.membership_status === 'creator' ||
+      groupStore.currentGroup?.privacy_level === 'public';
+
+    if (canViewPosts) {
+      groupStore.refreshGroupPosts(slug);
+    }
   }
 }
 
@@ -68,20 +82,30 @@ onUnmounted(() => {
 
 const joinButtonText = computed(() => {
   if (isJoiningLeaving.value) return 'Processing...';
-  if (isMember.value) return 'Leave Group';
-  if (hasPendingRequest.value) return 'Request Sent';
-  if (currentGroup.value?.privacy_level === 'private') return 'Request to Join';
-  return 'Join Group';
+  // Derive text directly from the single source of truth
+  switch (currentGroup.value?.membership_status) {
+    case 'pending': return 'Request Sent';
+    case 'blocked': return 'Blocked';
+    case 'member': case 'creator': return 'Leave Group'; // Handled by menu, but good for consistency
+    default:
+      return currentGroup.value?.privacy_level === 'private' ? 'Request to Join' : 'Join Group';
+  }
 });
 
 const joinButtonClass = computed(() => {
-  if (isMember.value) return 'bg-gray-200 text-gray-800 hover:bg-gray-300';
-  if (hasPendingRequest.value) return 'bg-yellow-500 text-white cursor-not-allowed';
-  return 'bg-blue-600 text-white hover:bg-blue-700';
+  // Derive class directly from the single source of truth
+  switch (currentGroup.value?.membership_status) {
+    case 'pending': return 'bg-yellow-500 text-white cursor-not-allowed';
+    case 'blocked': return 'bg-red-600 text-white cursor-not-allowed';
+    case 'member': case 'creator': return 'bg-gray-200 text-gray-800 hover-bg-gray-300';
+    default: return 'bg-blue-600 text-white hover:bg-blue-700';
+  }
 });
 
 const isJoinButtonDisabled = computed(() => {
-  return isJoiningLeaving.value || hasPendingRequest.value;
+  if (isJoiningLeaving.value) return true;
+  // Disable if pending or blocked
+  return ['pending', 'blocked'].includes(currentGroup.value?.membership_status || '');
 });
 
 async function handleMembershipAction() {
@@ -194,8 +218,8 @@ async function handleUpdateGroup(data: { name: string; description?: string }) {
           </div>
           <div class="flex-shrink-0 ml-4 flex space-x-2">
             <!-- Button for NON-MEMBERS ONLY -->
-            <button v-if="isAuthenticated && !isMember" 
-              data-cy="group-membership-button" 
+            <button v-if="isAuthenticated && currentGroup && !isMember" 
+              data-cy="group-membership-button"
               @click="handleMembershipAction()"
               :disabled="isJoinButtonDisabled" 
               :class="[

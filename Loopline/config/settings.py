@@ -215,12 +215,12 @@ else:
     CORS_ALLOWED_ORIGINS = [
         'http://localhost:5173',
         'http://127.0.0.1:5173',
-        'http://192.168.0.111:5173' # Your local network IP
+        'http://192.168.31.35:5173' # Your local network IP
     ]
 
 # This tells Django that it's safe to accept POST requests from your frontend's network IP
 CSRF_TRUSTED_ORIGINS = [
-    'http://192.168.0.111:5173',
+    'http://192.168.31.35:5173',
 ]
 
 # If you remove Whitenoise:
