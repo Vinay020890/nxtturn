@@ -236,3 +236,81 @@ def test_approving_join_request_creates_notification_for_requester(join_request_
     Notification.objects.all().delete()
     client.patch(f"/api/groups/{scenario['group'].slug}/requests/{scenario['request'].id}/", {"action": "approve"})
     assert Notification.objects.filter(recipient=scenario['requester'], notification_type=Notification.GROUP_JOIN_APPROVED).count() == 1
+
+
+# --- Test Set 1: VERIFY THE BUG FIX ---
+
+def test_blocked_user_sees_blocked_status_on_group_detail(user_factory, api_client_factory):
+    """
+    This is the regression test for the critical bug we just fixed.
+    It ensures the API correctly reports 'blocked' status, which would have
+    failed before the GroupSerializer was corrected.
+    """
+    creator, blocked_user = user_factory(), user_factory()
+    group = Group.objects.create(creator=creator, privacy_level='private', name="Block Status Test Group")
+    GroupBlock.objects.create(group=group, user=blocked_user, blocked_by=creator)
+    
+    # Log in as the blocked user and view the group
+    client = api_client_factory(user=blocked_user)
+    response = client.get(f'/api/groups/{group.slug}/')
+    
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()['membership_status'] == 'blocked'
+
+
+# --- Test Set 2: PUBLIC GROUP JOIN LOGIC ---
+
+def test_user_can_join_public_group_directly(user_factory, api_client_factory):
+    """
+    Verifies that a user is added as a member immediately upon joining a public group,
+    without creating a join request. This complements the existing private group tests.
+    """
+    creator, joiner = user_factory(), user_factory()
+    group = Group.objects.create(creator=creator, name="A Public Group", privacy_level='public')
+    
+    client = api_client_factory(user=joiner)
+    response = client.post(f"/api/groups/{group.slug}/membership/")
+    
+    assert response.status_code == status.HTTP_201_CREATED
+    assert group.members.filter(id=joiner.id).exists()
+    assert not GroupJoinRequest.objects.filter(group=group, user=joiner).exists()
+
+# --- Test Set 3: MEMBER LEAVE LOGIC ---
+
+def test_regular_member_can_leave_group(user_factory, api_client_factory):
+    """Verifies a non-creator member can successfully leave a group."""
+    creator, member = user_factory(), user_factory()
+    group = Group.objects.create(creator=creator)
+    group.members.add(creator, member)
+    
+    client = api_client_factory(user=member)
+    response = client.delete(f'/api/groups/{group.slug}/membership/')
+    
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+    group.refresh_from_db()
+    assert not group.members.filter(id=member.id).exists()
+    assert group.members.count() == 1 # Check the count is updated
+
+def test_creator_of_populated_group_cannot_leave_via_membership_endpoint(user_factory, api_client_factory):
+    """Verifies the creator cannot use the 'leave' endpoint if other members exist."""
+    creator, member = user_factory(), user_factory()
+    group = Group.objects.create(creator=creator)
+    group.members.add(creator, member)
+    
+    client = api_client_factory(user=creator)
+    response = client.delete(f'/api/groups/{group.slug}/membership/')
+    
+    # Your GroupMembershipView correctly forbids this, expecting a transfer or delete flow.
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    group.refresh_from_db()
+    assert group.creator == creator # Ensure creator has not changed
+
+def test_non_member_cannot_leave_group(user_factory, api_client_factory):
+    """Verifies that a user not in the group gets an error when trying to leave."""
+    creator, non_member = user_factory(), user_factory()
+    group = Group.objects.create(creator=creator)
+    
+    client = api_client_factory(user=non_member)
+    response = client.delete(f'/api/groups/{group.slug}/membership/')
+    
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
