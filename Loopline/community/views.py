@@ -493,19 +493,32 @@ class FeedListView(generics.ListAPIView):
     pagination_class = PostCursorPagination
     authentication_classes = [TokenAuthentication]
 
+    # THIS IS THE NEW, FIXED CODE
     def get_queryset(self):
         user = self.request.user
+        
+        # 1. Get the authors for the feed (unchanged)
         following_user_ids = list(user.following.values_list('following_id', flat=True))
         user_ids_for_feed = following_user_ids + [user.id]
 
+        # 2. Define the privacy filter using Q objects
+        # A post is visible in the feed if:
+        # - It has no group (it's a personal, public wall post), OR
+        # - Its group is public, OR
+        # - Its group is private AND the current user is a member of that group.
+        privacy_q = Q(group__isnull=True) | Q(group__privacy_level='public') | Q(group__members=user)
+
+        # 3. Combine the filters and return the final queryset
         return StatusPost.objects.filter(
             author_id__in=user_ids_for_feed
+        ).filter(
+            privacy_q
         ).select_related(
             'author__profile', 
             'group'
         ).prefetch_related(
             'media', 'likes', 'poll__options', 'poll__votes'
-        ).order_by('-created_at')
+        ).order_by('-created_at').distinct()
 
     def get_serializer_context(self):
         return {'request': self.request}
