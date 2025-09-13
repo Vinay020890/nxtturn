@@ -1,5 +1,12 @@
+// C:\Users\Vinay\Project\frontend\src/services/axiosInstance.ts
+// --- DEFINITIVE FINAL VERSION ---
+
 import axios from 'axios';
-import { useAuthStore } from '@/stores/auth'; // Import the Pinia store
+import { useAuthStore } from '@/stores/auth';
+import { useToast } from 'vue-toastification';
+
+let isOffline = false;
+let offlineToastId: string | number | null = null;
 
 const axiosInstance = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL,
@@ -9,38 +16,66 @@ const axiosInstance = axios.create({
   }
 });
 
-// --- REQUEST INTERCEPTOR (Corrected) ---
 axiosInstance.interceptors.request.use(
     (config) => {
       const authStore = useAuthStore();
-      // --- THE FIX ---
-      // Use 'authToken' to match the property name in your auth.ts store
       const token = authStore.authToken;
   
       if (token) {
         config.headers.Authorization = `Token ${token}`;
-        console.log('Interceptor: Added auth token to header');
-      } else {
-        delete config.headers.Authorization;
       }
       return config;
     },
     (error) => {
-      console.error('Axios request interceptor error:', error);
       return Promise.reject(error);
     }
 );
 
-// --- BEST PRACTICE: Add a RESPONSE INTERCEPTOR for global 401 handling ---
 axiosInstance.interceptors.response.use(
-  (response) => response, // Simply return successful responses
+  // Handles SUCCESSFUL responses
+  (response) => {
+    // --- THIS IS THE FIX ---
+    // If we were previously offline, this successful request means we are back online.
+    if (isOffline) {
+      const toast = useToast();
+      
+      // Dismiss the persistent offline toast if it exists.
+      if (offlineToastId) {
+        toast.dismiss(offlineToastId);
+      }
+      
+      // Show the success message and reset the state. The onClose will also
+      // fire, but resetting it here ensures it's always correct.
+      toast.success("You are back online!", { timeout: 3000 });
+      isOffline = false;
+      offlineToastId = null;
+    }
+    // --- END OF FIX ---
+    return response;
+  }, 
+  // Handles ALL errors
   (error) => {
-    if (error.response && error.response.status === 401) {
+    if (error.code === 'ERR_NETWORK' || !error.response) {
+      if (!isOffline) {
+        isOffline = true;
+        const toast = useToast();
+        offlineToastId = toast.error(
+          "You appear to be offline. Please check your internet connection.",
+          {
+            timeout: false, 
+            onClose: () => {
+              // This ensures that if the user manually closes the toast,
+              // we are ready to show another one on the next network error.
+              isOffline = false;
+              offlineToastId = null;
+            }
+          }
+        );
+      }
+    } 
+    else if (error.response && error.response.status === 401) {
       const authStore = useAuthStore();
-      // --- THE FIX ---
-      // Also check against 'authToken' here for consistency
       if (authStore.authToken) {
-        console.error("API returned 401. Token may be invalid or expired. Logging out.");
         authStore.logout();
       }
     }
