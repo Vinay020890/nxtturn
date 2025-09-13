@@ -18,29 +18,46 @@ User = get_user_model()
 # === NEW REAL-TIME POST DELETION SIGNAL ===
 # =================================================================================
 
-@receiver(post_delete, sender=StatusPost) # <--- CORRECTED to use StatusPost
+@receiver(post_delete, sender=StatusPost)
 def post_deleted_signal(sender, instance, **kwargs):
     """
     Handles the deletion of a StatusPost instance.
 
-    Broadcasts a 'post_deleted' event to the global channel group
-    so that clients can remove the post from their state in real-time.
+    Broadcasts a 'post_deleted' event to the author AND all of their followers,
+    ensuring real-time UI consistency across all relevant clients.
     """
+    author = instance.author
+    if not author:
+        return
+
     channel_layer = get_channel_layer()
     
-    payload = {
-        "type": "post_deleted",
-        "post_id": instance.id
+    # --- FIX #1: The payload is now correctly nested ---
+    # This now matches the structure your frontend EXPECTS.
+    message_to_send = {
+        'type': 'post_deleted',
+        'payload': {
+            'post_id': instance.id
+        }
     }
 
-    async_to_sync(channel_layer.group_send)(
-        "global_notifications",
-        {
-            "type": "broadcast.message",
-            "payload": payload,
-        },
-    )
-    print(f"!!! REAL-TIME (Post Deleted): Sent post_deleted signal for ID {instance.id} to global_notifications !!!")
+    # --- FIX #2: We find all relevant users (author + followers) ---
+    follower_ids = Follow.objects.filter(following=author).values_list('follower_id', flat=True)
+    recipient_user_ids = list(follower_ids) + [author.id]
+
+    # --- FIX #3: We broadcast to each user's personal group ---
+    # We will use the 'send_live_post' handler type for consistency,
+    # as this is a "live" update related to a post.
+    for user_id in recipient_user_ids:
+        async_to_sync(channel_layer.group_send)(
+            f"user_{user_id}",
+            {
+                'type': 'send_live_post', # Re-using the existing, correct handler type
+                'message': message_to_send
+            }
+        )
+    
+    print(f"!!! REAL-TIME (Post Deleted): Sent post_deleted signal for ID {instance.id} to {len(recipient_user_ids)} users !!!")
 # =================================================================================
 
 

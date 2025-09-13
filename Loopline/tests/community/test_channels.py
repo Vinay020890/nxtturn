@@ -80,6 +80,43 @@ async def test_new_post_sends_live_signal_to_follower():
     await communicator.disconnect()
 
 @pytest.mark.asyncio
+async def test_post_deleted_sends_signal_to_follower():
+    """
+    CRITICAL: Verifies that when a post is deleted, a 'post_deleted' signal
+    is sent to the author's followers, ensuring real-time UI consistency for everyone.
+    """
+    author = await create_user('author_with_follower_rt')
+    follower = await create_user('follower_of_deleter_rt')
+    await create_follow(follower=follower, following=author)
+    
+    post_to_delete = await create_post(author=author, content="This post will be deleted from all feeds.")
+
+    # --- THIS IS THE FIX ---
+    # Save the ID before deleting the object, because the ID becomes None after deletion.
+    post_id_before_delete = post_to_delete.id
+    # --- END OF FIX ---
+
+    # Connect to the WebSocket as the FOLLOWER
+    follower_token = await get_auth_token(follower)
+    connection_url = f"/ws/activity/?token={follower_token}"
+    
+    communicator = WebsocketCommunicator(application, connection_url)
+    connected, _ = await communicator.connect()
+    assert connected, "Follower WebSocket connection failed."
+
+    # The author deletes the post
+    await database_sync_to_async(post_to_delete.delete)()
+
+    # ASSERT: The follower MUST receive the deletion signal.
+    response = await communicator.receive_json_from(timeout=2)
+    
+    assert response['type'] == 'post_deleted'
+    # Compare against the ID we saved before the deletion
+    assert response['payload']['post_id'] == post_id_before_delete
+    
+    await communicator.disconnect()
+
+@pytest.mark.asyncio
 async def test_like_on_post_sends_realtime_notification():
     author = await create_user('notification_recipient')
     liker = await create_user('notification_actor')
