@@ -73,4 +73,6 @@ urlpatterns = [
     # ================================================
     path('posts/<int:pk>/save/', views.SavedPostToggleView.as_view(), name='post-save-toggle'),
     path('posts/saved/', views.SavedPostListView.as_view(), name='saved-post-list'),
+
+    path('health-check/', views.health_check_view, name='health-check'),
 ]

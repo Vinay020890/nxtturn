@@ -22,6 +22,7 @@ from rest_framework.views import APIView
 from rest_framework.pagination import PageNumberPagination, CursorPagination # NEW: Import CursorPagination
 from rest_framework.filters import SearchFilter
 from rest_framework.authentication import TokenAuthentication
+from rest_framework.decorators import api_view, permission_classes
 
 # from dj_rest_auth.views import LogoutView
 
@@ -850,4 +851,13 @@ class ForcefulLogoutView(APIView):
         response = Response({"detail": "Successfully logged out."}, status=status.HTTP_200_OK)
         response.delete_cookie('sessionid', path='/')
         return response
+    
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def health_check_view(request):
+    """
+    A simple, lightweight endpoint to check if the server is responsive.
+    Used by the frontend's navigation guards for proactive offline detection.
+    """
+    return Response({"status": "ok"}, status=status.HTTP_200_OK)
     

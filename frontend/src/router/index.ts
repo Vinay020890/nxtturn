@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/auth';
 import CommunityLayout from '@/layouts/CommunityLayout.vue';
 import ProfileLayout from '@/layouts/ProfileLayout.vue';
 import ExploreLayout from '@/layouts/ExploreLayout.vue'; // <-- Import the new layout
+import axiosInstance from '@/services/axiosInstance';
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -69,9 +70,21 @@ const router = createRouter({
 });
 
 router.beforeEach(async (to, from, next) => {
+  // --- THIS IS THE NEW PROACTIVE HEALTH CHECK ---
+  try {
+    // We use a short timeout. If the server is offline, we want this to fail fast
+    // and not delay the user's navigation attempt.
+    await axiosInstance.get('/health-check/', { timeout: 4000 });
+  } catch (error) {
+    // The axiosInstance interceptor has already caught the network error
+    // and displayed the "offline" toast. We don't need to do anything else here.
+    // The navigation will proceed, but the user will see the offline warning.
+  }
+  // --- END OF NEW LOGIC ---
+
+  // This is your existing, correct authentication guard logic.
   const authStore = useAuthStore();
 
-  // Now that the function is async, this 'await' is valid.
   await authStore.initializeAuth();
 
   const requiresAuth = to.meta.requiresAuth;
@@ -81,7 +94,7 @@ router.beforeEach(async (to, from, next) => {
   if (requiresAuth && !isAuthenticated) {
     next({ name: 'login' });
   } else if (requiresGuest && isAuthenticated) {
-    next({ name: 'feed' });
+    next({ name: 'feed' }); // Changed to 'feed' to match your route name
   } else {
     next();
   }
