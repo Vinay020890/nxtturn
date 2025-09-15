@@ -28,7 +28,7 @@ function openCreateGroupModal() {
 async function handleGroupCreated(newGroup: Group) {
   // Wait for the navigation to complete before doing anything else.
   await router.push({ name: 'group-detail', params: { slug: newGroup.slug } });
-  
+
   // Now that the redirect is done, it is safe to close the modal.
   isCreateGroupModalOpen.value = false;
 }
@@ -68,10 +68,12 @@ function loadMoreGroups() {
           <p class="text-sm text-gray-500 -mt-1">@{{ group.slug }}</p>
           <p class="text-gray-600 mt-2 text-sm">{{ group.description }}</p>
           <div class="mt-4 text-sm text-gray-500">
+            <!-- CORRECTED CODE -->
             <span>Created by:
-              <router-link :to="{ name: 'profile', params: { username: group.creator?.username } }"
+              <router-link v-if="group.creator && group.creator.username"
+                :to="{ name: 'profile', params: { username: group.creator.username } }"
                 class="font-semibold hover:underline" @click.stop>
-                {{ group.creator?.username }}
+                {{ group.creator.username }}
               </router-link>
             </span>
             <span class="mx-2">|</span>

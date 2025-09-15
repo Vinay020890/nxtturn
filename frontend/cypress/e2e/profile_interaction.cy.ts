@@ -1,7 +1,7 @@
 // C:\Users\Vinay\Project\frontend\cypress\e2e\profile_interaction.cy.ts
 
 describe('User Profile Interaction', () => {
-  const apiBaseUrl = Cypress.env('CYPRESS_API_BASE_URL');
+  const apiBaseUrl = Cypress.env('VITE_API_BASE_URL');
 
   it('allows a user to edit and save their profile bio', () => {
     // This test is correct and remains unchanged

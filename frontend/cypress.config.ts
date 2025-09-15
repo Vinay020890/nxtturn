@@ -24,10 +24,13 @@ export default defineConfig({
       }
       
       if (envConfig.parsed) {
+        // This line loads ALL variables from your .env file into Cypress.
+        // It's the most important one.
         config.env = { ...config.env, ...envConfig.parsed };
-      }
 
-      config.baseUrl = config.env.CYPRESS_BASE_URL;
+        // This line correctly sets the baseUrl.
+        config.baseUrl = envConfig.parsed.CYPRESS_BASE_URL || config.baseUrl;
+      }
 
       console.log("[DEBUG] Final Cypress config.env object:", config.env);
       console.log(`[DEBUG] Final baseUrl is: ${config.baseUrl}`);

@@ -15,7 +15,16 @@ import router from './router'
 const app = createApp(App)
 
 // Use Pinia for state management
-app.use(createPinia())
+const pinia = createPinia() // Create the Pinia instance
+app.use(pinia)
+
+// --- THIS IS THE NEW CODE BLOCK ---
+// Expose the Pinia instance to the window object, but ONLY when running in Cypress.
+// This allows our E2E tests to programmatically reset stores for a clean state.
+if (window.Cypress) {
+  window.pinia = pinia
+}
+// --- END OF NEW CODE BLOCK ---
 
 // Use Vue Router for navigation
 app.use(router)
