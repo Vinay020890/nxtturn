@@ -104,20 +104,13 @@ watch(showSearchDropdown, (isOpen) => {
 
 onUnmounted(() => document.removeEventListener('click', closeSearchDropdownOnClickOutside));
 
-onMounted(async () => {
-  await authStore.initializeAuth();
-  if (authStore.isAuthenticated) {
-    notificationStore.fetchUnreadCount();
-  }
+// --- REFACTORED onMounted HOOK ---
+// The component's only responsibility is to kick off the initialization process.
+// The authStore is now responsible for the entire sequence of dependent actions.
+onMounted(() => {
+  authStore.initializeAuth();
 });
-
-watch(() => authStore.isAuthenticated, (newIsAuthenticated) => {
-  if (newIsAuthenticated) {
-    notificationStore.fetchUnreadCount();
-  } else {
-    notificationStore.resetState();
-  }
-});
+// --- END OF REFACTOR ---
 
 const handleLogout = async () => { await authStore.logout(); };
 </script>
@@ -142,7 +135,6 @@ const handleLogout = async () => { await authStore.logout(); };
               </div>
             </form>
             <div v-if="showSearchDropdown && searchQuery" class="absolute top-full mt-2 w-full rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
-              <!-- THE FIX IS HERE: `max-h-96` has been removed to let content define the height -->
               <ul class="py-1 text-base overflow-y-auto">
                 <li v-if="isSearching" class="px-4 py-2 text-sm text-gray-500">Searching...</li>
                 <li v-else-if="!isSearching && !hasAnyResults" class="px-4 py-2 text-sm text-gray-500">No results found.</li>
@@ -196,7 +188,13 @@ const handleLogout = async () => { await authStore.logout(); };
             <a href="#" class="text-sm font-medium text-gray-600 hover:text-indigo-500">Jobs</a>
             <RouterLink :to="{ name: 'notifications' }" class="relative text-gray-600 hover:text-blue-500" title="Notifications">
               <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
-              <span v-if="unreadCount > 0" class="absolute top-0 right-0 -mt-1 -mr-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs text-white">{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
+              <span 
+                v-if="unreadCount > 0" 
+                data-cy="notification-indicator"
+                class="absolute top-0 right-0 -mt-1 -mr-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs text-white"
+              >
+                {{ unreadCount > 9 ? '9+' : unreadCount }}
+              </span>
             </RouterLink>
             <RouterLink v-if="currentUser" :to="{ name: 'profile', params: { username: currentUser.username } }" class="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-blue-500" data-cy="profile-link">
               <img :src="getAvatarUrl(currentUser.picture, currentUser.first_name, currentUser.last_name)" alt="Your avatar" class="w-7 h-7 rounded-full object-cover">

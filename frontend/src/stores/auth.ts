@@ -6,7 +6,12 @@ import axiosInstance from '@/services/axiosInstance'
 import { useFeedStore } from './feed'
 import { useProfileStore } from './profile'
 
-// Define the shape of the User object. This now matches what our API returns.
+// --- NEW IMPORTS: Link the auth store to the real-time services ---
+import { notificationService } from '@/services/notificationService'
+import { useNotificationStore } from './notification'
+// ------------------------------------------------------------------
+
+// Define the shape of the User object.
 export interface User {
   id: number
   username: string
@@ -66,6 +71,13 @@ export const useAuthStore = defineStore('auth', () => {
       if (response.data && response.data.key) {
         setToken(response.data.key)
         await fetchUserProfile()
+
+        // --- NEW LOGIC ON SUCCESSFUL LOGIN ---
+        notificationService.connect()
+        const notificationStore = useNotificationStore()
+        await notificationStore.fetchUnreadCount()
+        // ------------------------------------
+
         return true
       } else {
         throw new Error('Login response did not contain an authentication key.')
@@ -80,8 +92,13 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  // in auth.ts
   async function logout() {
+    // --- NEW: Cleanly disconnect WebSocket and reset stores before logging out ---
+    notificationService.disconnect()
+    const notificationStore = useNotificationStore()
+    notificationStore.resetState()
+    // -------------------------------------------------------------------------
+
     try {
       await axiosInstance.post('/auth/logout/')
     } catch (error: any) {
@@ -89,14 +106,9 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       setToken(null)
 
-      // --- THIS IS THE FIX ---
-      // We check if 'window' is defined before trying to use it.
-      // In a normal browser, this is always true.
-      // In the Cypress Node.js environment, this is false, and the line is safely skipped.
       if (typeof window !== 'undefined') {
         window.location.href = '/login'
       }
-      // --- END OF FIX ---
     }
   }
 
@@ -128,21 +140,31 @@ export const useAuthStore = defineStore('auth', () => {
   async function initializeAuth() {
     const tokenFromStorage = localStorage.getItem('authToken')
     if (tokenFromStorage && !authToken.value) setToken(tokenFromStorage)
-    if (authToken.value && !currentUser.value) await fetchUserProfile()
+    
+    if (authToken.value && !currentUser.value) {
+      await fetchUserProfile()
+      
+      // --- NEW LOGIC ON APP INITIALIZATION IF AUTHENTICATED ---
+      if (currentUser.value) {
+        notificationService.connect()
+        const notificationStore = useNotificationStore()
+        await notificationStore.fetchUnreadCount()
+      }
+      // --------------------------------------------------------
+    }
   }
 
-  // --- THIS IS THE NEW FUNCTION FOR MULTI-TAB SYNC ---
-  /**
-   * Silently resets the client-side auth state.
-   * This is called by the 'storage' event listener in App.vue when another
-   * tab logs out. It does NOT make an API call.
-   */
   function resetAuthState() {
+    // --- NEW: Also disconnect WebSocket on multi-tab logout for a clean shutdown ---
+    notificationService.disconnect()
+    const notificationStore = useNotificationStore()
+    notificationStore.resetState()
+    // --------------------------------------------------------------------------
+
     authToken.value = null
     currentUser.value = null
     console.log('Client-side auth state has been reset by multi-tab sync.')
   }
-  // --- END OF NEW FUNCTION ---
 
   // --- Return state, getters, and actions ---
   return {
@@ -159,6 +181,6 @@ export const useAuthStore = defineStore('auth', () => {
     register,
     initializeAuth,
     updateCurrentUserPicture,
-    resetAuthState, // <-- Make sure to return the new function here!
+    resetAuthState,
   }
 })
