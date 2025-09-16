@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 // 'onBeforeRouteLeave' has been removed to enable caching.
 import { useGroupStore } from '@/stores/group';
 import { storeToRefs } from 'pinia';
 import { useRouter } from 'vue-router';
 import CreateGroupFormModal from '@/components/CreateGroupFormModal.vue';
 import type { Group } from '@/stores/group';
+import eventBus from '@/services/eventBus';
 
 const groupStore = useGroupStore();
 const router = useRouter();
@@ -35,6 +36,22 @@ async function handleGroupCreated(newGroup: Group) {
 function loadMoreGroups() {
   groupStore.fetchNextPageOfGroups();
 }
+// --- ADD THIS BLOCK to handle scrolling ---
+function scrollToTop() {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+onMounted(() => {
+  if (allGroups.value.length === 0) {
+    groupStore.fetchGroups();
+  }
+  eventBus.on('scroll-groups-to-top', scrollToTop); // Add listener
+});
+
+onUnmounted(() => {
+  eventBus.off('scroll-groups-to-top', scrollToTop); // Add cleanup
+});
+// --- END OF NEW BLOCK ---
 </script>
 
 <template>

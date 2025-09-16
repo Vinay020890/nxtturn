@@ -2,11 +2,12 @@
 <!-- VERSION 2: REFACTORED FOR CENTRAL CACHE -->
 
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue';
+import { onMounted,onUnmounted, ref, computed } from 'vue';
 import { useFeedStore } from '@/stores/feed';
 import { usePostsStore } from '@/stores/posts'; // --- CHANGE ---
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll';
 import PostItem from '@/components/PostItem.vue';
+import eventBus from '@/services/eventBus';
 
 const feedStore = useFeedStore();
 const postsStore = usePostsStore(); // --- CHANGE ---
@@ -27,6 +28,22 @@ onMounted(() => {
     feedStore.fetchSavedPosts();
   }
 });
+// --- ADD THIS BLOCK to handle scrolling ---
+function scrollToTop() {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+onMounted(() => {
+  if (!feedStore.hasFetchedSavedPosts) {
+    feedStore.fetchSavedPosts();
+  }
+  eventBus.on('scroll-saved-posts-to-top', scrollToTop); // Add listener
+});
+
+onUnmounted(() => {
+  eventBus.off('scroll-saved-posts-to-top', scrollToTop); // Add cleanup
+});
+// --- END OF NEW BLOCK ---
 </script>
 
 <template>

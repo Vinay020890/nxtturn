@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { getAvatarUrl } from '@/utils/avatars';
-import { ref, watch, computed } from 'vue';
+import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
 import PostItem from '@/components/PostItem.vue';
 import { useProfileStore } from '@/stores/profile';
@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth';
 import { usePostsStore } from '@/stores/posts';
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll';
 import { storeToRefs } from 'pinia';
+import eventBus from '@/services/eventBus';
 
 const route = useRoute();
 const profileStore = useProfileStore();
@@ -165,6 +166,21 @@ watch(showPictureOptions, (isOpen) => {
     document.removeEventListener('click', closeOnClickOutside);
   }
 });
+
+// --- ADD THIS BLOCK to handle scrolling ---
+function scrollToTop() {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+onMounted(() => {
+  eventBus.on('scroll-profile-to-top', scrollToTop);
+});
+
+onUnmounted(() => {
+  eventBus.off('scroll-profile-to-top', scrollToTop);
+});
+// --- END OF NEW BLOCK ---
+
 </script>
 
 <template>

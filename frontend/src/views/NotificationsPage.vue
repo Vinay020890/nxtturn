@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue';
+import { onMounted, onUnmounted, ref, computed } from 'vue';
 import { useNotificationStore } from '@/stores/notification';
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -14,6 +14,7 @@ import {
   UserGroupIcon,
   CheckBadgeIcon // <-- 1. IMPORT THE NEW ICON
 } from '@heroicons/vue/24/solid';
+import eventBus from '@/services/eventBus';
 
 const notificationStore = useNotificationStore();
 const isMarkingAllRead = ref(false);
@@ -64,6 +65,23 @@ onMounted(() => {
     notificationStore.fetchNotifications(1);
   }
 });
+
+// --- ADD THIS BLOCK to handle scrolling ---
+function scrollToTop() {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+onMounted(() => {
+  if (!notificationStore.hasLoadedInitialList) {
+    notificationStore.fetchNotifications(1);
+  }
+  eventBus.on('scroll-notifications-to-top', scrollToTop); // Add listener
+});
+
+onUnmounted(() => {
+  eventBus.off('scroll-notifications-to-top', scrollToTop); // Add cleanup
+});
+// --- END OF NEW BLOCK ---
 </script>
 
 <template>
