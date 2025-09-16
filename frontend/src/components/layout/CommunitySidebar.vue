@@ -1,13 +1,25 @@
 <script setup lang="ts">
-import { RouterLink } from 'vue-router';
+import { RouterLink, useRoute } from 'vue-router'; // <-- 1. Import useRoute
 import { useAuthStore } from '@/stores/auth';
 import { storeToRefs } from 'pinia';
 import { getAvatarUrl } from '@/utils/avatars';
-// Note: We will need to install @heroicons/vue for these to work
 import { HomeIcon, UserGroupIcon, BookmarkIcon } from '@heroicons/vue/24/solid';
+import eventBus from '@/services/eventBus'; // <-- 2. Import the eventBus
 
 const authStore = useAuthStore();
 const { currentUser } = storeToRefs(authStore);
+const route = useRoute(); // <-- 3. Initialize useRoute
+
+// --- 4. THIS IS THE NEW FUNCTION ---
+function handleHomeFeedClick(event: MouseEvent) {
+  if (route.path === '/') {
+    // If we are already on the home page, prevent navigation
+    // and emit the event to scroll to the top.
+    event.preventDefault();
+    eventBus.emit('scroll-to-top');
+  }
+}
+// --- END OF NEW FUNCTION ---
 </script>
 
 <template>
@@ -26,7 +38,13 @@ const { currentUser } = storeToRefs(authStore);
     <!-- Navigation Card -->
     <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
       <nav class="space-y-1">
-        <RouterLink to="/" class="flex items-center gap-3 px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100 font-medium" active-class="bg-blue-50 text-blue-700">
+        <!-- 5. ADD THE @click HANDLER HERE -->
+        <RouterLink 
+          to="/" 
+          @click="handleHomeFeedClick"
+          class="flex items-center gap-3 px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100 font-medium" 
+          active-class="bg-blue-50 text-blue-700"
+        >
           <HomeIcon class="h-6 w-6" />
           <span>Home Feed</span>
         </RouterLink>
