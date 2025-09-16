@@ -22,13 +22,18 @@ if not IS_PRODUCTION and not SECRET_KEY:
 
 # --- HOSTS CONFIGURATION ---
 ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+
 if IS_PRODUCTION:
-    # ...
+    # In production, you would typically get this from an environment variable.
+    # Example: ALLOWED_HOSTS.append(os.getenv('PRODUCTION_HOSTNAME'))
     pass
 else:
-    # When running the server with 0.0.0.0, we need to allow all hosts for local network access.
-    # This is safe for local development but should NOT be used in production.
-    ALLOWED_HOSTS.append('*')
+    # --- THIS IS THE FIX: Use .extend() to add multiple items from a list ---
+    ALLOWED_HOSTS.extend([
+        '*',
+        '192.168.1.11',
+    ])
+    # --- END OF FIX ---
 
 # --- APPLICATION DEFINITION ---
 INSTALLED_APPS = [
