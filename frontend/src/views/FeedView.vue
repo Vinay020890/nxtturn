@@ -1,5 +1,3 @@
-<!-- C:\Users\Vinay\Project\frontend\src\views\FeedView.vue -->
-<!-- FINAL HYBRID FIX -->
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, computed } from 'vue';
 import { useFeedStore } from '@/stores/feed';
@@ -28,24 +26,28 @@ function forceFormReset() {
   createPostFormKey.value++;
 }
 
-function handleShowNewPosts() {
-  feedStore.showNewPosts();
+function scrollToTop() {
   window.scrollTo({
     top: 0,
     behavior: 'smooth'
   });
 }
 
+function handleShowNewPosts() {
+  feedStore.showNewPosts();
+  scrollToTop();
+}
+
 onMounted(() => {
   eventBus.on('reset-feed-form', forceFormReset);
-  // [HYBRID FIX] Always call refreshMainFeed on mount.
-  // This renders cached data instantly, then silently fetches fresh data
-  // (comment counts, new posts) in the background.
+  eventBus.on('scroll-to-top', scrollToTop);
+  
   feedStore.refreshMainFeed();
 });
 
 onUnmounted(() => {
   eventBus.off('reset-feed-form', forceFormReset);
+  eventBus.off('scroll-to-top', scrollToTop);
 });
 </script>
 
@@ -70,6 +72,7 @@ onUnmounted(() => {
         Error loading feed: {{ feedStore.mainFeedError }}
       </div>
       <div v-if="mainFeedPosts.length > 0" class="space-y-4">
+        <!-- THIS IS THE LINE THAT HAS BEEN FIXED -->
         <PostItem v-for="post in mainFeedPosts" :key="post.id" :post="post" />
       </div>
       <div v-if="!feedStore.isLoadingMainFeed && mainFeedPosts.length === 0 && !feedStore.mainFeedError"

@@ -39,12 +39,15 @@ const searchContainerRef = ref<HTMLDivElement | null>(null);
 const hasAnyResults = computed(() => userResults.value.length > 0 || postResults.value.length > 0 || groupResults.value.length > 0);
 const isSearching = computed(() => isLoadingUsers.value || isLoadingPosts.value || isLoadingGroupSearch.value);
 
+// --- THIS IS THE FIX ---
 function handleLogoClick(event: MouseEvent) {
   if (route.path === '/') {
     event.preventDefault();
-    eventBus.emit('reset-feed-form');
+    // Emit a more specific event for scrolling to the top
+    eventBus.emit('scroll-to-top');
   }
 }
+// --- END OF FIX ---
 
 const handleFullSearchSubmit = () => {
   if (searchQuery.value.trim()) {
@@ -104,13 +107,9 @@ watch(showSearchDropdown, (isOpen) => {
 
 onUnmounted(() => document.removeEventListener('click', closeSearchDropdownOnClickOutside));
 
-// --- REFACTORED onMounted HOOK ---
-// The component's only responsibility is to kick off the initialization process.
-// The authStore is now responsible for the entire sequence of dependent actions.
 onMounted(() => {
   authStore.initializeAuth();
 });
-// --- END OF REFACTOR ---
 
 const handleLogout = async () => { await authStore.logout(); };
 </script>
@@ -181,7 +180,6 @@ const handleLogout = async () => { await authStore.logout(); };
           </div>
         </div>
 
-        <!-- Section 3: User Menu -->
         <div class="flex items-center gap-4 flex-shrink-0">
           <template v-if="authStore.isAuthenticated">
             <RouterLink :to="{ name: 'explore' }" class="text-sm font-medium text-gray-600 hover:text-indigo-500" active-class="text-indigo-600 font-semibold">Explore</RouterLink>
