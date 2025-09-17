@@ -1,26 +1,20 @@
 # C:\Users\Vinay\Project\Loopline\e2e_test_utils\views.py
 
-# --- NEW IMPORTS ---
 import time
 from rest_framework.authtoken.models import Token
-# --- END NEW IMPORTS ---
-
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db.models import Q
-
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
-
 from community.models import Follow, Group, StatusPost, Poll, PollOption, UserProfile
 
 User = get_user_model()
-
 
 class TestSetupAPIView(APIView):
     permission_classes = [AllowAny]
@@ -34,28 +28,21 @@ class TestSetupAPIView(APIView):
 
         try:
             with transaction.atomic():
-                # --- MODIFIED 'create_user' ACTION ---
-                # Now handles both new dynamic users (with prefix) and old static users (with username)
                 if action == "create_user":
                     if 'username_prefix' in data:
-                        # Logic for new E2E tests that need unique users and tokens
                         prefix = data.get("username_prefix")
                         timestamp = int(time.time())
                         username = f"{prefix}_{timestamp}"
                         email = f"{username}@example.com"
-                        password = "Airtel@123"  # Standard password for E2E tests
-
+                        password = "Airtel@123"
                         user = User.objects.create_user(username=username, email=email, password=password)
                         token, _ = Token.objects.get_or_create(user=user)
-                        
-                        # Return the user details Cypress needs
                         return Response({
                             "username": user.username,
                             "token": token.key,
                         }, status=status.HTTP_201_CREATED)
                     
                     elif 'username' in data:
-                        # Your existing logic for tests that need specific usernames
                         username = data.get("username")
                         password = data.get("password", "password123")
                         email = data.get("email", f"{username}@example.com")
@@ -68,54 +55,94 @@ class TestSetupAPIView(APIView):
                             user.save()
                         
                         if data.get("with_picture", False):
-                            # (Your existing picture logic remains unchanged)
                             dummy_image = SimpleUploadedFile(name='test_avatar.gif', content=b'\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00\x21\xf9\x04\x01\x00\x00\x00\x00\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3b', content_type='image/gif')
                             profile, _ = UserProfile.objects.get_or_create(user=user)
                             profile.picture.save('test_avatar.gif', dummy_image, save=True)
-
                         return Response({"message": f"User '{username}' handled."}, status=status.HTTP_201_CREATED)
                     
                     else:
                         return Response({"error": "Action 'create_user' requires either 'username' or 'username_prefix' in data."}, status=status.HTTP_400_BAD_REQUEST)
 
-                # --- NEW 'create_group' ACTION ---
-                 # --- UPGRADE THE 'create_group' ACTION ---
+                # --- NEW ACTION to create a user with multiple posts ---
+                elif action == "create_user_with_posts":
+                    username = data.get("username")
+                    num_posts = data.get("num_posts", 10) # Default to 10 posts
+                    password = "Airtel@123"
+
+                    if not username:
+                        return Response({"error": "Username is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+                    # Using get_or_create is safer in case a test re-uses a username
+                    user, created = User.objects.get_or_create(username=username, defaults={'email': f"{username}@example.com"})
+                    user.set_password(password)
+                    user.save()
+
+                                        # Create a UserProfile for this user with a default bio.
+                    UserProfile.objects.update_or_create(
+                        user=user,
+                        defaults={'bio': 'This is a default bio for the scroll tester.'}
+                    )
+                    # -------------------------
+                    
+                    # Also add the user to the list of prefixes to be cleaned up
+                    # This is important to ensure this test user is deleted later.
+                    test_user_prefixes = ['scroll_tester'] 
+                    if username.startswith(tuple(test_user_prefixes)):
+                        pass # User will be cleaned up by existing logic
+                    
+                    # Clear any old posts this user might have before creating new ones
+                    StatusPost.objects.filter(author=user).delete()
+                    
+                    for i in range(num_posts):
+                        StatusPost.objects.create(
+                            author=user,
+                            content=f"This is test post number {i+1} for user {username}."
+                        )
+                    
+                    token, _ = Token.objects.get_or_create(user=user)
+                    return Response({
+                        "username": user.username,
+                        "token": token.key,
+                    }, status=status.HTTP_201_CREATED)
+                # --- END OF NEW ACTION ---
+
                 elif action == "create_group":
-                    prefix = data.get("creator_username_prefix")
-                    if not prefix:
-                        return Response({"error": "creator_username_prefix is required for create_group"}, status=status.HTTP_400_BAD_REQUEST)
-                    
-                    creator = User.objects.filter(username__startswith=prefix).latest('date_joined')
-                    
                     # --- THIS IS THE FIX ---
+                    prefix = data.get("creator_username_prefix")
+                    username = data.get("creator_username")
+
+                    if not prefix and not username:
+                        return Response({"error": "creator_username_prefix or creator_username is required"}, status=status.HTTP_400_BAD_REQUEST)
+                    
+                    if prefix:
+                        creator = User.objects.filter(username__startswith=prefix).latest('date_joined')
+                    else:
+                        creator = User.objects.get(username=username)
+                    # --- END OF FIX ---
+                    
                     timestamp = int(time.time())
                     group_name = data.get("name", "Default Test Group")
-                    # Append the timestamp to the name to ensure the slug is unique and deletable
                     final_group_name = f"{group_name}-{timestamp}"
-                    # ----------------------
-
+                    
                     is_private_flag = data.get("is_private", False)
                     privacy_level_value = 'private' if is_private_flag else 'public'
 
                     group = Group.objects.create(
-                        name=final_group_name, # Use the new name with the timestamp
+                        name=final_group_name,
                         creator=creator,
                         privacy_level=privacy_level_value
                     )
                     
                     group.members.add(creator)
                     
-                    return Response({
-                        "name": group.name,
-                        "slug": group.slug,
-                    }, status=status.HTTP_201_CREATED)
+                    return Response({ "name": group.name, "slug": group.slug }, status=status.HTTP_201_CREATED)
+
 
                 elif action == "create_post":
                     author = get_object_or_404(User, username=data.get("username"))
                     post = StatusPost.objects.create(author=author, content=data.get("content"))
                     return Response({"message": "Post created.", "post_id": post.id}, status=status.HTTP_201_CREATED)
 
-                # (Your other actions like create_post_with_poll, create_follow, cleanup remain unchanged)
                 elif action == "create_post_with_poll":
                     author = get_object_or_404(User, username=data.get("username"))
                     post_content = data.get("poll_question", "Default Poll Question")
@@ -132,13 +159,19 @@ class TestSetupAPIView(APIView):
                     return Response({"message": "Follow relationship created."}, status=status.HTTP_201_CREATED)
 
                 elif action == 'cleanup':
-                    test_user_prefixes = ['creator_', 'requester_', 'member_', 'user_', 'auth_test_', 'multitab_', 'pollTester', 'interaction_', 'profileEditor', 'pictureRemover', 'pictureUploader', 'user_with_posts_', 'reactive_', 'main_', 'joiner_', 'viewer_', 'follower_', 'denied_', 'blocked_']
+                    # Add our new test user to the list of prefixes to be deleted
+                    test_user_prefixes = ['scroll_tester', 'creator_', 'requester_', 'member_', 'user_', 'auth_test_', 'multitab_', 'pollTester', 'interaction_', 'profileEditor', 'pictureRemover', 'pictureUploader', 'user_with_posts_', 'reactive_', 'main_', 'joiner_', 'viewer_', 'follower_', 'denied_', 'blocked_']
                     user_query = Q()
                     for prefix in test_user_prefixes:
                         user_query |= Q(username__startswith=prefix)
                     user_query |= Q(username__in=['userA', 'userB', 'userC'])
+                    
                     _, users_deleted_details = User.objects.filter(user_query).delete()
-                    _, groups_deleted_details = Group.objects.filter(name__regex=r'\d{10,}$').delete()
+                    
+                    # --- THIS IS THE FIX ---
+                    # Revert to the original, correct logic of deleting groups based on the timestamp in their SLUG.
+                    _, groups_deleted_details = Group.objects.filter(slug__regex=r'-\d{10,}$').delete()
+                    # --- END OF FIX ---
 
                     return Response({
                         'status': 'success',

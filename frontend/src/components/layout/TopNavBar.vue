@@ -133,7 +133,7 @@ const handleLogout = async () => { await authStore.logout(); };
     <nav class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
       <div class="flex items-center justify-between h-16">
         <div class="flex-shrink-0">
-          <RouterLink to="/" @click="handleLogoClick" class="text-2xl font-bold tracking-tight">
+          <RouterLink to="/" @click="handleLogoClick" data-cy="navbar-logo-link" class="text-2xl font-bold tracking-tight">
             <span class="bg-gradient-to-r from-blue-600 to-purple-500 bg-clip-text text-transparent">NxtTurn</span>
           </RouterLink>
         </div>
@@ -144,7 +144,7 @@ const handleLogout = async () => { await authStore.logout(); };
           <template v-if="authStore.isAuthenticated">
             <RouterLink :to="{ name: 'explore' }" class="text-sm font-medium text-gray-600 hover:text-indigo-500" active-class="text-indigo-600 font-semibold">Explore</RouterLink>
             <a href="#" class="text-sm font-medium text-gray-600 hover:text-indigo-500">Jobs</a>
-            <RouterLink :to="{ name: 'notifications' }" @click="handleNotificationsClick" class="relative text-gray-600 hover:text-blue-500" title="Notifications">
+            <RouterLink :to="{ name: 'notifications' }" @click="handleNotificationsClick" data-cy="navbar-notifications-link" class="relative text-gray-600 hover:text-blue-500" title="Notifications">
               <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
               <span 
                 v-if="unreadCount > 0" 

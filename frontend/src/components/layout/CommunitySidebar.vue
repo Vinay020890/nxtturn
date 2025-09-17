@@ -53,17 +53,18 @@ function handleSavedPostsClick(event: MouseEvent) {
         <RouterLink 
           to="/" 
           @click="handleHomeFeedClick"
+          data-cy="sidebar-home-link"
           class="flex items-center gap-3 px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100 font-medium" 
           active-class="bg-blue-50 text-blue-700"
         >
           <HomeIcon class="h-6 w-6" />
           <span>Home Feed</span>
         </RouterLink>
-        <RouterLink to="/groups" @click="handleMyGroupsClick" class="flex items-center gap-3 px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100 font-medium" active-class="bg-blue-50 text-blue-700">
+        <RouterLink to="/groups" @click="handleMyGroupsClick" data-cy="sidebar-groups-link" class="flex items-center gap-3 px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100 font-medium" active-class="bg-blue-50 text-blue-700">
           <UserGroupIcon class="h-6 w-6" />
           <span>My Groups</span>
         </RouterLink>
-        <RouterLink to="/saved-posts" @click="handleSavedPostsClick" class="flex items-center gap-3 px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100 font-medium" active-class="bg-blue-50 text-blue-700">
+        <RouterLink to="/saved-posts" @click="handleSavedPostsClick" data-cy="sidebar-saved-posts-link" class="flex items-center gap-3 px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100 font-medium" active-class="bg-blue-50 text-blue-700">
           <BookmarkIcon class="h-6 w-6" />
           <span>Saved Posts</span>
         </RouterLink>
