@@ -106,9 +106,19 @@ class UserSerializer(serializers.ModelSerializer):
         return None
     
 class CustomRegisterSerializer(RegisterSerializer):
-    # This serializer correctly inherits from dj-rest-auth's base class,
-    # which fixes the deprecation warnings. We can add custom fields here later.
-    pass
+    # This field will be used to explicitly validate email uniqueness.
+    email = serializers.EmailField(
+        required=True,
+        # This validator checks if an object with this email already exists in the User model.
+        validators=[validators.UniqueValidator(queryset=User.objects.all())]
+    )
+
+    def custom_signup(self, request, user):
+        """
+        You can add custom logic here that runs after a user is created.
+        For now, we just pass.
+        """
+        pass
 
 class ReportSerializer(serializers.ModelSerializer):
     """

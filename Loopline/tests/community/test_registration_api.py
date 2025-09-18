@@ -75,3 +75,43 @@ def test_user_registration_fails_with_existing_username(api_client, user_factory
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert 'username' in response.data
     assert 'A user with that username already exists.' in response.data['username'][0]
+
+# [Add this function to the end of your test_registration_api.py file]
+
+def test_registration_fails_with_duplicate_email(api_client):
+    """
+    Ensures registration fails if the email address is already in use,
+    even with a different username.
+    """
+    # Arrange: Define the API endpoint
+    url = '/api/auth/registration/'
+
+    # Arrange: Register the first user successfully
+    user1_data = {
+        "username": "user1_unique",
+        "email": "duplicate_test@example.com",
+        "password1": "StrongPassword123",
+        "password2": "StrongPassword123"
+    }
+    response1 = api_client.post(url, user1_data)
+    assert response1.status_code == status.HTTP_201_CREATED, \
+        "The first user should have registered successfully to set up the test."
+
+    # Arrange: Prepare data for a second user with the same email
+    user2_data = {
+        "username": "user2_also_unique",
+        "email": "duplicate_test@example.com",  # Using the same email
+        "password1": "StrongPassword123",
+        "password2": "StrongPassword123"
+    }
+
+    # Act: Attempt to register the second user
+    response2 = api_client.post(url, user2_data)
+
+    # Assert: The request should fail with a 400 Bad Request
+    assert response2.status_code == status.HTTP_400_BAD_REQUEST, \
+        "Expected registration to fail with a 400 status, but it returned 201."
+    
+    # Assert: The response should contain a specific error message for the email field
+    assert 'email' in response2.data
+    assert 'This field must be unique.' in response2.data['email'][0]

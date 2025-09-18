@@ -185,6 +185,7 @@ AUTHENTICATION_BACKENDS = (
 # This is the modern way to specify requirements for accounts.
 ACCOUNT_AUTHENTICATION_METHOD = 'username_email' # Allow login with username or email
 ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_UNIQUE_EMAIL = True
 ACCOUNT_USERNAME_REQUIRED = True
 ACCOUNT_EMAIL_VERIFICATION = 'none' # Keep this for development ease
 
