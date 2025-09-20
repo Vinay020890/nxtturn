@@ -13,8 +13,20 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from community.models import Follow, Group, StatusPost, Poll, PollOption, UserProfile
+from allauth.account.models import EmailAddress # <-- 1. ADD THIS IMPORT
 
 User = get_user_model()
+
+def create_verified_user(user):
+    """Gets or creates a verified EmailAddress record for a user."""
+    EmailAddress.objects.get_or_create(
+        user=user,
+        defaults={
+            'email': user.email,
+            'primary': True,
+            'verified': True
+        }
+    )
 
 class TestSetupAPIView(APIView):
     permission_classes = [AllowAny]
@@ -36,6 +48,10 @@ class TestSetupAPIView(APIView):
                         email = f"{username}@example.com"
                         password = "Airtel@123"
                         user = User.objects.create_user(username=username, email=email, password=password)
+                        
+                        # <-- 2. ADD VERIFICATION LOGIC
+                        create_verified_user(user)
+
                         token, _ = Token.objects.get_or_create(user=user)
                         return Response({
                             "username": user.username,
@@ -54,6 +70,9 @@ class TestSetupAPIView(APIView):
                             user.set_password(password)
                             user.save()
                         
+                        # <-- 3. ADD VERIFICATION LOGIC
+                        create_verified_user(user)
+
                         if data.get("with_picture", False):
                             dummy_image = SimpleUploadedFile(name='test_avatar.gif', content=b'\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00\x21\xf9\x04\x01\x00\x00\x00\x00\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3b', content_type='image/gif')
                             profile, _ = UserProfile.objects.get_or_create(user=user)
@@ -63,34 +82,26 @@ class TestSetupAPIView(APIView):
                     else:
                         return Response({"error": "Action 'create_user' requires either 'username' or 'username_prefix' in data."}, status=status.HTTP_400_BAD_REQUEST)
 
-                # --- NEW ACTION to create a user with multiple posts ---
                 elif action == "create_user_with_posts":
                     username = data.get("username")
-                    num_posts = data.get("num_posts", 10) # Default to 10 posts
+                    num_posts = data.get("num_posts", 10)
                     password = "Airtel@123"
 
                     if not username:
                         return Response({"error": "Username is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-                    # Using get_or_create is safer in case a test re-uses a username
                     user, created = User.objects.get_or_create(username=username, defaults={'email': f"{username}@example.com"})
                     user.set_password(password)
                     user.save()
 
-                                        # Create a UserProfile for this user with a default bio.
+                    # <-- 4. ADD VERIFICATION LOGIC
+                    create_verified_user(user)
+
                     UserProfile.objects.update_or_create(
                         user=user,
                         defaults={'bio': 'This is a default bio for the scroll tester.'}
                     )
-                    # -------------------------
                     
-                    # Also add the user to the list of prefixes to be cleaned up
-                    # This is important to ensure this test user is deleted later.
-                    test_user_prefixes = ['scroll_tester'] 
-                    if username.startswith(tuple(test_user_prefixes)):
-                        pass # User will be cleaned up by existing logic
-                    
-                    # Clear any old posts this user might have before creating new ones
                     StatusPost.objects.filter(author=user).delete()
                     
                     for i in range(num_posts):
@@ -104,39 +115,30 @@ class TestSetupAPIView(APIView):
                         "username": user.username,
                         "token": token.key,
                     }, status=status.HTTP_201_CREATED)
-                # --- END OF NEW ACTION ---
-
+                
+                # ... The rest of the file (create_group, create_post, cleanup etc.) remains unchanged ...
+                
                 elif action == "create_group":
-                    # --- THIS IS THE FIX ---
                     prefix = data.get("creator_username_prefix")
                     username = data.get("creator_username")
-
                     if not prefix and not username:
                         return Response({"error": "creator_username_prefix or creator_username is required"}, status=status.HTTP_400_BAD_REQUEST)
-                    
                     if prefix:
                         creator = User.objects.filter(username__startswith=prefix).latest('date_joined')
                     else:
                         creator = User.objects.get(username=username)
-                    # --- END OF FIX ---
-                    
                     timestamp = int(time.time())
                     group_name = data.get("name", "Default Test Group")
                     final_group_name = f"{group_name}-{timestamp}"
-                    
                     is_private_flag = data.get("is_private", False)
                     privacy_level_value = 'private' if is_private_flag else 'public'
-
                     group = Group.objects.create(
                         name=final_group_name,
                         creator=creator,
                         privacy_level=privacy_level_value
                     )
-                    
                     group.members.add(creator)
-                    
                     return Response({ "name": group.name, "slug": group.slug }, status=status.HTTP_201_CREATED)
-
 
                 elif action == "create_post":
                     author = get_object_or_404(User, username=data.get("username"))
@@ -159,20 +161,13 @@ class TestSetupAPIView(APIView):
                     return Response({"message": "Follow relationship created."}, status=status.HTTP_201_CREATED)
 
                 elif action == 'cleanup':
-                    # Add our new test user to the list of prefixes to be deleted
                     test_user_prefixes = ['scroll_tester', 'creator_', 'requester_', 'member_', 'user_', 'auth_test_', 'multitab_', 'pollTester', 'interaction_', 'profileEditor', 'pictureRemover', 'pictureUploader', 'user_with_posts_', 'reactive_', 'main_', 'joiner_', 'viewer_', 'follower_', 'denied_', 'blocked_']
                     user_query = Q()
                     for prefix in test_user_prefixes:
                         user_query |= Q(username__startswith=prefix)
                     user_query |= Q(username__in=['userA', 'userB', 'userC'])
-                    
                     _, users_deleted_details = User.objects.filter(user_query).delete()
-                    
-                    # --- THIS IS THE FIX ---
-                    # Revert to the original, correct logic of deleting groups based on the timestamp in their SLUG.
                     _, groups_deleted_details = Group.objects.filter(slug__regex=r'-\d{10,}$').delete()
-                    # --- END OF FIX ---
-
                     return Response({
                         'status': 'success',
                         'message': 'Test data cleanup complete.',

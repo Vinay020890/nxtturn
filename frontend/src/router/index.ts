@@ -1,15 +1,16 @@
-import { createRouter, createWebHistory } from 'vue-router';
-import 'vue-router';
-import { useAuthStore } from '@/stores/auth';
-import CommunityLayout from '@/layouts/CommunityLayout.vue';
-import ProfileLayout from '@/layouts/ProfileLayout.vue';
-import ExploreLayout from '@/layouts/ExploreLayout.vue'; // <-- Import the new layout
-import axiosInstance from '@/services/axiosInstance';
+import { createRouter, createWebHistory } from 'vue-router'
+import 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import CommunityLayout from '@/layouts/CommunityLayout.vue'
+import ProfileLayout from '@/layouts/ProfileLayout.vue'
+import ExploreLayout from '@/layouts/ExploreLayout.vue'
+import axiosInstance from '@/services/axiosInstance'
+import CheckEmailView from '../views/auth/CheckEmailView.vue' // <-- 1. IMPORT THE NEW VIEW
 
 declare module 'vue-router' {
   interface RouteMeta {
-    requiresAuth?: boolean;
-    requiresGuest?: boolean;
+    requiresAuth?: boolean
+    requiresGuest?: boolean
   }
 }
 
@@ -23,81 +24,101 @@ const router = createRouter({
       meta: { requiresAuth: true },
       children: [
         { path: '', name: 'feed', component: () => import('@/views/FeedView.vue') },
-        { path: 'groups', name: 'group-list', component: () => import('@/views/GroupListAllView.vue') },
-        { path: 'groups/:slug', name: 'group-detail', component: () => import('@/views/GroupDetailView.vue') },
-
-        // ================== ADD THIS NEW ROUTE OBJECT HERE ==================
         {
-          path: 'groups/:slug/requests', // Path is relative to the parent '/'
+          path: 'groups',
+          name: 'group-list',
+          component: () => import('@/views/GroupListAllView.vue'),
+        },
+        {
+          path: 'groups/:slug',
+          name: 'group-detail',
+          component: () => import('@/views/GroupDetailView.vue'),
+        },
+        {
+          path: 'groups/:slug/requests',
           name: 'group-requests',
           component: () => import('@/views/GroupRequestsView.vue'),
-          // meta: { requiresAuth: true } is inherited from the parent
         },
-        // ====================================================================
-        
-        { path: 'saved-posts', name: 'saved-posts', component: () => import('@/views/SavedPostsView.vue') },
-        { path: 'notifications', name: 'notifications', component: () => import('@/views/NotificationsPage.vue') },
+        {
+          path: 'saved-posts',
+          name: 'saved-posts',
+          component: () => import('@/views/SavedPostsView.vue'),
+        },
+        {
+          path: 'notifications',
+          name: 'notifications',
+          component: () => import('@/views/NotificationsPage.vue'),
+        },
         { path: 'search', name: 'search', component: () => import('@/views/SearchPage.vue') },
-        { path: 'posts/:postId', name: 'single-post', component: () => import('@/views/SinglePostView.vue') }
-      ]
+        {
+          path: 'posts/:postId',
+          name: 'single-post',
+          component: () => import('@/views/SinglePostView.vue'),
+        },
+      ],
     },
     // --- ROUTE GROUP 2: Uses the Profile Layout ---
     {
-      path: '/profile', 
+      path: '/profile',
       component: ProfileLayout,
       meta: { requiresAuth: true },
       children: [
-        { 
+        {
           path: ':username',
-          name: 'profile', 
-          component: () => import('@/views/ProfileView.vue')
-        }
-      ]
+          name: 'profile',
+          component: () => import('@/views/ProfileView.vue'),
+        },
+      ],
     },
-    // --- THIS IS THE NEW ROUTE FOR THE EXPLORE HUB ---
+    // --- ROUTE GROUP 3: Uses the Explore Layout ---
     {
       path: '/explore',
       component: ExploreLayout,
       meta: { requiresAuth: true },
-      children: [
-        { path: '', name: 'explore', component: () => import('@/views/ExploreView.vue') }
-      ]
+      children: [{ path: '', name: 'explore', component: () => import('@/views/ExploreView.vue') }],
     },
-    // --- Non-Layout Routes (Login/Register) ---
-    { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue'), meta: { requiresGuest: true } },
-    { path: '/register', name: 'register', component: () => import('@/views/RegisterView.vue'), meta: { requiresGuest: true } }
+    // --- ROUTE GROUP 4: Non-Layout Routes (Login/Register) ---
+    {
+      path: '/login',
+      name: 'login',
+      component: () => import('@/views/LoginView.vue'),
+      meta: { requiresGuest: true },
+    },
+    {
+      path: '/register',
+      name: 'register',
+      component: () => import('@/views/RegisterView.vue'),
+      meta: { requiresGuest: true },
+    },
+    // --- 2. ADD THE NEW ROUTE OBJECT HERE ---
+    {
+      path: '/auth/check-email',
+      name: 'CheckEmail',
+      component: CheckEmailView,
+      meta: { requiresGuest: true },
+    },
   ],
-});
+})
 
+// The beforeEach guard remains unchanged.
 router.beforeEach(async (to, from, next) => {
-  // --- THIS IS THE NEW PROACTIVE HEALTH CHECK ---
   try {
-    // We use a short timeout. If the server is offline, we want this to fail fast
-    // and not delay the user's navigation attempt.
-    await axiosInstance.get('/health-check/', { timeout: 4000 });
+    await axiosInstance.get('/health-check/', { timeout: 4000 })
   } catch (error) {
-    // The axiosInstance interceptor has already caught the network error
-    // and displayed the "offline" toast. We don't need to do anything else here.
-    // The navigation will proceed, but the user will see the offline warning.
+    // The interceptor will handle the offline toast.
   }
-  // --- END OF NEW LOGIC ---
 
-  // This is your existing, correct authentication guard logic.
-  const authStore = useAuthStore();
+  const authStore = useAuthStore()
+  await authStore.initializeAuth()
+  const isAuthenticated = authStore.isAuthenticated
 
-  await authStore.initializeAuth();
-
-  const requiresAuth = to.meta.requiresAuth;
-  const requiresGuest = to.meta.requiresGuest;
-  const isAuthenticated = authStore.isAuthenticated;
-
-  if (requiresAuth && !isAuthenticated) {
-    next({ name: 'login' });
-  } else if (requiresGuest && isAuthenticated) {
-    next({ name: 'feed' }); // Changed to 'feed' to match your route name
+  if (to.meta.requiresAuth && !isAuthenticated) {
+    next({ name: 'login' })
+  } else if (to.meta.requiresGuest && isAuthenticated) {
+    next({ name: 'feed' })
   } else {
-    next();
+    next()
   }
-});
+})
 
-export default router;
+export default router

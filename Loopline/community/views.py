@@ -1,5 +1,5 @@
 # community/views.py
-
+from allauth.account.views import ConfirmEmailView
 from django.db.models import Q, Count
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -54,7 +54,7 @@ class StandardResultsSetPagination(PageNumberPagination):
 # NEW: CursorPagination for dynamic feeds (Main Feed, Group Feeds)
 class PostCursorPagination(CursorPagination):
     page_size = 10
-    ordering = '-created_at' # Crucial for cursor pagination: Must match queryset ordering
+    ordering = ('-created_at', '-id') # Crucial for cursor pagination: Must match queryset ordering
     page_size_query_param = 'page_size' # Allow client to specify page size
 
 # ==================================
@@ -519,7 +519,7 @@ class FeedListView(generics.ListAPIView):
             'group'
         ).prefetch_related(
             'media', 'likes', 'poll__options', 'poll__votes'
-        ).order_by('-created_at').distinct()
+        ).order_by('-created_at', '-id').distinct()
 
     def get_serializer_context(self):
         return {'request': self.request}
@@ -860,4 +860,36 @@ def health_check_view(request):
     Used by the frontend's navigation guards for proactive offline detection.
     """
     return Response({"status": "ok"}, status=status.HTTP_200_OK)
+
+
+# --- ADD THIS ENTIRE CLASS AT THE END OF THE FILE ---
+
+class CustomConfirmEmailView(ConfirmEmailView):
     
+    def get(self, *args, **kwargs):
+        try:
+            # The get_object() method finds the confirmation object from the URL key
+            self.object = self.get_object()
+        except Http404:
+            # If the key is invalid or expired, the object is not found.
+            self.object = None
+
+        if self.object:
+            # --- THIS IS THE CRITICAL LINE WE WERE MISSING ---
+            # The .confirm() method is what actually marks the email as verified in the database.
+            self.object.confirm(self.request)
+            
+            # Now that the database is updated, we can safely show the success page.
+            self.template_name = 'account/account_email_confirm.html'
+            return self.render_to_response(self.get_context_data())
+        else:
+            # If the key was invalid, we show the failure page.
+            self.template_name = 'account/email_confirmation_failed.html'
+            return self.render_to_response(self.get_context_data())
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['frontend_url'] = settings.FRONTEND_URL
+        return context
+    
+

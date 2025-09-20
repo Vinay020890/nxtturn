@@ -69,7 +69,7 @@ def test_like_on_comment_creates_one_notification_for_comment_author():
     assert Notification.objects.count() == 2
     
     # Note the corrected '-timestamp' here
-    like_notification = Notification.objects.order_by('-timestamp').first()
+    like_notification = Notification.objects.order_by('-timestamp', '-id').first()
     
     assert like_notification.recipient == comment_author
     assert like_notification.actor == liking_user
@@ -133,7 +133,7 @@ def test_reply_to_comment_creates_notification_for_parent_comment_author():
     assert Notification.objects.count() == 2
 
     # Get the newest notification to ensure we're testing the reply.
-    reply_notification = Notification.objects.order_by('-timestamp').first()
+    reply_notification = Notification.objects.order_by('-timestamp', '-id').first()
 
     # The recipient MUST be the author of the parent comment.
     assert reply_notification.recipient == comment_author
