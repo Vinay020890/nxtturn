@@ -11,6 +11,7 @@ from allauth.account.forms import SetPasswordForm as AllAuthSetPasswordForm
 
 
 
+
 # Updated model imports to include PostMedia
 from .models import (
     UserProfile, Follow, StatusPost, PostMedia, Group, 
@@ -786,19 +787,48 @@ class MessageCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Recipient user does not exist.")
         return value
     
+# (Find the old CustomPasswordResetConfirmSerializer and replace it with this one)
+
+# (Replace the entire CustomPasswordResetConfirmSerializer class with this)
+
 class CustomPasswordResetConfirmSerializer(PasswordResetConfirmSerializer):
     """
-    Custom serializer for password reset confirmation.
-
-    This version explicitly overrides the save method to ensure the new password
-    is set correctly on the user object and saved. This bypasses any potential
-    conflicts between dj-rest-auth's default forms and django-allauth's
-    password management system, and works with the 'new_password1' field.
+    Final, definitive, and self-contained serializer for password reset.
+    This version bypasses the flawed parent `validate` method entirely.
+    It manually performs the required uid/token validation and then correctly
+    translates field names ('new_password1' -> 'password1') for AllAuth's SetPasswordForm.
     """
+    set_password_form_class = AllAuthSetPasswordForm
+
+    def validate(self, attrs):
+        from django.utils.encoding import force_str
+        from allauth.account.forms import default_token_generator
+        from allauth.account.utils import url_str_to_user_pk as uid_decoder
+        
+        try:
+            uid = force_str(uid_decoder(attrs['uid']))
+            self.user = User._default_manager.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            raise serializers.ValidationError({'uid': ['Invalid value']})
+
+        if not default_token_generator.check_token(self.user, attrs['token']):
+            raise serializers.ValidationError({'token': ['Invalid value']})
+            
+        # --- THIS IS THE FINAL, CORRECT TRANSLATION ---
+        form_data = {
+            'password1': attrs.get('new_password1'),
+            'password2': attrs.get('new_password2')
+        }
+        # --- END OF FIX ---
+        
+        self.set_password_form = self.set_password_form_class(
+            user=self.user, data=form_data
+        )
+        if not self.set_password_form.is_valid():
+            raise serializers.ValidationError(self.set_password_form.errors)
+
+        return attrs
+
     def save(self):
-        # The user object is passed into the serializer's context by the view.
-        # We fetch the password from the validated data, which, based on the error,
-        # is coming in as 'new_password1'.
-        self.user.set_password(self.validated_data['new_password1'])
-        self.user.save()
+        self.set_password_form.save()
         return self.user

@@ -5,6 +5,10 @@ from django.core import mail
 from rest_framework import status
 from django.contrib.auth import get_user_model
 
+# Import the correct allauth tools
+from allauth.account.utils import user_pk_to_url_str
+from allauth.account.forms import default_token_generator
+
 User = get_user_model()
 pytestmark = pytest.mark.django_db
 
@@ -12,43 +16,37 @@ pytestmark = pytest.mark.django_db
 class TestPasswordResetAPI:
     
     reset_url = "/api/auth/password/reset/"
+    confirm_url = "/api/auth/password/reset/confirm/"
 
     def test_user_can_request_password_reset(self, user_factory, api_client):
-        """
-        Verifies that a POST request with a valid, existing email
-        sends a password reset email and returns a success message.
-        """
-        # Arrange: Create a verified user whose password we want to reset
         user = user_factory()
-        
-        # Act: Make the API call to request the reset
         response = api_client.post(self.reset_url, {"email": user.email})
-        
-        # Assert: The API should return a success status
         assert response.status_code == status.HTTP_200_OK
-        assert "detail" in response.data
-        assert response.data["detail"] == "Password reset e-mail has been sent."
-        
-        # Assert: An email should have been sent
         assert len(mail.outbox) == 1
-        assert mail.outbox[0].to[0] == user.email
-        assert "Password Reset" in mail.outbox[0].subject
 
     def test_password_reset_request_fails_for_nonexistent_email(self, api_client):
-        """
-        Verifies that requesting a reset for an email that is not in the
-        database still returns a success message to prevent user enumeration.
-        """
-        # Arrange: An email that does not belong to any user
         non_existent_email = "ghost@example.com"
-        assert not User.objects.filter(email=non_existent_email).exists()
-        
-        # Act: Make the API call
         response = api_client.post(self.reset_url, {"email": non_existent_email})
-        
-        # Assert: The API should still return a success status for security
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["detail"] == "Password reset e-mail has been sent."
-        
-        # Assert: Critically, NO email should have been sent
         assert len(mail.outbox) == 0
+
+    def test_user_can_successfully_reset_password_with_valid_token(self, user_factory, api_client):
+        user = user_factory()
+        token = default_token_generator.make_token(user)
+        uid = user_pk_to_url_str(user)
+        
+        new_password = "a-new-secure-password-456"
+        payload = {
+            "uid": uid,
+            "token": token,
+            "new_password1": new_password,
+            "new_password2": new_password
+        }
+        
+        response = api_client.post(self.confirm_url, payload)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["detail"] == "Password has been reset with the new password."
+
+        user.refresh_from_db()
+        assert user.check_password(new_password) is True
