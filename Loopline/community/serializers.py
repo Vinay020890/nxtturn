@@ -6,6 +6,8 @@ from django.db import transaction
 from django.db.models import Count
 from .utils import process_mentions
 from dj_rest_auth.registration.serializers import RegisterSerializer
+from dj_rest_auth.serializers import PasswordResetConfirmSerializer
+from allauth.account.forms import SetPasswordForm as AllAuthSetPasswordForm
 
 
 
@@ -783,3 +785,20 @@ class MessageCreateSerializer(serializers.Serializer):
         if not User.objects.filter(username=value).exists():
             raise serializers.ValidationError("Recipient user does not exist.")
         return value
+    
+class CustomPasswordResetConfirmSerializer(PasswordResetConfirmSerializer):
+    """
+    Custom serializer for password reset confirmation.
+
+    This version explicitly overrides the save method to ensure the new password
+    is set correctly on the user object and saved. This bypasses any potential
+    conflicts between dj-rest-auth's default forms and django-allauth's
+    password management system, and works with the 'new_password1' field.
+    """
+    def save(self):
+        # The user object is passed into the serializer's context by the view.
+        # We fetch the password from the validated data, which, based on the error,
+        # is coming in as 'new_password1'.
+        self.user.set_password(self.validated_data['new_password1'])
+        self.user.save()
+        return self.user

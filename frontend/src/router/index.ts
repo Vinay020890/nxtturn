@@ -5,7 +5,8 @@ import CommunityLayout from '@/layouts/CommunityLayout.vue'
 import ProfileLayout from '@/layouts/ProfileLayout.vue'
 import ExploreLayout from '@/layouts/ExploreLayout.vue'
 import axiosInstance from '@/services/axiosInstance'
-import CheckEmailView from '../views/auth/CheckEmailView.vue' // <-- 1. IMPORT THE NEW VIEW
+import CheckEmailView from '../views/auth/CheckEmailView.vue'
+import ForgotPasswordView from '../views/auth/ForgotPasswordView.vue'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -63,11 +64,7 @@ const router = createRouter({
       component: ProfileLayout,
       meta: { requiresAuth: true },
       children: [
-        {
-          path: ':username',
-          name: 'profile',
-          component: () => import('@/views/ProfileView.vue'),
-        },
+        { path: ':username', name: 'profile', component: () => import('@/views/ProfileView.vue') },
       ],
     },
     // --- ROUTE GROUP 3: Uses the Explore Layout ---
@@ -90,11 +87,23 @@ const router = createRouter({
       component: () => import('@/views/RegisterView.vue'),
       meta: { requiresGuest: true },
     },
-    // --- 2. ADD THE NEW ROUTE OBJECT HERE ---
     {
       path: '/auth/check-email',
       name: 'CheckEmail',
       component: CheckEmailView,
+      meta: { requiresGuest: true },
+    },
+    {
+      path: '/auth/forgot-password',
+      name: 'ForgotPassword',
+      component: ForgotPasswordView,
+      meta: { requiresGuest: true },
+    },
+    // --- THIS IS THE NEW ROUTE WE ARE ADDING ---
+    {
+      path: '/auth/reset-password/:uid/:token',
+      name: 'ResetPasswordConfirm',
+      component: () => import('@/views/auth/ResetPasswordConfirmView.vue'),
       meta: { requiresGuest: true },
     },
   ],

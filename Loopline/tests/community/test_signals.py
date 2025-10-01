@@ -179,7 +179,7 @@ def test_like_on_reply_creates_notification_for_reply_author():
     assert Notification.objects.count() == 3
 
     # Get the newest notification to ensure we're testing the like on the reply.
-    like_on_reply_notification = Notification.objects.order_by('-timestamp').first()
+    like_on_reply_notification = Notification.objects.order_by('-timestamp', '-id').first()
 
     # The recipient MUST be the author of the reply.
     assert like_on_reply_notification.recipient == reply_author

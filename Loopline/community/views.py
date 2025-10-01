@@ -4,7 +4,7 @@ from django.db.models import Q, Count
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth import logout as django_logout
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, redirect
 from django.contrib.contenttypes.models import ContentType
 from django.http import Http404
 from django.db.models import Q, Count, Value, CharField, Case, When
@@ -891,5 +891,14 @@ class CustomConfirmEmailView(ConfirmEmailView):
         context = super().get_context_data(**kwargs)
         context['frontend_url'] = settings.FRONTEND_URL
         return context
+    
+    
+def password_reset_redirect_view(request, uidb64, token):
+    """
+    Redirects the password reset link from the backend to the frontend app.
+    """
+    frontend_url = settings.FRONTEND_URL
+    # We construct the full URL to our frontend's reset page
+    return redirect(f"http://{frontend_url}/auth/reset-password/{uidb64}/{token}/")
     
 

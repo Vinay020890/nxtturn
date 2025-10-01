@@ -152,6 +152,9 @@ REST_AUTH = {
     'SESSION_LOGIN': False,
     'USER_DETAILS_SERIALIZER': 'community.serializers.UserSerializer',
     'REGISTER_SERIALIZER': 'community.serializers.CustomRegisterSerializer',
+
+    'PASSWORD_RESET_CONFIRM_SERIALIZER': 'community.serializers.CustomPasswordResetConfirmSerializer',
+    
     'SIGNUP_FIELDS': {
         'username': {'required': True},
         'email': {'required': True},
