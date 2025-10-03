@@ -7,6 +7,8 @@ const username = ref('');
 const password = ref('');
 const errorMessage = ref<string | null>(null);
 const showPassword = ref(false);
+// --- CHANGE 1: Add a new state variable to control the message box style ---
+const messageType = ref<'error' | 'info'>('error');
 
 const authStore = useAuthStore();
 const router = useRouter();
@@ -17,18 +19,32 @@ const togglePasswordVisibility = () => {
 
 const handleLogin = async () => {
   errorMessage.value = null;
+  // Reset message type to default on every new attempt
+  messageType.value = 'error';
   try {
     await authStore.login({
-      // We send 'username' but the backend can interpret it as email or username
       username: username.value,
       password: password.value,
     });
+    // On success, navigate to the feed
     router.push({ name: 'feed' });
   } catch (error: any) {
-    if (error?.response?.data?.non_field_errors) {
-      errorMessage.value = error.response.data.non_field_errors.join(' ');
+    // --- CHANGE 2: Updated error handling logic ---
+    const errors = error?.response?.data?.non_field_errors;
+    if (errors && Array.isArray(errors)) {
+      const errorString = errors.join(' ');
+
+      // Check for our specific unverified email error
+      if (errorString.includes('E-mail is not verified.')) {
+        errorMessage.value = 'Your account is not verified. A new verification link has been sent to your email.';
+        messageType.value = 'info'; // Set message type to 'info' for a blue box
+      } else {
+        // Handle other backend errors (e.g., wrong password)
+        errorMessage.value = errorString;
+      }
     } else {
-      errorMessage.value = 'Login failed. Please check your credentials.';
+      // Fallback for network errors or unexpected responses
+      errorMessage.value = 'Login failed. Please check your credentials or network connection.';
     }
   }
 };
@@ -56,7 +72,7 @@ const handleLogin = async () => {
             <button type="button" @click="togglePasswordVisibility"
               class="absolute inset-y-0 right-0 flex items-center px-3 text-gray-500 hover:text-gray-700"
               aria-label="Toggle password visibility">
-              <!-- Your SVG icons are here, unchanged -->
+              <!-- SVG icons for password visibility (unchanged) -->
               <svg v-if="showPassword" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none"
                 viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -73,7 +89,6 @@ const handleLogin = async () => {
           </div>
         </div>
 
-        <!-- === START: THIS IS THE ONLY CHANGE === -->
         <div class="flex items-center justify-end">
           <div class="text-sm">
             <router-link :to="{ name: 'ForgotPassword' }" class="font-medium text-blue-600 hover:text-blue-500">
@@ -81,9 +96,12 @@ const handleLogin = async () => {
             </router-link>
           </div>
         </div>
-        <!-- === END OF CHANGE === -->
 
-        <div v-if="errorMessage" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4" role="alert">
+        <!-- --- CHANGE 3: The alert box now uses dynamic classes --- -->
+        <div v-if="errorMessage" :class="{
+          'bg-red-100 border-l-4 border-red-500 text-red-700 p-4': messageType === 'error',
+          'bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4': messageType === 'info'
+        }" role="alert" data-cy="login-message-box">
           <p>{{ errorMessage }}</p>
         </div>
 

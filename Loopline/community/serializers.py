@@ -9,12 +9,16 @@ from dj_rest_auth.registration.serializers import RegisterSerializer
 from dj_rest_auth.serializers import PasswordResetConfirmSerializer
 from allauth.account.forms import SetPasswordForm as AllAuthSetPasswordForm
 
+from dj_rest_auth.serializers import LoginSerializer
+from allauth.account.models import EmailAddress
+from rest_framework import serializers
+
 
 
 
 # Updated model imports to include PostMedia
 from .models import (
-    UserProfile, Follow, StatusPost, PostMedia, Group, 
+    UserProfile, Follow, StatusPost, PostMedia, Group,
     Comment, Like, Conversation, Message, Notification, Poll, PollOption, Report, GroupJoinRequest, GroupBlock  )
 
 User = get_user_model() 
@@ -832,3 +836,34 @@ class CustomPasswordResetConfirmSerializer(PasswordResetConfirmSerializer):
     def save(self):
         self.set_password_form.save()
         return self.user
+    
+class CustomLoginSerializer(LoginSerializer):
+    """
+    Custom login serializer that resends the verification email if a user
+    with an unverified email address attempts to log in.
+    """
+    def validate(self, attrs):
+        try:
+            # First, run the standard validation from the parent class
+            return super().validate(attrs)
+        except serializers.ValidationError as e:
+            # --- THIS IS THE CORRECTED LOGIC ---
+            # The error detail from dj-rest-auth is a list of strings.
+            # We check if our specific error message is present.
+            is_unverified_email_error = (
+                isinstance(e.detail, list) and
+                e.detail and
+                'E-mail is not verified.' in e.detail[0]
+            )
+
+            if is_unverified_email_error:
+                email_or_username = attrs.get('email') or attrs.get('username')
+                if email_or_username:
+                    try:
+                        email_address = EmailAddress.objects.get(email__iexact=email_or_username)
+                        email_address.send_confirmation()
+                    except EmailAddress.DoesNotExist:
+                        pass # Should not happen in normal flow
+
+            # CRITICAL: Always re-raise the original exception to ensure the login still fails
+            raise e

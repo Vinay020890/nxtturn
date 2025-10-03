@@ -1,4 +1,5 @@
 # C:\Users\Vinay\Project\Loopline\e2e_test_utils\views.py
+# REVISED VERSION
 
 import time
 from rest_framework.authtoken.models import Token
@@ -13,7 +14,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from community.models import Follow, Group, StatusPost, Poll, PollOption, UserProfile
-from allauth.account.models import EmailAddress # <-- 1. ADD THIS IMPORT
+from allauth.account.models import EmailAddress
 
 User = get_user_model()
 
@@ -49,7 +50,6 @@ class TestSetupAPIView(APIView):
                         password = "Airtel@123"
                         user = User.objects.create_user(username=username, email=email, password=password)
                         
-                        # <-- 2. ADD VERIFICATION LOGIC
                         create_verified_user(user)
 
                         token, _ = Token.objects.get_or_create(user=user)
@@ -70,7 +70,6 @@ class TestSetupAPIView(APIView):
                             user.set_password(password)
                             user.save()
                         
-                        # <-- 3. ADD VERIFICATION LOGIC
                         create_verified_user(user)
 
                         if data.get("with_picture", False):
@@ -81,6 +80,27 @@ class TestSetupAPIView(APIView):
                     
                     else:
                         return Response({"error": "Action 'create_user' requires either 'username' or 'username_prefix' in data."}, status=status.HTTP_400_BAD_REQUEST)
+
+                # ====================================================================
+                # === START: NEW LOGIC BLOCK ADDED HERE ==============================
+                # ====================================================================
+                elif action == "create_unverified_user":
+                    username = data.get("username")
+                    password = data.get("password")
+                    email = data.get("email")
+
+                    if not all([username, password, email]):
+                        return Response({"error": "Action 'create_unverified_user' requires 'username', 'password', and 'email' in data."}, status=status.HTTP_400_BAD_REQUEST)
+
+                    # Create the user but DO NOT call create_verified_user.
+                    # This relies on django-allauth's default behavior of creating an
+                    # unverified EmailAddress object upon user creation.
+                    user = User.objects.create_user(username=username, email=email, password=password)
+                    
+                    return Response({"message": f"Unverified user '{username}' created."}, status=status.HTTP_201_CREATED)
+                # ====================================================================
+                # === END: NEW LOGIC BLOCK ===========================================
+                # ====================================================================
 
                 elif action == "create_user_with_posts":
                     username = data.get("username")
@@ -93,8 +113,7 @@ class TestSetupAPIView(APIView):
                     user, created = User.objects.get_or_create(username=username, defaults={'email': f"{username}@example.com"})
                     user.set_password(password)
                     user.save()
-
-                    # <-- 4. ADD VERIFICATION LOGIC
+                    
                     create_verified_user(user)
 
                     UserProfile.objects.update_or_create(
@@ -115,8 +134,6 @@ class TestSetupAPIView(APIView):
                         "username": user.username,
                         "token": token.key,
                     }, status=status.HTTP_201_CREATED)
-                
-                # ... The rest of the file (create_group, create_post, cleanup etc.) remains unchanged ...
                 
                 elif action == "create_group":
                     prefix = data.get("creator_username_prefix")

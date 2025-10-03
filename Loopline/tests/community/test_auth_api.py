@@ -3,6 +3,8 @@
 import pytest
 from rest_framework import status
 from rest_framework.authtoken.models import Token
+from django.core import mail
+from allauth.account.models import EmailAddress
 
 # Import the necessary fixtures from your conftest
 from tests.conftest import user_factory, api_client_factory
@@ -95,3 +97,34 @@ def test_unauthenticated_user_cannot_logout(api_client_factory):
     client = api_client_factory()
     response = client.post('/api/auth/logout/')
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+def test_login_attempt_for_unverified_user_resends_verification_email(user_factory, api_client_factory):
+    """
+    Tests that a login attempt with an unverified email address triggers the
+    re-sending of the account verification email.
+    """
+    # Arrange: Create a user and explicitly mark their email as unverified
+    password = "testpassword123"
+    user = user_factory(password=password)
+    email_address = EmailAddress.objects.get(user=user)
+    email_address.verified = False
+    email_address.save()
+    
+    # Pre-condition check: Ensure no emails have been sent yet
+    assert len(mail.outbox) == 0
+    
+    # Act: Attempt to log in using the email with an unauthenticated client
+    client = api_client_factory()
+    response = client.post('/api/auth/login/', {
+        'email': user.email,
+        'password': password
+    })
+
+    # Assert: The login fails, but a new verification email is sent
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert len(mail.outbox) == 1
+    
+    # Assert: Verify the email was sent to the correct user
+    sent_email = mail.outbox[0]
+    assert sent_email.to[0] == user.email
+    assert "Please Confirm Your Email Address" in sent_email.subject
