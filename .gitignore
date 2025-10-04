@@ -110,3 +110,9 @@ pnpm-debug.log*
 # Logs
 logs
 *.log
+
+# Ignore generated data files from the Loopline project
+/Loopline/seeded_users.txt
+
+# Ignore local media files for seeding to keep repo size small
+/seed_media/

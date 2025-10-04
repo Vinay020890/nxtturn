@@ -28,3 +28,9 @@ coverage
 *.sw?
 
 *.tsbuildinfo
+
+# Ignore generated data files
+seeded_users.txt
+
+# Ignore local media files for seeding to keep repo size small
+/seed_media/

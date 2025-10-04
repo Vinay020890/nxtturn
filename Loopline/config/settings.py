@@ -20,12 +20,12 @@ if IS_PRODUCTION:
 else:
     ALLOWED_HOSTS.extend([
         '*',
-        '192.168.1.14',
+        '192.168.1.16',
     ])
 
 # --- ADD THE NEW FRONTEND_URL SETTING HERE ---
 # The URL of our Vue.js frontend, used in email templates and other backend logic
-FRONTEND_URL = os.getenv('FRONTEND_URL', '192.168.1.14:5173')
+FRONTEND_URL = os.getenv('FRONTEND_URL', '192.168.1.16:5173')
 # ---------------------------------------------
 
 INSTALLED_APPS = [
@@ -172,11 +172,11 @@ else:
     CORS_ALLOWED_ORIGINS = [
         'http://localhost:5173',
         'http://127.0.0.1:5173',
-        f"http://{os.getenv('FRONTEND_IP', '192.168.1.14')}:5173"
+        f"http://{os.getenv('FRONTEND_IP', '192.168.1.16')}:5173"
     ]
 
 CSRF_TRUSTED_ORIGINS = [
-    f"http://{os.getenv('FRONTEND_IP', '192.168.1.14')}:5173",
+    f"http://{os.getenv('FRONTEND_IP', '192.168.1.16')}:5173",
 ]
 
 CHANNEL_LAYERS = {
