@@ -1,6 +1,14 @@
 # community/urls.py
 from django.urls import path
 from . import views
+from rest_framework.routers import DefaultRouter
+
+router = DefaultRouter()
+router.register(
+    r'connections/requests', 
+    views.ConnectionRequestViewSet, 
+    basename='connection-request'
+)
 
 app_name = 'community'
 
@@ -76,3 +84,5 @@ urlpatterns = [
 
     path('health-check/', views.health_check_view, name='health-check'),
 ]
+
+urlpatterns += router.urls

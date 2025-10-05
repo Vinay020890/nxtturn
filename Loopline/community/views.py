@@ -14,7 +14,7 @@ from django.utils import timezone
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 
-from rest_framework import generics, status, views, serializers, permissions
+from rest_framework import generics, status, views, serializers, permissions, viewsets, mixins
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 
@@ -22,20 +22,20 @@ from rest_framework.views import APIView
 from rest_framework.pagination import PageNumberPagination, CursorPagination # NEW: Import CursorPagination
 from rest_framework.filters import SearchFilter
 from rest_framework.authentication import TokenAuthentication
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, action 
 
 # from dj_rest_auth.views import LogoutView
 
 
 from .models import (
     UserProfile, Follow, StatusPost,  Group, 
-    Comment, Like, Conversation, Message, Notification, Poll, PollOption, PollVote, Report, GroupJoinRequest, GroupBlock
+    Comment, Like, Conversation, Message, Notification, Poll, PollOption, PollVote, Report, GroupJoinRequest, GroupBlock, ConnectionRequest, Follow
 )
 from .serializers import (
     UserSerializer, UserProfileSerializer, UserProfileUpdateSerializer,
     StatusPostSerializer, 
     GroupSerializer, GroupJoinRequestSerializer, CommentSerializer, ConversationSerializer,
-    MessageSerializer, MessageCreateSerializer, NotificationSerializer, ReportSerializer, GroupBlockSerializer
+    MessageSerializer, MessageCreateSerializer, NotificationSerializer, ReportSerializer, GroupBlockSerializer, ConnectionRequestCreateSerializer, ConnectionRequestListSerializer 
 )
 from .permissions import IsOwnerOrReadOnly, IsGroupMember, IsCreatorOrReadOnly,IsGroupCreator, IsGroupMemberOrPublicReadOnly 
 
@@ -119,6 +119,91 @@ class FollowersListView(generics.ListAPIView):
     def get_queryset(self):
         target_user = get_object_or_404(User, username=self.kwargs['username'])
         return User.objects.filter(following__following=target_user)
+    
+# ==================================
+# Connection Request Views
+# ==================================
+class ConnectionRequestViewSet(mixins.CreateModelMixin,
+                                 mixins.ListModelMixin, # <-- 1. ADD THIS MIXIN
+                                 viewsets.GenericViewSet):
+    """
+    ViewSet for sending (create) and listing (list) Connection Requests.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    # --- 2. ADD A NEW SERIALIZER CLASS FOR LISTING ---
+    # We will create this serializer in the next step.
+    serializer_class = ConnectionRequestListSerializer 
+
+    def get_queryset(self):
+        """
+        --- 3. THIS IS THE CORE LOGIC ---
+        This view should only return the connection requests
+        received by the currently authenticated user.
+        """
+        return ConnectionRequest.objects.filter(
+            receiver=self.request.user, 
+            status='pending'
+        ).select_related('sender__profile') # Eager load sender's data
+
+    def get_serializer_class(self):
+        """
+        Use a different serializer for creating vs. listing requests.
+        """
+        if self.action == 'create':
+            return ConnectionRequestCreateSerializer
+        return ConnectionRequestListSerializer # Default for 'list'
+
+    def perform_create(self, serializer):
+        """Inject the authenticated user as the sender of the request."""
+        serializer.save(sender=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def accept(self, request, pk=None):
+        """
+        Accepts a connection request.
+        """
+        connection_request = self.get_object()
+
+        # Security check: Ensure the user accepting is the receiver of the request
+        if connection_request.receiver != request.user:
+            return Response(
+                {'detail': 'You do not have permission to perform this action.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Use a transaction to ensure both Follows are created or neither is.
+        with transaction.atomic():
+            # Update the request status
+            connection_request.status = 'accepted'
+            connection_request.save()
+
+            # Create the mutual follow relationship
+            Follow.objects.get_or_create(follower=connection_request.sender, following=connection_request.receiver)
+            Follow.objects.get_or_create(follower=connection_request.receiver, following=connection_request.sender)
+
+        return Response({'status': 'Connection request accepted.'}, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        """
+        Rejects a connection request.
+        """
+        connection_request = self.get_object()
+
+        # Security check: Ensure the user rejecting is the receiver of the request
+        if connection_request.receiver != request.user:
+            return Response(
+                {'detail': 'You do not have permission to perform this action.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Simply update the status to 'rejected'
+        connection_request.status = 'rejected'
+        connection_request.save()
+
+        return Response({'status': 'Connection request rejected.'}, status=status.HTTP_200_OK)
+
 
 # ==================================
 # Search Views

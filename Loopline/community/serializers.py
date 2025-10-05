@@ -19,7 +19,7 @@ from rest_framework import serializers
 # Updated model imports to include PostMedia
 from .models import (
     UserProfile, Follow, StatusPost, PostMedia, Group,
-    Comment, Like, Conversation, Message, Notification, Poll, PollOption, Report, GroupJoinRequest, GroupBlock  )
+    Comment, Like, Conversation, Message, Notification, Poll, PollOption, Report, GroupJoinRequest, GroupBlock, ConnectionRequest  )
 
 User = get_user_model() 
 
@@ -126,6 +126,49 @@ class CustomRegisterSerializer(RegisterSerializer):
         For now, we just pass.
         """
         pass
+
+class ConnectionRequestCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for creating (sending) a ConnectionRequest.
+    The `sender` is set automatically from the request user in the view.
+    """
+    class Meta:
+        model = ConnectionRequest
+        # 'receiver' is the only field we expect from the client.
+        fields = ['id', 'receiver', 'status', 'created_at']
+        read_only_fields = ['id', 'status', 'created_at']
+
+    def validate(self, data):
+        """
+        Custom validation to prevent self-requests and duplicate requests.
+        """
+        sender = self.context['request'].user
+        receiver = data.get('receiver')
+
+        if sender == receiver:
+            raise serializers.ValidationError("You cannot send a connection request to yourself.")
+        
+        # Check if a request (in either direction) already exists
+        if ConnectionRequest.objects.filter(sender=sender, receiver=receiver).exists() or \
+           ConnectionRequest.objects.filter(sender=receiver, receiver=sender).exists():
+            raise serializers.ValidationError("A connection request already exists between you and this user.")
+
+        return data
+    
+
+class ConnectionRequestListSerializer(serializers.ModelSerializer):
+    """
+    Serializer for listing received connection requests.
+    Includes nested data for the sender.
+    """
+    # We want to show the full details of the person who sent the request,
+    # so we use our existing UserSerializer here.
+    sender = UserSerializer(read_only=True)
+
+    class Meta:
+        model = ConnectionRequest
+        # We display the sender's info, which is more useful than just their ID.
+        fields = ['id', 'sender', 'status', 'created_at']
 
 class ReportSerializer(serializers.ModelSerializer):
     """

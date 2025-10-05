@@ -71,6 +71,44 @@ class Follow(models.Model):
         follower_username = self.follower.username if self.follower else 'Unknown'
         following_username = self.following.username if self.following else 'Unknown'
         return f"{follower_username} follows {following_username}"
+    
+
+class ConnectionRequest(models.Model):
+    """
+    Represents a request from one user to connect with another.
+    This model manages the lifecycle of a connection invitation.
+    """
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('accepted', 'Accepted'),
+        ('rejected', 'Rejected'),
+    ]
+
+    sender = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='sent_connection_requests'
+    )
+    receiver = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='received_connection_requests'
+    )
+    status = models.CharField(
+        max_length=10,
+        choices=STATUS_CHOICES,
+        default='pending'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # Ensures a user can only send one request to another user.
+        unique_together = ('sender', 'receiver')
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.sender.username} -> {self.receiver.username} ({self.status})"
+    
 
 class StatusPost(models.Model):
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='status_posts')
