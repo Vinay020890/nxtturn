@@ -134,3 +134,103 @@ def test_user_can_reject_connection_request(user_factory, api_client_factory):
 
     # 2. Assert that NO mutual follow was created
     assert not Follow.objects.filter(follower=user_b, following=user_a).exists()
+
+# Add this entire new class at the end of test_connections_api.py
+
+@pytest.mark.django_db
+class TestRelationshipStatusAPI:
+    """
+    Test suite for the GET /api/users/{username}/relationship/ endpoint.
+    """
+    def test_no_relationship(self, user_factory, api_client_factory):
+        user_a = user_factory()
+        user_b = user_factory()
+        client = api_client_factory(user=user_a)
+        
+        url = reverse('community:user-relationship', kwargs={'username': user_b.username})
+        response = client.get(url)
+        
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {
+            "follow_status": "not_following",
+            "connection_status": "not_connected"
+        }
+
+    def test_user_a_follows_user_b(self, user_factory, api_client_factory):
+        user_a = user_factory()
+        user_b = user_factory()
+        Follow.objects.create(follower=user_a, following=user_b)
+        client = api_client_factory(user=user_a)
+
+        url = reverse('community:user-relationship', kwargs={'username': user_b.username})
+        response = client.get(url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {
+            "follow_status": "following",
+            "connection_status": "not_connected"
+        }
+
+    def test_user_b_follows_user_a(self, user_factory, api_client_factory):
+        user_a = user_factory()
+        user_b = user_factory()
+        Follow.objects.create(follower=user_b, following=user_a)
+        client = api_client_factory(user=user_a)
+
+        url = reverse('community:user-relationship', kwargs={'username': user_b.username})
+        response = client.get(url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {
+            "follow_status": "followed_by",
+            "connection_status": "not_connected"
+        }
+
+    def test_request_sent_from_a_to_b(self, user_factory, api_client_factory):
+        user_a = user_factory()
+        user_b = user_factory()
+        ConnectionRequest.objects.create(sender=user_a, receiver=user_b, status='pending')
+        client = api_client_factory(user=user_a)
+
+        url = reverse('community:user-relationship', kwargs={'username': user_b.username})
+        response = client.get(url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {
+            "follow_status": "not_following",
+            "connection_status": "request_sent"
+        }
+        
+    def test_request_received_by_a_from_b(self, user_factory, api_client_factory):
+        user_a = user_factory()
+        user_b = user_factory()
+        ConnectionRequest.objects.create(sender=user_b, receiver=user_a, status='pending')
+        client = api_client_factory(user=user_a)
+
+        url = reverse('community:user-relationship', kwargs={'username': user_b.username})
+        response = client.get(url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {
+            "follow_status": "not_following",
+            "connection_status": "request_received"
+        }
+
+    def test_users_are_connected(self, user_factory, api_client_factory):
+        user_a = user_factory()
+        user_b = user_factory()
+        # A connection implies mutual follows
+        Follow.objects.create(follower=user_a, following=user_b)
+        Follow.objects.create(follower=user_b, following=user_a)
+        # And an accepted request
+        ConnectionRequest.objects.create(sender=user_a, receiver=user_b, status='accepted')
+        client = api_client_factory(user=user_a)
+
+        url = reverse('community:user-relationship', kwargs={'username': user_b.username})
+        response = client.get(url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {
+            "follow_status": "following", # Because A follows B
+            "connection_status": "connected"
+        }

@@ -203,6 +203,52 @@ class ConnectionRequestViewSet(mixins.CreateModelMixin,
         connection_request.save()
 
         return Response({'status': 'Connection request rejected.'}, status=status.HTTP_200_OK)
+    
+
+class UserRelationshipView(APIView):
+    """
+    Provides the relationship status between the authenticated user
+    and a target user.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, username, format=None):
+        target_user = get_object_or_404(User, username=username)
+        current_user = request.user
+
+        if target_user == current_user:
+            return Response({
+                "follow_status": "self",
+                "connection_status": "self"
+            })
+
+        follow_status = "not_following"
+        connection_status = "not_connected"
+
+        is_following = Follow.objects.filter(follower=current_user, following=target_user).exists()
+        is_followed_by = Follow.objects.filter(follower=target_user, following=current_user).exists()
+
+        if is_following:
+            follow_status = "following"
+        elif is_followed_by:
+            follow_status = "followed_by"
+
+        sent_request = ConnectionRequest.objects.filter(sender=current_user, receiver=target_user).first()
+        received_request = ConnectionRequest.objects.filter(sender=target_user, receiver=current_user).first()
+
+        if (sent_request and sent_request.status == 'accepted') or \
+           (received_request and received_request.status == 'accepted'):
+            connection_status = "connected"
+            follow_status = "following"
+        elif sent_request and sent_request.status == 'pending':
+            connection_status = "request_sent"
+        elif received_request and received_request.status == 'pending':
+            connection_status = "request_received"
+            
+        return Response({
+            "follow_status": follow_status,
+            "connection_status": connection_status
+        })
 
 
 # ==================================
