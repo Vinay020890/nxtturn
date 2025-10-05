@@ -249,6 +249,31 @@ class UserRelationshipView(APIView):
             "follow_status": follow_status,
             "connection_status": connection_status
         })
+    
+class AcceptConnectionRequestView(APIView):
+    """
+    A specific view to accept a connection request from a user by their username.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, username, format=None):
+        sender = get_object_or_404(User, username=username)
+        receiver = request.user
+
+        connection_request = get_object_or_404(
+            ConnectionRequest,
+            sender=sender,
+            receiver=receiver,
+            status='pending'
+        )
+
+        with transaction.atomic():
+            connection_request.status = 'accepted'
+            connection_request.save()
+            Follow.objects.get_or_create(follower=sender, following=receiver)
+            Follow.objects.get_or_create(follower=receiver, following=sender)
+
+        return Response({'status': 'Connection request accepted.'}, status=status.HTTP_200_OK)
 
 
 # ==================================

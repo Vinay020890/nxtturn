@@ -20,6 +20,7 @@ urlpatterns = [
     path('users/<str:username>/following/', views.FollowingListView.as_view(), name='following-list'),
     path('users/<str:username>/followers/', views.FollowersListView.as_view(), name='followers-list'),
     path('users/<str:username>/relationship/', views.UserRelationshipView.as_view(), name='user-relationship'),
+    path('users/<str:username>/accept-request/', views.AcceptConnectionRequestView.as_view(), name='user-accept-request'),
     path('search/users/', views.UserSearchAPIView.as_view(), name='user-search'), 
     path('search/content/', views.ContentSearchAPIView.as_view(), name='content-search'),
 

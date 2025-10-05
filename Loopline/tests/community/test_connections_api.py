@@ -234,3 +234,24 @@ class TestRelationshipStatusAPI:
             "follow_status": "following", # Because A follows B
             "connection_status": "connected"
         }
+
+    
+
+def test_user_can_accept_request_via_username_endpoint(user_factory, api_client_factory):
+    """
+    Tests the new helper endpoint POST /api/users/{username}/accept-request/
+    """
+    # Arrange: Create a pending request from sender to receiver
+    sender = user_factory()
+    receiver = user_factory()
+    ConnectionRequest.objects.create(sender=sender, receiver=receiver)
+
+    # Act: Authenticate as the receiver and hit the new endpoint
+    client = api_client_factory(user=receiver)
+    url = reverse('community:user-accept-request', kwargs={'username': sender.username})
+    response = client.post(url)
+
+    # Assert
+    assert response.status_code == status.HTTP_200_OK
+    assert Follow.objects.filter(follower=receiver, following=sender).exists()
+    assert Follow.objects.filter(follower=sender, following=receiver).exists()
