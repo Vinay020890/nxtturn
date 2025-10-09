@@ -102,6 +102,34 @@ class TestSetupAPIView(APIView):
                 # === END: NEW LOGIC BLOCK ===========================================
                 # ====================================================================
 
+                elif action == "create_two_users":
+                    user_a_data = data.get("userA", {})
+                    user_b_data = data.get("userB", {})
+
+                    # --- Create User A ---
+                    user_a, _ = User.objects.get_or_create(
+                        username=user_a_data.get("username"),
+                        defaults={'email': f'{user_a_data.get("username")}@example.com'}
+                    )
+                    user_a.set_password(user_a_data.get("password"))
+                    user_a.save()
+                    create_verified_user(user_a) # Use your helper function
+
+                    # --- Create User B ---
+                    user_b, _ = User.objects.get_or_create(
+                        username=user_b_data.get("username"),
+                        defaults={'email': f'{user_b_data.get("username")}@example.com'}
+                    )
+                    user_b.set_password(user_b_data.get("password"))
+                    user_b.save()
+                    create_verified_user(user_b) # Use your helper function
+
+                    return Response({
+                        "message": "Two users created successfully.",
+                        "user_a_id": user_a.id,
+                        "user_b_id": user_b.id
+                    }, status=status.HTTP_201_CREATED)
+
                 elif action == "create_user_with_posts":
                     username = data.get("username")
                     num_posts = data.get("num_posts", 10)

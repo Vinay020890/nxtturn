@@ -129,31 +129,18 @@ class CustomRegisterSerializer(RegisterSerializer):
 
 class ConnectionRequestCreateSerializer(serializers.ModelSerializer):
     """
-    Serializer for creating (sending) a ConnectionRequest.
-    The `sender` is set automatically from the request user in the view.
+    Serializer for creating a ConnectionRequest.
+    Its only job is to validate that the 'receiver' exists and is not the sender.
     """
     class Meta:
         model = ConnectionRequest
-        # 'receiver' is the only field we expect from the client.
-        fields = ['id', 'receiver', 'status', 'created_at']
-        read_only_fields = ['id', 'status', 'created_at']
-
-    def validate(self, data):
-        """
-        Custom validation to prevent self-requests and duplicate requests.
-        """
+        fields = ['id', 'receiver'] # Only 'receiver' is needed for creation.
+    
+    def validate_receiver(self, value):
         sender = self.context['request'].user
-        receiver = data.get('receiver')
-
-        if sender == receiver:
+        if sender == value:
             raise serializers.ValidationError("You cannot send a connection request to yourself.")
-        
-        # Check if a request (in either direction) already exists
-        if ConnectionRequest.objects.filter(sender=sender, receiver=receiver).exists() or \
-           ConnectionRequest.objects.filter(sender=receiver, receiver=sender).exists():
-            raise serializers.ValidationError("A connection request already exists between you and this user.")
-
-        return data
+        return value
     
 
 class ConnectionRequestListSerializer(serializers.ModelSerializer):

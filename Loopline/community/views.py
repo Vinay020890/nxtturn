@@ -89,20 +89,52 @@ class UserPostListView(generics.ListAPIView):
     def get_serializer_context(self):
         return {'request': self.request}
 
+# --- FIND AND REPLACE THE ENTIRE FollowToggleView CLASS ---
+
+# C:\Users\Vinay\Project\Loopline\community\views.py
+
+# C:\Users\Vinay\Project\Loopline\community\views.py
+
+# --- FINAL, CORRECTED FollowToggleView ---
+
 class FollowToggleView(APIView):
+    authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
+
     def post(self, request, username, format=None):
-        user_to_follow = get_object_or_404(User, username=username)
-        if request.user == user_to_follow:
+        user_to_follow = get_object_or_404(User, username__iexact=username)
+        current_user = request.user
+        if current_user == user_to_follow:
             return Response({"detail": "You cannot follow yourself."}, status=status.HTTP_400_BAD_REQUEST)
-        _, created = Follow.objects.get_or_create(follower=request.user, following=user_to_follow)
-        if not created: return Response({"detail": "You are already following this user."}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({"detail": f"You are now following {username}."}, status=status.HTTP_201_CREATED)
+        
+        with transaction.atomic():
+            _, created = Follow.objects.get_or_create(follower=current_user, following=user_to_follow)
+            if not created: return Response({"detail": "You are already following this user."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            try:
+                pending_request = ConnectionRequest.objects.get(sender=user_to_follow, receiver=current_user, status='pending')
+                pending_request.status = 'accepted'
+                pending_request.save()
+                Follow.objects.get_or_create(follower=user_to_follow, following=current_user)
+            except ConnectionRequest.DoesNotExist: pass
+        
+        return Response({"status": "following"}, status=status.HTTP_201_CREATED)
+
     def delete(self, request, username, format=None):
-        user_to_unfollow = get_object_or_404(User, username=username)
-        deleted_count, _ = Follow.objects.filter(follower=request.user, following=user_to_unfollow).delete()
-        if deleted_count == 0: return Response({"detail": "You were not following this user."}, status=status.HTTP_404_NOT_FOUND)
+        user_to_unfollow = get_object_or_404(User, username__iexact=username)
+        current_user = request.user
+        
+        with transaction.atomic():
+            deleted_count, _ = Follow.objects.filter(follower=current_user, following=user_to_unfollow).delete()
+            if deleted_count == 0: return Response({"detail": "You were not following this user."}, status=status.HTTP_404_NOT_FOUND)
+            
+            ConnectionRequest.objects.filter(
+                (Q(sender=current_user, receiver=user_to_unfollow) | Q(sender=user_to_unfollow, receiver=current_user)),
+                status='accepted'
+            ).update(status='rejected')
+
         return Response(status=status.HTTP_204_NO_CONTENT)
+    
 
 class FollowingListView(generics.ListAPIView):
     serializer_class = UserSerializer
@@ -123,28 +155,28 @@ class FollowersListView(generics.ListAPIView):
 # ==================================
 # Connection Request Views
 # ==================================
-class ConnectionRequestViewSet(mixins.CreateModelMixin,
-                                 mixins.ListModelMixin, # <-- 1. ADD THIS MIXIN
+# C:\Users\Vinay\Project\Loopline\community\views.py
+
+# --- REPLACE THE ENTIRE ConnectionRequestViewSet ---
+class ConnectionRequestViewSet(mixins.ListModelMixin, # We no longer use CreateModelMixin
                                  viewsets.GenericViewSet):
     """
-    ViewSet for sending (create) and listing (list) Connection Requests.
+    ViewSet for sending (create) and listing (list) and managing Connection Requests.
     """
     permission_classes = [IsAuthenticated]
     
-    # --- 2. ADD A NEW SERIALIZER CLASS FOR LISTING ---
-    # We will create this serializer in the next step.
-    serializer_class = ConnectionRequestListSerializer 
-
     def get_queryset(self):
         """
-        --- 3. THIS IS THE CORE LOGIC ---
-        This view should only return the connection requests
-        received by the currently authenticated user.
+        For 'list' action, returns pending requests received by the user.
+        For 'detail' actions (accept/reject), returns the specific request.
         """
-        return ConnectionRequest.objects.filter(
-            receiver=self.request.user, 
-            status='pending'
-        ).select_related('sender__profile') # Eager load sender's data
+        if self.action == 'list':
+            return ConnectionRequest.objects.filter(
+                receiver=self.request.user, 
+                status='pending'
+            ).select_related('sender__profile')
+        # For detail routes like accept/reject, get_object will handle lookup
+        return ConnectionRequest.objects.all()
 
     def get_serializer_class(self):
         """
@@ -152,33 +184,50 @@ class ConnectionRequestViewSet(mixins.CreateModelMixin,
         """
         if self.action == 'create':
             return ConnectionRequestCreateSerializer
-        return ConnectionRequestListSerializer # Default for 'list'
+        return ConnectionRequestListSerializer
 
-    def perform_create(self, serializer):
-        """Inject the authenticated user as the sender of the request."""
-        serializer.save(sender=self.request.user)
+    def create(self, request, *args, **kwargs):
+        """
+        Custom logic to create or re-activate a connection request.
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        receiver = serializer.validated_data['receiver']
+        sender = request.user
+
+        # Find any existing request between these two users, regardless of direction
+        existing_request = ConnectionRequest.objects.filter(
+            (Q(sender=sender, receiver=receiver) | Q(sender=receiver, receiver=sender))
+        ).first()
+
+        if existing_request:
+            if existing_request.status == 'pending':
+                return Response({"detail": "A pending connection request already exists."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            if existing_request.status == 'accepted':
+                return Response({"detail": "You are already connected with this user."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # If a request was previously rejected, allow a new one by "resetting" it.
+            if existing_request.status == 'rejected':
+                existing_request.sender = sender
+                existing_request.receiver = receiver
+                existing_request.status = 'pending'
+                existing_request.save()
+                return_serializer = ConnectionRequestListSerializer(existing_request, context={'request': request})
+                return Response(return_serializer.data, status=status.HTTP_200_OK)
+    
+        # If no request exists at all, create a new one.
+        connection_request = ConnectionRequest.objects.create(sender=sender, receiver=receiver)
+        return_serializer = ConnectionRequestListSerializer(connection_request, context={'request': request})
+        return Response(return_serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'])
     def accept(self, request, pk=None):
-        """
-        Accepts a connection request.
-        """
-        connection_request = self.get_object()
-
-        # Security check: Ensure the user accepting is the receiver of the request
-        if connection_request.receiver != request.user:
-            return Response(
-                {'detail': 'You do not have permission to perform this action.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-
-        # Use a transaction to ensure both Follows are created or neither is.
+        connection_request = get_object_or_404(ConnectionRequest, pk=pk, receiver=request.user, status='pending')
+        
         with transaction.atomic():
-            # Update the request status
             connection_request.status = 'accepted'
             connection_request.save()
-
-            # Create the mutual follow relationship
             Follow.objects.get_or_create(follower=connection_request.sender, following=connection_request.receiver)
             Follow.objects.get_or_create(follower=connection_request.receiver, following=connection_request.sender)
 
@@ -186,64 +235,57 @@ class ConnectionRequestViewSet(mixins.CreateModelMixin,
     
     @action(detail=True, methods=['post'])
     def reject(self, request, pk=None):
-        """
-        Rejects a connection request.
-        """
-        connection_request = self.get_object()
-
-        # Security check: Ensure the user rejecting is the receiver of the request
-        if connection_request.receiver != request.user:
-            return Response(
-                {'detail': 'You do not have permission to perform this action.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
+        connection_request = get_object_or_404(ConnectionRequest, pk=pk, receiver=request.user, status='pending')
         
-        # Simply update the status to 'rejected'
         connection_request.status = 'rejected'
         connection_request.save()
 
         return Response({'status': 'Connection request rejected.'}, status=status.HTTP_200_OK)
     
 
+# C:\Users\Vinay\Project\Loopline\community\views.py
+
 class UserRelationshipView(APIView):
     """
     Provides the relationship status between the authenticated user
-    and a target user.
+    and a target user, following the "Connection-First" logic.
     """
     permission_classes = [IsAuthenticated]
+    authentication_classes = [TokenAuthentication]
 
     def get(self, request, username, format=None):
         target_user = get_object_or_404(User, username=username)
         current_user = request.user
 
         if target_user == current_user:
-            return Response({
-                "follow_status": "self",
-                "connection_status": "self"
-            })
+            return Response({ "follow_status": "self", "connection_status": "self" })
 
-        follow_status = "not_following"
-        connection_status = "not_connected"
+        # --- FINAL, CORRECT "CONNECTION-FIRST" LOGIC ---
 
+        # 1. Establish the ground truth of the follow relationship.
         is_following = Follow.objects.filter(follower=current_user, following=target_user).exists()
         is_followed_by = Follow.objects.filter(follower=target_user, following=current_user).exists()
 
+        # 2. Determine the initial connection_status from the ConnectionRequest table.
+        connection_status = "not_connected"
+        sent_request = ConnectionRequest.objects.filter(sender=current_user, receiver=target_user, status='pending').exists()
+        received_request = ConnectionRequest.objects.filter(sender=target_user, receiver=current_user, status='pending').exists()
+        
+        # A connection is defined by mutual following, initiated by an accepted request.
+        # We check for the outcome (mutual follow) rather than the request status itself for robustness.
+        if is_following and is_followed_by:
+            connection_status = "connected"
+        elif sent_request:
+            connection_status = "request_sent"
+        elif received_request:
+            connection_status = "request_received"
+
+        # 3. Determine the follow_status based on the ground truth.
+        follow_status = "not_following"
         if is_following:
             follow_status = "following"
         elif is_followed_by:
             follow_status = "followed_by"
-
-        sent_request = ConnectionRequest.objects.filter(sender=current_user, receiver=target_user).first()
-        received_request = ConnectionRequest.objects.filter(sender=target_user, receiver=current_user).first()
-
-        if (sent_request and sent_request.status == 'accepted') or \
-           (received_request and received_request.status == 'accepted'):
-            connection_status = "connected"
-            follow_status = "following"
-        elif sent_request and sent_request.status == 'pending':
-            connection_status = "request_sent"
-        elif received_request and received_request.status == 'pending':
-            connection_status = "request_received"
             
         return Response({
             "follow_status": follow_status,
@@ -251,21 +293,13 @@ class UserRelationshipView(APIView):
         })
     
 class AcceptConnectionRequestView(APIView):
-    """
-    A specific view to accept a connection request from a user by their username.
-    """
     permission_classes = [IsAuthenticated]
+    authentication_classes = [TokenAuthentication]
 
     def post(self, request, username, format=None):
-        sender = get_object_or_404(User, username=username)
+        sender = get_object_or_404(User, username__iexact=username)
         receiver = request.user
-
-        connection_request = get_object_or_404(
-            ConnectionRequest,
-            sender=sender,
-            receiver=receiver,
-            status='pending'
-        )
+        connection_request = get_object_or_404(ConnectionRequest, sender=sender, receiver=receiver, status='pending')
 
         with transaction.atomic():
             connection_request.status = 'accepted'

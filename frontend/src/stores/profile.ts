@@ -1,6 +1,5 @@
 // C:\Users\Vinay\Project\frontend\src\stores\profile.ts
-// --- ADDED REAL-TIME POST DELETION LOGIC ---
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import axiosInstance from '@/services/axiosInstance'
 import { useAuthStore, type User } from '@/stores/auth'
@@ -12,7 +11,6 @@ export type ProfileUpdatePayload = {
   location_state?: string
   skills?: string[]
   interests?: string[]
-  // Add other editable fields here as you implement them
 }
 
 export interface UserProfile {
@@ -56,15 +54,11 @@ export const useProfileStore = defineStore('profile', () => {
   const isLoadingPosts = ref(false)
   const errorProfile = ref<string | null>(null)
   const errorPosts = ref<string | null>(null)
-  const isFollowing = ref(false)
+  const isFollowing = ref(false) // DEPRECATED but kept for now to avoid breaking other parts
   const isLoadingFollow = ref(false)
-
   const relationshipStatus = ref<RelationshipStatus | null>(null)
 
-  // [GHOST POST FIX] New action to handle deletion signal
   function handlePostDeletedSignal(postId: number) {
-    console.log(`ProfileStore: Received signal to delete post ID ${postId}`)
-    // Iterate over all cached username feeds and remove the ID if it exists.
     for (const username in postIdsByUsername.value) {
       postIdsByUsername.value[username] = postIdsByUsername.value[username].filter(
         (id) => id !== postId,
@@ -75,7 +69,6 @@ export const useProfileStore = defineStore('profile', () => {
   async function fetchProfile(username: string) {
     if (profilesByUsername.value[username]) {
       currentProfile.value = profilesByUsername.value[username]
-      isFollowing.value = currentProfile.value.is_followed_by_request_user
       return
     }
     isLoadingProfile.value = true
@@ -85,7 +78,6 @@ export const useProfileStore = defineStore('profile', () => {
       const profile = response.data
       profilesByUsername.value[username] = profile
       currentProfile.value = profile
-      isFollowing.value = profile.is_followed_by_request_user
     } catch (err: any) {
       errorProfile.value = err.response?.data?.detail || `Profile not found for user "${username}".`
     } finally {
@@ -177,25 +169,27 @@ export const useProfileStore = defineStore('profile', () => {
     }
   }
 
+  // --- REPLACEMENT followUser FUNCTION ---
   async function followUser(usernameToFollow: string) {
     if (isLoadingFollow.value) return
     isLoadingFollow.value = true
     try {
       await axiosInstance.post(`/users/${usernameToFollow}/follow/`)
-      if (currentProfile.value) currentProfile.value.is_followed_by_request_user = true
-      isFollowing.value = true
+      // Refetch the definitive state from the server after the action.
+      await fetchRelationshipStatus(usernameToFollow)
     } finally {
       isLoadingFollow.value = false
     }
   }
 
+  // --- REPLACEMENT unfollowUser FUNCTION ---
   async function unfollowUser(usernameToUnfollow: string) {
     if (isLoadingFollow.value) return
     isLoadingFollow.value = true
     try {
       await axiosInstance.delete(`/users/${usernameToUnfollow}/follow/`)
-      if (currentProfile.value) currentProfile.value.is_followed_by_request_user = false
-      isFollowing.value = false
+      // Refetch the definitive state from the server after the action.
+      await fetchRelationshipStatus(usernameToUnfollow)
     } finally {
       isLoadingFollow.value = false
     }
@@ -215,11 +209,9 @@ export const useProfileStore = defineStore('profile', () => {
 
   async function sendConnectRequest(username: string) {
     if (!currentProfile.value) return
-
     try {
       const receiverId = currentProfile.value.user.id
       await axiosInstance.post('/connections/requests/', { receiver: receiverId })
-
       if (relationshipStatus.value) {
         relationshipStatus.value.connection_status = 'request_sent'
       }
@@ -229,13 +221,9 @@ export const useProfileStore = defineStore('profile', () => {
     }
   }
 
-  // --- REPLACE the old acceptConnectRequest function's body WITH THIS ---
   async function acceptConnectRequest(username: string) {
     try {
-      // Call the new, efficient endpoint that doesn't require an ID
       await axiosInstance.post(`/users/${username}/accept-request/`)
-
-      // Optimistically update the UI to the final 'connected' state
       if (relationshipStatus.value) {
         relationshipStatus.value.connection_status = 'connected'
         relationshipStatus.value.follow_status = 'following'
@@ -249,18 +237,13 @@ export const useProfileStore = defineStore('profile', () => {
   async function updateProfile(username: string, payload: ProfileUpdatePayload) {
     try {
       const response = await axiosInstance.patch<UserProfile>(`/profiles/${username}/`, payload)
-
-      // On success, update the local cache with the fresh data from the server.
       const updatedProfile = response.data
       profilesByUsername.value[username] = updatedProfile
-
-      // If the profile being updated is the one currently being viewed, update it.
       if (currentProfile.value?.user.username === username) {
         currentProfile.value = updatedProfile
       }
     } catch (err: any) {
       console.error('Failed to update profile:', err)
-      // Re-throw a user-friendly error message for the component to display.
       throw new Error(
         err.response?.data?.detail || 'An unexpected error occurred while updating the profile.',
       )
@@ -269,23 +252,17 @@ export const useProfileStore = defineStore('profile', () => {
 
   async function removeProfilePicture(username: string) {
     try {
-      // Send the PATCH request with `picture: null` to signal deletion.
       const response = await axiosInstance.patch<UserProfile>(`/profiles/${username}/`, {
         picture: null,
       })
-
-      // On success, update all local state for instant UI feedback.
       const updatedProfile = response.data
       profilesByUsername.value[username] = updatedProfile
-
       if (currentProfile.value?.user.username === username) {
         currentProfile.value = updatedProfile
       }
       if (authStore.currentUser?.username === username) {
-        authStore.updateCurrentUserPicture(null) // Update the navbar avatar
+        authStore.updateCurrentUserPicture(null)
       }
-
-      // Update the author's picture across all their posts in the postsStore
       const authorUpdates: Partial<PostAuthor> = { picture: null }
       const allPosts = Object.values(postsStore.posts)
       const postsToUpdate = allPosts.filter((p) => p.author.id === updatedProfile.user.id)
@@ -336,7 +313,7 @@ export const useProfileStore = defineStore('profile', () => {
     followUser,
     unfollowUser,
     addPostToProfileFeed,
-    handlePostDeletedSignal, // [GHOST POST FIX] Expose the new action
+    handlePostDeletedSignal,
     updateProfile,
     removeProfilePicture,
     $reset,
