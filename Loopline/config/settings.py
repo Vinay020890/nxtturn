@@ -14,19 +14,16 @@ DEBUG = not IS_PRODUCTION
 if not IS_PRODUCTION and not SECRET_KEY:
     SECRET_KEY = 'a-dummy-secret-key-for-local-development-only-do-not-use-in-prod'
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.1.8']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.31.35']
 if IS_PRODUCTION:
     pass
 else:
     ALLOWED_HOSTS.extend([
         '*',
-        '192.168.1.8',
+        '192.168.31.35',
     ])
 
-# --- ADD THE NEW FRONTEND_URL SETTING HERE ---
-# The URL of our Vue.js frontend, used in email templates and other backend logic
-FRONTEND_URL = os.getenv('FRONTEND_URL', '192.168.1.8:5173')
-# ---------------------------------------------
+FRONTEND_URL = os.getenv('FRONTEND_URL', '192.168.31.35:5173')
 
 INSTALLED_APPS = [
     'channels',
@@ -152,11 +149,8 @@ REST_AUTH = {
     'SESSION_LOGIN': False,
     'USER_DETAILS_SERIALIZER': 'community.serializers.UserSerializer',
     'REGISTER_SERIALIZER': 'community.serializers.CustomRegisterSerializer',
-
     'LOGIN_SERIALIZER': 'community.serializers.CustomLoginSerializer',
-
     'PASSWORD_RESET_CONFIRM_SERIALIZER': 'community.serializers.CustomPasswordResetConfirmSerializer',
-    
     'SIGNUP_FIELDS': {
         'username': {'required': True},
         'email': {'required': True},
@@ -169,14 +163,18 @@ if IS_PRODUCTION:
         [origin.strip() for origin in os.getenv('CORS_PROD_WHITELIST', '').split(',') if origin.strip()]
     )
 else:
+    # --- THIS IS THE FIX ---
+    # Temporarily hardcode the IP address to bypass the unreliable environment variable.
     CORS_ALLOWED_ORIGINS = [
         'http://localhost:5173',
         'http://127.0.0.1:5173',
-        f"http://{os.getenv('FRONTEND_IP', '192.168.1.8')}:5173"
+        'http://192.168.31.35:5173'
     ]
 
 CSRF_TRUSTED_ORIGINS = [
-    f"http://{os.getenv('FRONTEND_IP', '192.168.1.8')}:5173",
+    # Also hardcode the new IP here to be safe
+    'http://192.168.31.35:5173',
+    'http://localhost:5173', # Good to have for local-only work
 ]
 
 CHANNEL_LAYERS = {
