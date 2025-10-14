@@ -13,6 +13,18 @@ import { useGroupStore } from '@/stores/group';
 import { usePostsStore, type Post } from '@/stores/posts';
 import eventBus from '@/services/eventBus';
 
+// --- Icon Imports for new dropdown ---
+import {
+  Cog6ToothIcon,
+  QuestionMarkCircleIcon,
+  EyeIcon,
+  ChatBubbleLeftRightIcon,
+  MoonIcon,
+  ArrowLeftOnRectangleIcon,
+  ChevronDownIcon,
+} from '@heroicons/vue/24/outline';
+
+
 const authStore = useAuthStore();
 const notificationStore = useNotificationStore();
 const searchStore = useSearchStore();
@@ -36,6 +48,11 @@ const searchQuery = ref('');
 const showSearchDropdown = ref(false);
 const searchContainerRef = ref<HTMLDivElement | null>(null);
 
+// --- State for the new Profile Dropdown ---
+const isProfileMenuOpen = ref(false);
+const profileMenuRef = ref<HTMLDivElement | null>(null);
+
+
 const hasAnyResults = computed(() => userResults.value.length > 0 || postResults.value.length > 0 || groupResults.value.length > 0);
 const isSearching = computed(() => isLoadingUsers.value || isLoadingPosts.value || isLoadingGroupSearch.value);
 
@@ -46,16 +63,16 @@ function handleLogoClick(event: MouseEvent) {
   }
 }
 
-// --- NEW FUNCTION for Profile Link ---
+// --- Modified to be used within the dropdown AND on the avatar link ---
 function handleProfileClick(event: MouseEvent) {
   // Only scrolls to top if on your own profile page
   if (route.name === 'profile' && route.params.username === currentUser.value?.username) {
     event.preventDefault();
     eventBus.emit('scroll-profile-to-top');
   }
+  isProfileMenuOpen.value = false; // Always close menu on navigation
 }
 
-// --- NEW FUNCTION for Notifications Link ---
 function handleNotificationsClick(event: MouseEvent) {
   if (route.name === 'notifications') {
     event.preventDefault();
@@ -114,18 +131,38 @@ const closeSearchDropdownOnClickOutside = (event: MouseEvent) => {
   }
 };
 
+// --- NEW FUNCTION: Close Profile Menu on Click Outside ---
+const closeProfileMenuOnClickOutside = (event: MouseEvent) => {
+  if (profileMenuRef.value && !profileMenuRef.value.contains(event.target as Node)) {
+    isProfileMenuOpen.value = false;
+  }
+};
+
 watch(showSearchDropdown, (isOpen) => {
   if (isOpen) document.addEventListener('click', closeSearchDropdownOnClickOutside);
   else document.removeEventListener('click', closeSearchDropdownOnClickOutside);
 });
 
-onUnmounted(() => document.removeEventListener('click', closeSearchDropdownOnClickOutside));
+// --- NEW WATCHER for Profile Menu ---
+watch(isProfileMenuOpen, (isOpen) => {
+  if (isOpen) document.addEventListener('click', closeProfileMenuOnClickOutside);
+  else document.removeEventListener('click', closeProfileMenuOnClickOutside);
+});
+
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeSearchDropdownOnClickOutside);
+  document.removeEventListener('click', closeProfileMenuOnClickOutside); // Cleanup
+});
+
 
 onMounted(() => {
   authStore.initializeAuth();
 });
 
-const handleLogout = async () => { await authStore.logout(); };
+const handleLogout = async () => {
+  await authStore.logout();
+};
 </script>
 
 <template>
@@ -139,6 +176,7 @@ const handleLogout = async () => { await authStore.logout(); };
           </RouterLink>
         </div>
         <div class="flex-grow flex justify-center px-4" ref="searchContainerRef">
+          <!-- Search form and dropdown... UNCHANGED -->
           <div class="relative w-full max-w-lg">
             <form @submit.prevent="handleFullSearchSubmit" v-if="authStore.isAuthenticated">
               <input data-cy="global-search-input" type="text" v-model="searchQuery" @input="handleSearchInput"
@@ -206,8 +244,10 @@ const handleLogout = async () => { await authStore.logout(); };
             </div>
           </div>
         </div>
+
+        <!-- =========== MODIFIED AREA START =========== -->
         <div class="flex items-center gap-4 flex-shrink-0">
-          <template v-if="authStore.isAuthenticated">
+          <template v-if="authStore.isAuthenticated && currentUser">
             <RouterLink :to="{ name: 'explore' }" class="text-sm font-medium text-gray-600 hover:text-indigo-500"
               active-class="text-indigo-600 font-semibold">Explore</RouterLink>
             <a href="#" class="text-sm font-medium text-gray-600 hover:text-indigo-500">Jobs</a>
@@ -223,22 +263,96 @@ const handleLogout = async () => { await authStore.logout(); };
                 {{ unreadCount > 9 ? '9+' : unreadCount }}
               </span>
             </RouterLink>
-            <RouterLink v-if="currentUser" :to="{ name: 'profile', params: { username: currentUser.username } }"
-              @click="handleProfileClick"
-              class="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-blue-500"
-              data-cy="profile-link">
-              <img :src="getAvatarUrl(currentUser.picture, currentUser.first_name, currentUser.last_name)"
-                alt="Your avatar" class="w-7 h-7 rounded-full object-cover">
-              <span>Profile</span>
-            </RouterLink>
-            <button @click="handleLogout"
-              class="text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-full transition"
-              data-cy="logout-button">Logout</button>
+
+            <!-- New Profile Dropdown -->
+            <div class="relative" ref="profileMenuRef">
+              <!-- MODIFIED: Split into two elements -->
+              <div class="flex items-center">
+                <RouterLink :to="{ name: 'profile', params: { username: currentUser.username } }"
+                  @click="handleProfileClick" data-cy="profile-link"
+                  class="rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                  <span class="sr-only">View your profile</span>
+                  <img :src="getAvatarUrl(currentUser.picture, currentUser.first_name, currentUser.last_name)"
+                    alt="Your avatar" class="h-8 w-8 rounded-full object-cover">
+                </RouterLink>
+
+                <button @click="isProfileMenuOpen = !isProfileMenuOpen" type="button" data-cy="profile-menu-button"
+                  class="ml-1 p-1 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <span class="sr-only">Open user menu</span>
+                  <ChevronDownIcon class="h-5 w-5 text-gray-500 hover:text-gray-700" />
+                </button>
+              </div>
+
+              <transition enter-active-class="transition ease-out duration-100"
+                enter-from-class="transform opacity-0 scale-95" enter-to-class="transform opacity-100 scale-100"
+                leave-active-class="transition ease-in duration-75" leave-from-class="transform opacity-100 scale-100"
+                leave-to-class="transform opacity-0 scale-95">
+                <div v-if="isProfileMenuOpen"
+                  class="absolute right-0 z-10 mt-2 w-72 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+                  <!-- User Info Header -->
+                  <div class="px-4 py-3 border-b border-gray-200">
+                    <!-- Note: The profile link is now also on the avatar itself -->
+                    <div class="flex items-center gap-3">
+                      <img :src="getAvatarUrl(currentUser.picture, currentUser.first_name, currentUser.last_name)"
+                        alt="Your avatar" class="h-10 w-10 rounded-full object-cover">
+                      <div>
+                        <p class="text-sm font-medium text-gray-800">{{ currentUser.first_name }} {{
+                          currentUser.last_name }}</p>
+                        <p class="text-sm text-gray-500">Premium Member</p> <!-- Placeholder -->
+                      </div>
+                    </div>
+                  </div>
+                  <!-- Menu Items -->
+                  <div class="py-1">
+                    <a href="#" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                      <Cog6ToothIcon class="h-5 w-5 text-gray-500" />
+                      <span>Settings & Privacy</span>
+                    </a>
+                    <a href="#" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                      <QuestionMarkCircleIcon class="h-5 w-5 text-gray-500" />
+                      <span>Help & Support</span>
+                    </a>
+                    <a href="#" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                      <EyeIcon class="h-5 w-5 text-gray-500" />
+                      <span>Display & Accessibility</span>
+                    </a>
+                    <a href="#" class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                      <ChatBubbleLeftRightIcon class="h-5 w-5 text-gray-500" />
+                      <span>Give Feedback</span>
+                    </a>
+                  </div>
+                  <!-- Dark Mode -->
+                  <div class="py-1 border-t border-gray-200">
+                    <div class="flex items-center justify-between px-4 py-2 text-sm text-gray-700">
+                      <div class="flex items-center gap-3">
+                        <MoonIcon class="h-5 w-5 text-gray-500" />
+                        <span>Dark Mode</span>
+                      </div>
+                      <button type="button"
+                        class="bg-gray-200 relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                        role="switch" aria-checked="false">
+                        <span
+                          class="pointer-events-none relative inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-0"></span>
+                      </button>
+                    </div>
+                  </div>
+                  <!-- Logout -->
+                  <div class="py-1 border-t border-gray-200">
+                    <button @click="handleLogout" data-cy="logout-button"
+                      class="w-full text-left flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-gray-100">
+                      <ArrowLeftOnRectangleIcon class="h-5 w-5" />
+                      <span>Log Out</span>
+                    </button>
+                  </div>
+                </div>
+              </transition>
+            </div>
           </template>
           <template v-else>
             <RouterLink to="/login" class="text-sm font-medium text-gray-600 hover:text-indigo-500">Login</RouterLink>
           </template>
         </div>
+        <!-- =========== MODIFIED AREA END =========== -->
       </div>
     </nav>
   </header>

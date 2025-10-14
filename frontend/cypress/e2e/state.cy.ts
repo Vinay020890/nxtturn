@@ -1,92 +1,78 @@
 // C:\Users\Vinay\Project\frontend\cypress\e2e\state.cy.ts
+// REFACTORED AND COMPLETE
 
 describe('Application State Management', () => {
   it('should purge all store data on logout to prevent stale state', () => {
-    // --- SETUP: Create two isolated users for this test ---
-    const userWithPosts = { username: `user_with_posts_${Date.now()}`, password: 'password123' };
-    const userWithEmptyFeed = { username: `empty_feed_user_${Date.now()}`, password: 'password123' };
-    cy.testSetup('create_user', userWithPosts);
-    cy.testSetup('create_user', userWithEmptyFeed);
+    const userWithPosts = { username: `user_with_posts_${Date.now()}`, password: 'password123' }
+    const userWithEmptyFeed = { username: `empty_feed_user_${Date.now()}`, password: 'password123' }
+    cy.testSetup('create_user', userWithPosts)
+    cy.testSetup('create_user', userWithEmptyFeed)
+    cy.testSetup('create_post', {
+      username: userWithPosts.username,
+      content: 'This post exists to test the cache.',
+    })
 
-    // Also create a post for the first user
-    cy.testSetup('create_post', { username: userWithPosts.username, content: 'This post exists to test the cache.' });
+    // Part 1: Login as the user who HAS posts
+    cy.login(userWithPosts.username, userWithPosts.password)
+    cy.get('[data-cy="post-container"]').should('exist')
 
-    // --- Part 1: Login as the user who HAS posts ---
-    cy.visit('/login');
-    cy.get('input[id="username"]').type(userWithPosts.username);
-    cy.get('input[id="password"]').type(userWithPosts.password);
-    cy.get('button[type="submit"]').click();
-    cy.url().should('not.include', '/login');
-    // Verify their post is loaded as a baseline check
-    cy.get('[data-cy="post-container"]').should('exist'); 
+    // Part 2: Logout programmatically
+    cy.logout()
+    cy.visit('/') // Visit a page to confirm logout
+    cy.url().should('include', '/login')
 
-    // --- Part 2: Logout ---
-    cy.get('[data-cy="logout-button"]').click();
-    cy.url().should('include', '/login');
-
-    // --- Part 3: Login as the user with an EMPTY feed and verify state was cleared ---
-    cy.get('input[id="username"]').type(userWithEmptyFeed.username);
-    cy.get('input[id="password"]').type(userWithEmptyFeed.password);
-    cy.get('button[type="submit"]').click();
-    cy.url().should('not.include', '/login');
-
-    // Wait for the API call to complete before asserting
-    cy.intercept('GET', '**/api/feed/').as('getFeed');
-    cy.visit('/');
-    cy.wait('@getFeed');
+    // Part 3: Login as the user with an EMPTY feed and verify state was cleared
+    cy.login(userWithEmptyFeed.username, userWithEmptyFeed.password)
 
     // The final, definitive assertion: the first user's post should NOT be present
-    cy.get('[data-cy="post-container"]').should('not.exist');
-    cy.get('[data-cy="empty-feed-message"]').should('be.visible');
-  });
+    cy.get('[data-cy="post-container"]').should('not.exist')
+    cy.get('[data-cy="empty-feed-message"]').should('be.visible')
+  })
 
   it('should reflect a new post on the main feed and profile page instantly', () => {
-    const testUser = { username: `reactive_${Date.now()}`, password: 'password123' };
-    cy.testSetup('create_user', testUser);
-    cy.login(testUser.username, testUser.password);
-    cy.visit('/');
+    const testUser = { username: `reactive_${Date.now()}`, password: 'password123' }
+    cy.testSetup('create_user', testUser)
+    cy.login(testUser.username, testUser.password)
+    cy.visit('/')
 
-    const postText = `My reactive post at ${Date.now()}`;
-    cy.intercept('GET', '**/api/feed/').as('getFeed');
-    cy.wait('@getFeed');
-    cy.get('[data-cy="create-post-input"]').type(postText);
-    cy.get('[data-cy="create-post-submit-button"]').click();
-    cy.get('[data-cy="post-container"]').contains(postText).should('be.visible');
-    cy.get('[data-cy="profile-link"]').click();
-    cy.get('[data-cy="post-container"]').contains(postText).should('be.visible');
-  });
+    const postText = `My reactive post at ${Date.now()}`
+    cy.intercept('GET', '**/api/feed/').as('getFeed')
+    cy.wait('@getFeed')
+    cy.get('[data-cy="create-post-input"]').type(postText)
+    cy.get('[data-cy="create-post-submit-button"]').click()
+    cy.get('[data-cy="post-container"]').contains(postText).should('be.visible')
+    cy.get('[data-cy="profile-link"]').click()
+    cy.get('[data-cy="post-container"]').contains(postText).should('be.visible')
+  })
 
   it('should display only the correct posts on the main feed', () => {
-    // --- 1. SETUP: Use the new command to create all necessary data ---
-    const mainUser = { username: `main_${Date.now()}`, password: 'password123' };
-    const followedUser = { username: `followed_${Date.now()}`, password: 'password123' };
-    const otherUser = { username: `other_${Date.now()}`, password: 'password123' };
-    cy.testSetup('create_user', mainUser);
-    cy.testSetup('create_user', followedUser);
-    cy.testSetup('create_user', otherUser);
+    const mainUser = { username: `main_${Date.now()}`, password: 'password123' }
+    const followedUser = { username: `followed_${Date.now()}`, password: 'password123' }
+    const otherUser = { username: `other_${Date.now()}`, password: 'password123' }
+    cy.testSetup('create_user', mainUser)
+    cy.testSetup('create_user', followedUser)
+    cy.testSetup('create_user', otherUser)
 
-    const ownPostText = `My own post!`;
-    const followedPostText = `Post from followed user.`;
-    const otherPostText = `Post from other user that should be hidden.`;
+    const ownPostText = `My own post!`
+    const followedPostText = `Post from followed user.`
+    const otherPostText = `Post from other user that should be hidden.`
 
-    cy.testSetup('create_post', { username: mainUser.username, content: ownPostText });
-    cy.testSetup('create_post', { username: followedUser.username, content: followedPostText });
-    cy.testSetup('create_post', { username: otherUser.username, content: otherPostText });
+    cy.testSetup('create_post', { username: mainUser.username, content: ownPostText })
+    cy.testSetup('create_post', { username: followedUser.username, content: followedPostText })
+    cy.testSetup('create_post', { username: otherUser.username, content: otherPostText })
 
-    // --- 2. THE CORE ACTION: Login and follow ---
-    cy.login(mainUser.username, mainUser.password);
+    cy.login(mainUser.username, mainUser.password)
     cy.testSetup('create_follow', {
       follower: mainUser.username,
       following: followedUser.username,
-    });
+    })
 
-    // --- 3. ASSERTIONS: Visit the feed and check the content ---
-    cy.visit('/');
-    cy.intercept('GET', '**/api/feed/').as('getFeed');
-    cy.wait('@getFeed');
+    cy.visit('/')
+    cy.intercept('GET', '**/api/feed/').as('getFeed')
+    cy.wait('@getFeed')
 
-    cy.get('[data-cy="post-container"]').contains(ownPostText).should('be.visible');
-    cy.get('[data-cy="post-container"]').contains(followedPostText).should('be.visible');
-    cy.contains(otherPostText).should('not.exist');
-  });
-});
+    cy.get('[data-cy="post-container"]').contains(ownPostText).should('be.visible')
+    cy.get('[data-cy="post-container"]').contains(followedPostText).should('be.visible')
+    cy.contains(otherPostText).should('not.exist')
+  })
+})

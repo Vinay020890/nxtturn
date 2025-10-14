@@ -14,18 +14,18 @@ DEBUG = not IS_PRODUCTION
 if not IS_PRODUCTION and not SECRET_KEY:
     SECRET_KEY = 'a-dummy-secret-key-for-local-development-only-do-not-use-in-prod'
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.1.18']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.1.8']
 if IS_PRODUCTION:
     pass
 else:
     ALLOWED_HOSTS.extend([
         '*',
-        '192.168.1.18',
+        '192.168.1.8',
     ])
 
 # --- ADD THE NEW FRONTEND_URL SETTING HERE ---
 # The URL of our Vue.js frontend, used in email templates and other backend logic
-FRONTEND_URL = os.getenv('FRONTEND_URL', '192.168.1.18:5173')
+FRONTEND_URL = os.getenv('FRONTEND_URL', '192.168.1.8:5173')
 # ---------------------------------------------
 
 INSTALLED_APPS = [
@@ -172,11 +172,11 @@ else:
     CORS_ALLOWED_ORIGINS = [
         'http://localhost:5173',
         'http://127.0.0.1:5173',
-        f"http://{os.getenv('FRONTEND_IP', '192.168.1.18')}:5173"
+        f"http://{os.getenv('FRONTEND_IP', '192.168.1.8')}:5173"
     ]
 
 CSRF_TRUSTED_ORIGINS = [
-    f"http://{os.getenv('FRONTEND_IP', '192.168.1.18')}:5173",
+    f"http://{os.getenv('FRONTEND_IP', '192.168.1.8')}:5173",
 ]
 
 CHANNEL_LAYERS = {

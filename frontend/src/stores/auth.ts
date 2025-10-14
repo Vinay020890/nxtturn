@@ -17,6 +17,7 @@ export interface User {
   username: string
   first_name: string
   last_name: string
+  email: string // <--- FIX: Added this property
   date_joined: string
   picture: string | null
 }
@@ -140,10 +141,10 @@ export const useAuthStore = defineStore('auth', () => {
   async function initializeAuth() {
     const tokenFromStorage = localStorage.getItem('authToken')
     if (tokenFromStorage && !authToken.value) setToken(tokenFromStorage)
-    
+
     if (authToken.value && !currentUser.value) {
       await fetchUserProfile()
-      
+
       // --- NEW LOGIC ON APP INITIALIZATION IF AUTHENTICATED ---
       if (currentUser.value) {
         notificationService.connect()

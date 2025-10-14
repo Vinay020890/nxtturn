@@ -7,6 +7,7 @@ import { usePostsStore, type Post, type PostAuthor } from '@/stores/posts'
 
 export type ProfileUpdatePayload = {
   bio?: string
+  headline?: string // ADDED
   location_city?: string
   location_state?: string
   skills?: string[]
@@ -16,6 +17,7 @@ export type ProfileUpdatePayload = {
 export interface UserProfile {
   user: User
   bio: string | null
+  headline: string | null // ADDED
   location_city: string | null
   location_state: string | null
   college_name: string | null
@@ -169,26 +171,22 @@ export const useProfileStore = defineStore('profile', () => {
     }
   }
 
-  // --- REPLACEMENT followUser FUNCTION ---
   async function followUser(usernameToFollow: string) {
     if (isLoadingFollow.value) return
     isLoadingFollow.value = true
     try {
       await axiosInstance.post(`/users/${usernameToFollow}/follow/`)
-      // Refetch the definitive state from the server after the action.
       await fetchRelationshipStatus(usernameToFollow)
     } finally {
       isLoadingFollow.value = false
     }
   }
 
-  // --- REPLACEMENT unfollowUser FUNCTION ---
   async function unfollowUser(usernameToUnfollow: string) {
     if (isLoadingFollow.value) return
     isLoadingFollow.value = true
     try {
       await axiosInstance.delete(`/users/${usernameToUnfollow}/follow/`)
-      // Refetch the definitive state from the server after the action.
       await fetchRelationshipStatus(usernameToUnfollow)
     } finally {
       isLoadingFollow.value = false
