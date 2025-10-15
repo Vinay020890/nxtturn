@@ -19,7 +19,7 @@ from rest_framework import serializers
 # Updated model imports to include PostMedia
 from .models import (
     UserProfile, Follow, StatusPost, PostMedia, Group,
-    Comment, Like, Conversation, Message, Notification, Poll, PollOption, Report, GroupJoinRequest, GroupBlock, ConnectionRequest  )
+    Comment, Like, Conversation, Message, Notification, Poll, PollOption, Report, GroupJoinRequest, GroupBlock, ConnectionRequest, Skill, Education, Experience  )
 
 User = get_user_model() 
 
@@ -302,30 +302,89 @@ class NotificationSerializer(serializers.ModelSerializer):
 
         # Return None for 'follow' or if no content is found.
         return None 
+    
+class SkillSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Skill
+        fields = ['id', 'name']
+
+
+class EducationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Education
+        fields = ['id', 'school', 'degree', 'field_of_study', 'start_date', 'end_date', 'description']
+
+
+class ExperienceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Experience
+        fields = ['id', 'title', 'company', 'location', 'start_date', 'end_date', 'is_current', 'description']
 
 class UserProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
-    skills = serializers.ListField(child=serializers.CharField(max_length=100), required=False, allow_null=True)
-    interests = serializers.ListField(child=serializers.CharField(max_length=100), required=False, allow_null=True)
-    is_followed_by_request_user = serializers.SerializerMethodField()
-    picture = serializers.ImageField(read_only=True)
+    
+    # NEW: Nested serializers for our new models. DRF will automatically fetch
+    # the related objects using the `related_name` we defined in models.py.
+    skills = SkillSerializer(many=True, read_only=True)
+    education = EducationSerializer(many=True, read_only=True)
+    experience = ExperienceSerializer(many=True, read_only=True)
+
+    # IMPROVEMENT: A single field that provides the full relationship status,
+    # making the API more efficient by removing the need for a separate call.
+    relationship_status = serializers.SerializerMethodField()
+
     class Meta:
         model = UserProfile
-        fields = ['user', 'bio', 'location_city', 'location_state', 'college_name', 'major', 'graduation_year', 'linkedin_url', 'portfolio_url', 'skills', 'interests', 'picture', 'updated_at', 'is_followed_by_request_user']
-        read_only_fields = ['user', 'updated_at', 'is_followed_by_request_user']
-    def get_is_followed_by_request_user(self, obj):
+        # This is the new, clean list of fields for the profile API response.
+        # It removes the old deprecated fields like college_name, location_city, etc.
+        fields = [
+            'user', 'display_name', 
+            'headline', 'bio', 'location', 'resume', 'linkedin_url', 'portfolio_url', 
+            'picture', 'updated_at', 'relationship_status',
+            'skills', 'education', 'experience', 'interests'
+        ]
+        read_only_fields = fields # The entire profile is read-only through this serializer.
+
+    def get_relationship_status(self, obj):
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
-            return False
-        return Follow.objects.filter(follower=request.user, following=obj.user).exists()
+            return None
+        
+        current_user = request.user
+        target_user = obj.user
 
+        if target_user == current_user:
+            return { "connection_status": "self" }
+
+        is_following = Follow.objects.filter(follower=current_user, following=target_user).exists()
+        is_followed_by = Follow.objects.filter(follower=target_user, following=current_user).exists()
+
+        connection_status = "not_connected"
+        if is_following and is_followed_by:
+            connection_status = "connected"
+        elif ConnectionRequest.objects.filter(sender=current_user, receiver=target_user, status='pending').exists():
+            connection_status = "request_sent"
+        elif ConnectionRequest.objects.filter(sender=target_user, receiver=current_user, status='pending').exists():
+            connection_status = "request_received"
+
+        return { "connection_status": connection_status }
+
+
+# --- REPLACE your existing UserProfileUpdateSerializer with this one ---
 class UserProfileUpdateSerializer(serializers.ModelSerializer):
-    skills = serializers.ListField(child=serializers.CharField(max_length=100), required=False, allow_null=True)
-    interests = serializers.ListField(child=serializers.CharField(max_length=100), required=False, allow_null=True)
     picture = serializers.ImageField(required=False, allow_null=True, use_url=False)
+    resume = serializers.FileField(required=False, allow_null=True, use_url=False)
+    
     class Meta:
         model = UserProfile
-        fields = ['bio', 'location_city', 'location_state', 'college_name', 'major', 'graduation_year', 'linkedin_url', 'picture', 'skills', 'interests']
+        fields = [
+            # --- ADD THE NEW FIELDS HERE ---
+            'display_name',
+            'headline',
+            # --- END OF ADDITION ---
+            'bio', 'location', 'linkedin_url', 'portfolio_url', 
+            'picture', 'resume', 'interests'
+        ]
 
 
 # --- HEAVILY REFACTORED StatusPostSerializer with UPDATE logic ---

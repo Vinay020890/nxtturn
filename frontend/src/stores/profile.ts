@@ -1,46 +1,17 @@
-// C:\Users\Vinay\Project\frontend\src\stores\profile.ts
+// C:\Users\Vinay\Project\frontend\src/stores/profile.ts
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import axiosInstance from '@/services/axiosInstance'
-import { useAuthStore, type User } from '@/stores/auth'
-import { usePostsStore, type Post, type PostAuthor } from '@/stores/posts'
+import { useAuthStore } from '@/stores/auth'
+import { usePostsStore } from '@/stores/posts'
+import type { UserProfile, ProfileUpdatePayload, Post, PostAuthor, Education } from '@/types'
 
-export type ProfileUpdatePayload = {
-  bio?: string
-  headline?: string // ADDED
-  location_city?: string
-  location_state?: string
-  skills?: string[]
-  interests?: string[]
-}
-
-export interface UserProfile {
-  user: User
-  bio: string | null
-  headline: string | null // ADDED
-  location_city: string | null
-  location_state: string | null
-  college_name: string | null
-  major: string | null
-  graduation_year: number | null
-  linkedin_url: string | null
-  portfolio_url: string | null
-  skills: string[]
-  interests: string[]
-  picture: string | null
-  updated_at: string
-  is_followed_by_request_user: boolean
-}
+// --- FILE-SPECIFIC TYPES ---
 interface PaginatedPostsResponse {
   count: number
   next: string | null
   previous: string | null
   results: Post[]
-}
-
-export interface RelationshipStatus {
-  follow_status: 'not_following' | 'following' | 'followed_by' | 'self'
-  connection_status: 'not_connected' | 'request_sent' | 'request_received' | 'connected' | 'self'
 }
 
 export const useProfileStore = defineStore('profile', () => {
@@ -56,9 +27,10 @@ export const useProfileStore = defineStore('profile', () => {
   const isLoadingPosts = ref(false)
   const errorProfile = ref<string | null>(null)
   const errorPosts = ref<string | null>(null)
-  const isFollowing = ref(false) // DEPRECATED but kept for now to avoid breaking other parts
   const isLoadingFollow = ref(false)
-  const relationshipStatus = ref<RelationshipStatus | null>(null)
+
+  // This ref now correctly uses the type from UserProfile
+  const relationshipStatus = ref<UserProfile['relationship_status']>(null)
 
   function handlePostDeletedSignal(postId: number) {
     for (const username in postIdsByUsername.value) {
@@ -69,19 +41,18 @@ export const useProfileStore = defineStore('profile', () => {
   }
 
   async function fetchProfile(username: string) {
-    if (profilesByUsername.value[username]) {
-      currentProfile.value = profilesByUsername.value[username]
-      return
-    }
     isLoadingProfile.value = true
     errorProfile.value = null
     try {
       const response = await axiosInstance.get<UserProfile>(`/profiles/${username}/`)
       const profile = response.data
+
       profilesByUsername.value[username] = profile
       currentProfile.value = profile
+      relationshipStatus.value = profile.relationship_status
     } catch (err: any) {
       errorProfile.value = err.response?.data?.detail || `Profile not found for user "${username}".`
+      relationshipStatus.value = null
     } finally {
       isLoadingProfile.value = false
     }
@@ -144,24 +115,8 @@ export const useProfileStore = defineStore('profile', () => {
     const formData = new FormData()
     formData.append('picture', pictureFile)
     try {
-      const response = await axiosInstance.patch<UserProfile>(`/profiles/${username}/`, formData)
-      const updatedProfile = response.data
-      profilesByUsername.value[username] = updatedProfile
-      if (currentProfile.value?.user.username === username) {
-        currentProfile.value = updatedProfile
-      }
-      if (authStore.currentUser?.username === username) {
-        authStore.updateCurrentUserPicture(updatedProfile.picture!)
-      }
-      const authorUpdates: Partial<PostAuthor> = { picture: updatedProfile.picture }
-      const allPosts = Object.values(postsStore.posts)
-      const postsToUpdate = allPosts.filter((p) => p.author.id === updatedProfile.user.id)
-      const partialPostsToUpdate = postsToUpdate.map((p) => ({
-        id: p.id,
-        author: { ...p.author, ...authorUpdates },
-      }))
-      postsStore.addOrUpdatePosts(partialPostsToUpdate)
-      return updatedProfile
+      await axiosInstance.patch<UserProfile>(`/profiles/${username}/`, formData)
+      await fetchProfile(username) // Re-fetch for consistency
     } catch (err: any) {
       throw new Error(
         err.response?.data?.picture?.join(' ') ||
@@ -171,12 +126,26 @@ export const useProfileStore = defineStore('profile', () => {
     }
   }
 
+  async function removeProfilePicture(username: string) {
+    try {
+      await axiosInstance.patch<UserProfile>(`/profiles/${username}/`, { picture: null })
+      await fetchProfile(username) // Re-fetch for consistency
+    } catch (err: any) {
+      console.error('Failed to remove profile picture:', err)
+      throw new Error(
+        err.response?.data?.detail || 'An unexpected error occurred while removing the picture.',
+      )
+    }
+  }
+
+  // --- REFACTORED ACTIONS ---
+
   async function followUser(usernameToFollow: string) {
     if (isLoadingFollow.value) return
     isLoadingFollow.value = true
     try {
       await axiosInstance.post(`/users/${usernameToFollow}/follow/`)
-      await fetchRelationshipStatus(usernameToFollow)
+      await fetchProfile(usernameToFollow)
     } finally {
       isLoadingFollow.value = false
     }
@@ -187,21 +156,9 @@ export const useProfileStore = defineStore('profile', () => {
     isLoadingFollow.value = true
     try {
       await axiosInstance.delete(`/users/${usernameToUnfollow}/follow/`)
-      await fetchRelationshipStatus(usernameToUnfollow)
+      await fetchProfile(usernameToUnfollow)
     } finally {
       isLoadingFollow.value = false
-    }
-  }
-
-  async function fetchRelationshipStatus(username: string) {
-    try {
-      const response = await axiosInstance.get<RelationshipStatus>(
-        `/users/${username}/relationship/`,
-      )
-      relationshipStatus.value = response.data
-    } catch (error) {
-      console.error('Failed to fetch relationship status:', error)
-      relationshipStatus.value = null
     }
   }
 
@@ -210,9 +167,7 @@ export const useProfileStore = defineStore('profile', () => {
     try {
       const receiverId = currentProfile.value.user.id
       await axiosInstance.post('/connections/requests/', { receiver: receiverId })
-      if (relationshipStatus.value) {
-        relationshipStatus.value.connection_status = 'request_sent'
-      }
+      await fetchProfile(username)
     } catch (error: any) {
       console.error('Failed to send connection request:', error)
       alert(error.response?.data?.detail || 'Could not send request.')
@@ -222,10 +177,7 @@ export const useProfileStore = defineStore('profile', () => {
   async function acceptConnectRequest(username: string) {
     try {
       await axiosInstance.post(`/users/${username}/accept-request/`)
-      if (relationshipStatus.value) {
-        relationshipStatus.value.connection_status = 'connected'
-        relationshipStatus.value.follow_status = 'following'
-      }
+      await fetchProfile(username)
     } catch (error: any) {
       console.error('Failed to accept connection request:', error)
       alert(error.response?.data?.detail || 'Could not accept request.')
@@ -234,12 +186,8 @@ export const useProfileStore = defineStore('profile', () => {
 
   async function updateProfile(username: string, payload: ProfileUpdatePayload) {
     try {
-      const response = await axiosInstance.patch<UserProfile>(`/profiles/${username}/`, payload)
-      const updatedProfile = response.data
-      profilesByUsername.value[username] = updatedProfile
-      if (currentProfile.value?.user.username === username) {
-        currentProfile.value = updatedProfile
-      }
+      await axiosInstance.patch<UserProfile>(`/profiles/${username}/`, payload)
+      await fetchProfile(username)
     } catch (err: any) {
       console.error('Failed to update profile:', err)
       throw new Error(
@@ -248,32 +196,58 @@ export const useProfileStore = defineStore('profile', () => {
     }
   }
 
-  async function removeProfilePicture(username: string) {
+  // --- EDUCATION ACTIONS ---
+
+  async function addEducation(username: string, educationData: Omit<Education, 'id'>) {
     try {
-      const response = await axiosInstance.patch<UserProfile>(`/profiles/${username}/`, {
-        picture: null,
-      })
-      const updatedProfile = response.data
-      profilesByUsername.value[username] = updatedProfile
-      if (currentProfile.value?.user.username === username) {
-        currentProfile.value = updatedProfile
-      }
-      if (authStore.currentUser?.username === username) {
-        authStore.updateCurrentUserPicture(null)
-      }
-      const authorUpdates: Partial<PostAuthor> = { picture: null }
-      const allPosts = Object.values(postsStore.posts)
-      const postsToUpdate = allPosts.filter((p) => p.author.id === updatedProfile.user.id)
-      const partialPostsToUpdate = postsToUpdate.map((p) => ({
-        id: p.id,
-        author: { ...p.author, ...authorUpdates },
-      }))
-      postsStore.addOrUpdatePosts(partialPostsToUpdate)
-    } catch (err: any) {
-      console.error('Failed to remove profile picture:', err)
-      throw new Error(
-        err.response?.data?.detail || 'An unexpected error occurred while removing the picture.',
+      const response = await axiosInstance.post<Education>(
+        `/profiles/${username}/education/`,
+        educationData,
       )
+      const newEducation = response.data
+      if (currentProfile.value) {
+        currentProfile.value.education.unshift(newEducation)
+      }
+    } catch (err: any) {
+      console.error('Failed to add education:', err)
+      throw new Error(err.response?.data?.detail || 'Failed to add education entry.')
+    }
+  }
+
+  async function updateEducation(
+    username: string,
+    educationId: number,
+    educationData: Omit<Education, 'id'>,
+  ) {
+    try {
+      const response = await axiosInstance.put<Education>(
+        `/profiles/${username}/education/${educationId}/`,
+        educationData,
+      )
+      const updatedEducation = response.data
+      if (currentProfile.value) {
+        const index = currentProfile.value.education.findIndex((edu) => edu.id === educationId)
+        if (index !== -1) {
+          currentProfile.value.education[index] = updatedEducation
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to update education:', err)
+      throw new Error(err.response?.data?.detail || 'Failed to update education entry.')
+    }
+  }
+
+  async function deleteEducation(username: string, educationId: number) {
+    try {
+      await axiosInstance.delete(`/profiles/${username}/education/${educationId}/`)
+      if (currentProfile.value) {
+        currentProfile.value.education = currentProfile.value.education.filter(
+          (edu) => edu.id !== educationId,
+        )
+      }
+    } catch (err: any) {
+      console.error('Failed to delete education:', err)
+      throw new Error(err.response?.data?.detail || 'Failed to delete education entry.')
     }
   }
 
@@ -287,7 +261,6 @@ export const useProfileStore = defineStore('profile', () => {
     isLoadingPosts.value = false
     errorProfile.value = null
     errorPosts.value = null
-    isFollowing.value = false
     isLoadingFollow.value = false
     relationshipStatus.value = null
   }
@@ -300,7 +273,6 @@ export const useProfileStore = defineStore('profile', () => {
     isLoadingPosts,
     errorProfile,
     errorPosts,
-    isFollowing,
     isLoadingFollow,
     fetchProfile,
     fetchUserPosts,
@@ -316,8 +288,10 @@ export const useProfileStore = defineStore('profile', () => {
     removeProfilePicture,
     $reset,
     relationshipStatus,
-    fetchRelationshipStatus,
     sendConnectRequest,
     acceptConnectRequest,
+    addEducation,
+    updateEducation,
+    deleteEducation,
   }
 })

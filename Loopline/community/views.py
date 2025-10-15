@@ -29,13 +29,13 @@ from rest_framework.decorators import api_view, permission_classes, action
 
 from .models import (
     UserProfile, Follow, StatusPost,  Group, 
-    Comment, Like, Conversation, Message, Notification, Poll, PollOption, PollVote, Report, GroupJoinRequest, GroupBlock, ConnectionRequest, Follow
+    Comment, Like, Conversation, Message, Notification, Poll, PollOption, PollVote, Report, GroupJoinRequest, GroupBlock, ConnectionRequest, Follow, Skill, Education, Experience
 )
 from .serializers import (
     UserSerializer, UserProfileSerializer, UserProfileUpdateSerializer,
     StatusPostSerializer, 
     GroupSerializer, GroupJoinRequestSerializer, CommentSerializer, ConversationSerializer,
-    MessageSerializer, MessageCreateSerializer, NotificationSerializer, ReportSerializer, GroupBlockSerializer, ConnectionRequestCreateSerializer, ConnectionRequestListSerializer 
+    MessageSerializer, MessageCreateSerializer, NotificationSerializer, ReportSerializer, GroupBlockSerializer, ConnectionRequestCreateSerializer, ConnectionRequestListSerializer, SkillSerializer, EducationSerializer, ExperienceSerializer 
 )
 from .permissions import IsOwnerOrReadOnly, IsGroupMember, IsCreatorOrReadOnly,IsGroupCreator, IsGroupMemberOrPublicReadOnly 
 
@@ -78,6 +78,62 @@ class UserProfileDetailView(generics.RetrieveUpdateAPIView):
         self.perform_update(serializer)
         response_serializer = UserProfileSerializer(instance, context=self.get_serializer_context())
         return Response(response_serializer.data)
+    
+class BaseProfileSectionViewSet(viewsets.ModelViewSet):
+    """
+    A base ViewSet that provides common functionality for profile sections
+    like Education, Experience, and Skills. It handles permissions and
+    queryset filtering automatically.
+    """
+    permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
+
+    def get_queryset(self):
+        """
+        This queryset ensures that users can only see and edit their own
+        profile items. It filters based on the `username` from the URL.
+        """
+        username = self.kwargs.get('username')
+        user = get_object_or_404(User, username=username)
+        # The `self.queryset` is defined in the child classes (e.g., Education.objects.all())
+        return self.queryset.filter(user=user)
+
+    def perform_create(self, serializer):
+        """
+        When creating a new item, automatically assign it to the user
+        specified in the URL.
+        """
+        username = self.kwargs.get('username')
+        user = get_object_or_404(User, username=username)
+        serializer.save(user=user)
+
+
+class EducationViewSet(BaseProfileSectionViewSet):
+    """
+    API endpoint for Creating, Reading, Updating, and Deleting Education entries.
+    URL: /api/community/profiles/<username>/education/
+    """
+    queryset = Education.objects.all()
+    serializer_class = EducationSerializer
+
+
+class ExperienceViewSet(BaseProfileSectionViewSet):
+    """
+    API endpoint for Creating, Reading, Updating, and Deleting Experience entries.
+    URL: /api/community/profiles/<username>/experience/
+    """
+    queryset = Experience.objects.all()
+    serializer_class = ExperienceSerializer
+
+
+class SkillViewSet(BaseProfileSectionViewSet):
+    """
+    API endpoint for Creating, Reading, Updating, and Deleting Skill entries.
+    URL: /api/community/profiles/<username>/skills/
+    """
+    queryset = Skill.objects.all()
+    serializer_class = SkillSerializer
+    
+
 
 class UserPostListView(generics.ListAPIView):
     serializer_class = StatusPostSerializer

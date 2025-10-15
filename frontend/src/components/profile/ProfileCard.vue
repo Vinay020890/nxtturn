@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { getAvatarUrl } from '@/utils/avatars';
-import type { UserProfile } from '@/stores/profile';
+import type { UserProfile } from '@/types';
 import { useProfileStore } from '@/stores/profile';
+
 import ProfileActions from '@/components/ProfileActions.vue';
+import BaseModal from '@/components/common/BaseModal.vue';
+import IdentityForm from '@/components/profile/forms/IdentityForm.vue';
 import { PencilIcon } from '@heroicons/vue/24/solid';
 
 const props = defineProps<{
@@ -13,13 +16,15 @@ const props = defineProps<{
 
 const profileStore = useProfileStore();
 
-// --- State for Bio Editing ---
-const isEditingBio = ref(false);
-const editableBio = ref(props.profile.bio || '');
-const isSaving = ref(false);
-const editError = ref<string | null>(null);
+// --- State for Modal ---
+const isModalOpen = ref(false);
 
-// --- State for Picture Management (Restored) ---
+type IdentityFormData = {
+    display_name: string | null;
+    headline: string | null;
+};
+
+// --- State for Picture Management ---
 const selectedFile = ref<File | null>(null);
 const picturePreviewUrl = ref<string | null>(null);
 const isUploadingPicture = ref(false);
@@ -27,27 +32,19 @@ const isRemovingPicture = ref(false);
 const showPictureOptions = ref(false);
 const pictureOptionsRef = ref<HTMLDivElement | null>(null);
 
-function toggleEditBio() {
-    isEditingBio.value = !isEditingBio.value;
-    editableBio.value = props.profile.bio || '';
-    editError.value = null;
-}
 
-async function handleBioUpdate() {
-    if (!props.isOwnProfile) return;
-    isSaving.value = true;
-    editError.value = null;
+// --- Save handler for the Identity Form ---
+async function handleSaveChanges(formData: IdentityFormData) {
     try {
-        await profileStore.updateProfile(props.profile.user.username, { bio: editableBio.value });
-        isEditingBio.value = false;
-    } catch (error: any) {
-        editError.value = error.message;
-    } finally {
-        isSaving.value = false;
+        await profileStore.updateProfile(props.profile.user.username, formData);
+        isModalOpen.value = false;
+    } catch (error) {
+        console.error("Failed to update profile:", error);
+        alert("Could not update profile. Please try again.");
     }
 }
 
-// --- Picture Management Functions (Restored) ---
+// --- Picture Management Functions ---
 function handleFileChange(event: Event) {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (file) {
@@ -64,7 +61,7 @@ async function uploadProfilePicture() {
     try {
         await profileStore.updateProfilePicture(props.profile.user.username, selectedFile.value);
         selectedFile.value = null;
-        picturePreviewUrl.value = null; // Let the store's reactive state take over
+        picturePreviewUrl.value = null;
     } catch (error: any) {
         alert(error.message || "Failed to upload picture.");
         selectedFile.value = null;
@@ -100,7 +97,13 @@ watch(showPictureOptions, (isOpen) => {
 </script>
 
 <template>
-    <div class="bg-white rounded-lg shadow-md p-6">
+    <div class="bg-white rounded-lg shadow-md p-6 relative">
+        <button v-if="isOwnProfile" @click="isModalOpen = true"
+            class="absolute top-4 right-4 p-2 rounded-full text-gray-400 hover:bg-gray-100 hover:text-blue-500 transition-colors"
+            aria-label="Edit profile summary">
+            <PencilIcon class="h-5 w-5" />
+        </button>
+
         <div class="flex flex-col items-center text-center">
             <!-- Picture Section -->
             <div data-cy="profile-picture-container" class="relative w-32 h-32 mb-4 group" ref="pictureOptionsRef">
@@ -109,6 +112,7 @@ watch(showPictureOptions, (isOpen) => {
                     alt="Profile Picture"
                     class="w-full h-full rounded-full object-cover border-4 border-white shadow-lg bg-gray-200">
 
+                <!-- === THIS IS THE RESTORED CODE BLOCK === -->
                 <div v-if="isOwnProfile" @click.stop="showPictureOptions = !showPictureOptions"
                     class="absolute inset-0 rounded-full bg-black bg-opacity-0 group-hover:bg-opacity-40 flex items-center justify-center cursor-pointer transition-opacity duration-300">
                     <svg xmlns="http://www.w3.org/2000/svg"
@@ -140,47 +144,27 @@ watch(showPictureOptions, (isOpen) => {
                         </li>
                     </ul>
                 </div>
+                <!-- === END OF RESTORED CODE BLOCK === -->
             </div>
 
             <!-- Name, Username, Headline -->
-            <h1 class="text-2xl font-bold text-gray-800">{{ profile.user.first_name }} {{ profile.user.last_name }}</h1>
+            <h1 class="text-2xl font-bold text-gray-800">
+                {{ profile.display_name || `${profile.user.first_name} ${profile.user.last_name}` }}
+            </h1>
             <p class="text-md text-gray-500">@{{ profile.user.username }}</p>
-            <p v-if="profile.headline" class="mt-2 text-md text-gray-700 font-semibold">{{ profile.headline }}</p>
-
-            <!-- Bio Section -->
-            <div class="mt-4 text-sm text-gray-600 w-full group relative">
-                <div v-if="!isEditingBio">
-                    <p data-cy="profile-bio-display" v-if="profile.bio">{{ profile.bio }}</p>
-                    <p data-cy="profile-bio-display" v-else class="text-gray-400 italic">No bio available.</p>
-                    <!-- FIX: The comment was moved outside the button tag -->
-                    <button v-if="isOwnProfile" @click="toggleEditBio" data-cy="edit-bio-button"
-                        class="absolute -top-2 -right-2 p-1 rounded-full bg-gray-100 text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100 hover:bg-gray-200"
-                        aria-label="Edit bio">
-                        <PencilIcon class="h-4 w-4" />
-                    </button>
-                </div>
-                <div v-else>
-                    <!-- In-place Bio Editing Form -->
-                    <form @submit.prevent="handleBioUpdate">
-                        <textarea v-model="editableBio" data-cy="bio-textarea" rows="4"
-                            class="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm"></textarea>
-                        <div class="mt-2 flex justify-end gap-2">
-                            <button @click="toggleEditBio" type="button"
-                                class="text-sm font-medium text-gray-700">Cancel</button>
-                            <!-- FIX: The comment was moved outside the button tag -->
-                            <button type="submit" data-cy="save-bio-button" :disabled="isSaving"
-                                class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-1 px-3 rounded-full text-sm disabled:bg-blue-300">
-                                {{ isSaving ? 'Saving...' : 'Save' }}
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
+            <p v-if="profile.headline" class="mt-2 text-md text-gray-600">
+                {{ profile.headline }}
+            </p>
 
             <!-- Action Buttons -->
             <div class="w-full mt-6">
                 <ProfileActions v-if="!isOwnProfile" />
             </div>
         </div>
+
+        <!-- Modal for Editing Identity Info -->
+        <BaseModal :show="isModalOpen" title="Edit Profile Summary" @close="isModalOpen = false">
+            <IdentityForm :initial-data="profile" @save="handleSaveChanges" @cancel="isModalOpen = false" />
+        </BaseModal>
     </div>
 </template>

@@ -15,6 +15,11 @@ import ProfileEducationTab from '@/components/profile/tabs/ProfileEducationTab.v
 import ProfileSkillsTab from '@/components/profile/tabs/ProfileSkillsTab.vue';
 import ProfileExperienceTab from '@/components/profile/tabs/ProfileExperienceTab.vue';
 import ProfileContactTab from '@/components/profile/tabs/ProfileContactTab.vue';
+import ProfileResumeTab from '@/components/profile/tabs/ProfileResumeTab.vue';
+
+// --- NEW REFS FOR SCROLLABLE COLUMNS ---
+const leftColumn = ref<HTMLElement | null>(null);
+const rightColumn = ref<HTMLElement | null>(null);
 
 const route = useRoute();
 const profileStore = useProfileStore();
@@ -30,7 +35,7 @@ const { currentUser, isAuthenticated } = storeToRefs(authStore);
 const username = computed(() => route.params.username as string || '');
 
 const activeTab = ref('About');
-const tabs = ['About', 'Education', 'Skills', 'Experience', 'Contact'];
+const tabs = ['About', 'Education', 'Skills', 'Experience', 'Resume/CV', 'Contact'];
 
 const userPostIds = computed(() => profileStore.postIdsByUsername[username.value] || []);
 const userPostsNextPageUrl = computed(() => profileStore.nextPageUrlByUsername[username.value]);
@@ -48,7 +53,7 @@ const loadProfileData = () => {
   if (username.value) {
     profileStore.fetchProfile(username.value);
     profileStore.refreshUserPosts(username.value);
-    profileStore.fetchRelationshipStatus(username.value);
+    // Note: fetchRelationshipStatus is now handled by the main fetchProfile serializer
   }
 };
 
@@ -57,8 +62,10 @@ watch(username, () => {
   activeTab.value = 'About';
 }, { immediate: true });
 
+// --- UPDATED scrollToTop FUNCTION ---
 function scrollToTop() {
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  leftColumn.value?.scrollTo({ top: 0, behavior: 'smooth' });
+  rightColumn.value?.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 onMounted(() => {
@@ -80,12 +87,11 @@ onUnmounted(() => {
       <p>{{ errorProfile }}</p>
     </div>
 
-    <!-- DEFINITIVE LAYOUT: 50/50 split using the exact grid system from the main feed page -->
     <div v-else-if="currentProfile" class="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-20">
-      <div class="grid grid-cols-12 gap-x-8">
+      <div class="grid grid-cols-12 gap-x-8 h-[calc(100vh-5rem)]">
 
-        <!-- LEFT COLUMN: Correctly takes up 6/12 of the grid. Still sticky. -->
-        <aside class="col-span-12 lg:col-span-6 self-start sticky top-20 space-y-6">
+        <!-- LEFT COLUMN: ADDED ref="leftColumn" -->
+        <aside ref="leftColumn" class="col-span-12 lg:col-span-6 h-full overflow-y-auto space-y-6">
           <ProfileCard :profile="currentProfile" :is-own-profile="isOwnProfile" />
 
           <!-- Tab Section -->
@@ -110,14 +116,16 @@ onUnmounted(() => {
                 :is-own-profile="isOwnProfile" />
               <ProfileExperienceTab v-if="activeTab === 'Experience'" :profile="currentProfile"
                 :is-own-profile="isOwnProfile" />
+              <ProfileResumeTab v-if="activeTab === 'Resume/CV'" :profile="currentProfile"
+                :is-own-profile="isOwnProfile" />
               <ProfileContactTab v-if="activeTab === 'Contact'" :profile="currentProfile"
                 :is-own-profile="isOwnProfile" />
             </div>
           </div>
         </aside>
 
-        <!-- RIGHT COLUMN: Correctly takes up the other 6/12 of the grid. -->
-        <div class="col-span-12 lg:col-span-6 min-w-0 mt-6 lg:mt-0">
+        <!-- RIGHT COLUMN: ADDED ref="rightColumn" -->
+        <div ref="rightColumn" class="col-span-12 lg:col-span-6 min-w-0 mt-6 lg:mt-0 h-full overflow-y-auto">
           <div v-if="isLoadingPosts && userPosts.length === 0" class="text-center p-10 text-gray-500">
             Loading posts...
           </div>

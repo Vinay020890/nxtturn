@@ -1,7 +1,7 @@
 # community/urls.py
-from django.urls import path
+from django.urls import path, include
 from . import views
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import DefaultRouter, SimpleRouter
 
 router = DefaultRouter()
 router.register(
@@ -10,11 +10,25 @@ router.register(
     basename='connection-request'
 )
 
+
+profile_router = SimpleRouter()
+profile_router.register(r'education', views.EducationViewSet, basename='profile-education')
+profile_router.register(r'experience', views.ExperienceViewSet, basename='profile-experience')
+profile_router.register(r'skills', views.SkillViewSet, basename='profile-skills')
+
+
 app_name = 'community'
 
 urlpatterns = [
     # --- User Profile, Follows, and Search ---
-    path('profiles/<str:username>/', views.UserProfileDetailView.as_view(), name='user-profile-detail'),
+    # This new path handles BOTH the main profile view AND the new nested CRUD endpoints.
+    path('profiles/<str:username>/', include([
+        # The main profile detail view (GET, PATCH)
+        path('', views.UserProfileDetailView.as_view(), name='userprofile-detail'),
+        
+        # The nested CRUD endpoints for education, experience, and skills
+        path('', include(profile_router.urls)),
+    ])),
     path('users/<str:username>/posts/', views.UserPostListView.as_view(), name='user-post-list'),
     path('users/<str:username>/follow/', views.FollowToggleView.as_view(), name='follow-toggle'),
     path('users/<str:username>/following/', views.FollowingListView.as_view(), name='following-list'),

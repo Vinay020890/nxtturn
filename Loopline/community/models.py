@@ -29,26 +29,41 @@ def get_post_media_path(instance, filename):
 
 class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True, related_name='profile')
+
+    # --- NEW FIELDS FROM OUR FINALIZED PLAN ---
+    display_name = models.CharField(max_length=100, blank=True, null=True)
+    headline = models.CharField(max_length=255, blank=True, null=True)
+    # --- END NEW FIELDS ---
+    
     bio = models.TextField(blank=True, null=True)
+    
+    # NEW: A single, more flexible location field.
+    location = models.CharField(max_length=255, blank=True, null=True) 
+    
+    # NEW: Resume file upload field.
+    resume = models.FileField(upload_to='resumes/', null=True, blank=True)
+    
+    # DEPRECATED: These will be replaced by the new, more flexible models.
+    # We will keep them for now to avoid breaking existing data, but phase them out.
     location_city = models.CharField(max_length=100, blank=True, null=True)
     location_state = models.CharField(max_length=100, blank=True, null=True)
     college_name = models.CharField(max_length=255, blank=True, null=True)
     major = models.CharField(max_length=255, blank=True, null=True)
     graduation_year = models.IntegerField(blank=True, null=True)
+    skills = ArrayField(models.CharField(max_length=100), blank=True, null=True, default=list)
+
+    # These fields are still useful.
     linkedin_url = models.URLField(max_length=512, blank=True, null=True)
     portfolio_url = models.URLField(max_length=512, blank=True, null=True)
-    skills = ArrayField(models.CharField(max_length=100), blank=True, null=True, default=list)
     interests = ArrayField(models.CharField(max_length=100), blank=True, null=True, default=list)
     picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True, max_length=255)
     updated_at = models.DateTimeField(auto_now=True)
-
    
     saved_posts = models.ManyToManyField(
-        'StatusPost', # Forward reference using string
+        'StatusPost',
         related_name='saved_by',
         blank=True
     )
-    
 
     def __str__(self):
         try:
@@ -517,6 +532,58 @@ class Report(models.Model):
 
     def __str__(self):
         return f"Report by {self.reporter.username} on {self.content_object} ({self.get_reason_display()})"
+    
+
+# --- NEW MODEL: Education ---
+class Education(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='education')
+    school = models.CharField(max_length=255)
+    degree = models.CharField(max_length=255, blank=True, null=True)
+    field_of_study = models.CharField(max_length=255, blank=True, null=True)
+    start_date = models.DateField()
+    end_date = models.DateField(blank=True, null=True)
+    description = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['-start_date']
+        verbose_name_plural = "Education"
+
+    def __str__(self):
+        return f"{self.degree} from {self.school} for {self.user.username}"
+
+
+# --- NEW MODEL: Experience ---
+class Experience(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='experience')
+    title = models.CharField(max_length=255)
+    company = models.CharField(max_length=255)
+    location = models.CharField(max_length=255, blank=True, null=True)
+    start_date = models.DateField()
+    end_date = models.DateField(blank=True, null=True)
+    is_current = models.BooleanField(default=False)
+    description = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['-start_date']
+
+    def __str__(self):
+        return f"{self.title} at {self.company} for {self.user.username}"
+
+
+# --- NEW MODEL: Skill ---
+class Skill(models.Model):
+    """
+    Replaces the UserProfile.skills ArrayField for a more structured approach.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='skills')
+    name = models.CharField(max_length=100)
+    
+    class Meta:
+        unique_together = ('user', 'name') # Prevent duplicate skills for the same user
+        ordering = ['name']
+
+    def __str__(self):
+        return f"Skill: {self.name} for {self.user.username}"
 
 # @receiver(post_save, sender=User)
 #def create_user_profile(sender, instance, created, **kwargs):

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { UserProfile } from '@/stores/profile';
+import type { UserProfile } from '@/types';
 import { PencilIcon } from '@heroicons/vue/24/solid';
 
 defineProps<{
