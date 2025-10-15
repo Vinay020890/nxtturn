@@ -55,7 +55,6 @@ describe('Icon-Based Connection and Follow System', () => {
     cy.get('[data-cy="accept-request-button"]').should('be.visible').and('contain', 'Accept')
 
     // ACTION 3: User B clicks "Accept"
-    // --- FINAL FIX: Intercept the correct URL that uses the username ---
     cy.intercept('POST', `${apiBaseUrl}/api/users/userA/accept-request/`).as('acceptRequest')
     cy.intercept('GET', `${apiBaseUrl}/api/profiles/userA/`).as('getProfileA_AfterAccept')
     cy.get('[data-cy="accept-request-button"]').click()
@@ -78,6 +77,11 @@ describe('Icon-Based Connection and Follow System', () => {
     cy.intercept('GET', `${apiBaseUrl}/api/profiles/userA/`).as('getProfileA_AfterDisconnect')
     cy.get('[data-cy="disconnect-button"]').click()
     cy.wait(['@disconnectUser', '@getProfileA_AfterDisconnect'])
+
+    // --- THIS IS THE FIX ---
+    // Before the final check, scroll the left column to the top
+    // to ensure the action icons are physically visible in the viewport.
+    cy.get('[data-cy="profile-left-column"]').scrollTo('top')
 
     // ASSERT 7: State reverts to default
     cy.get('[data-cy="connect-button"]').should('be.visible')

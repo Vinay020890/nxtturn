@@ -115,8 +115,25 @@ export const useProfileStore = defineStore('profile', () => {
     const formData = new FormData()
     formData.append('picture', pictureFile)
     try {
-      await axiosInstance.patch<UserProfile>(`/profiles/${username}/`, formData)
-      await fetchProfile(username) // Re-fetch for consistency
+      const response = await axiosInstance.patch<UserProfile>(`/profiles/${username}/`, formData)
+      const updatedProfile = response.data
+
+      // --- THIS IS THE FINAL FIX ---
+      // 1. Update the local profile store state
+      if (currentProfile.value && currentProfile.value.user.username === username) {
+        currentProfile.value.picture = updatedProfile.picture
+      }
+      // 2. Sync with the global authStore (for the navbar)
+      if (authStore.currentUser?.username === username) {
+        authStore.updateCurrentUserPicture(updatedProfile.picture)
+      }
+      // 3. Sync with the global postsStore (for all feed/post items)
+      if (authStore.currentUser) {
+        postsStore.updateAuthorDetailsInPosts(authStore.currentUser.id, {
+          picture: updatedProfile.picture,
+        })
+      }
+      // --- END OF FINAL FIX ---
     } catch (err: any) {
       throw new Error(
         err.response?.data?.picture?.join(' ') ||
@@ -128,8 +145,27 @@ export const useProfileStore = defineStore('profile', () => {
 
   async function removeProfilePicture(username: string) {
     try {
-      await axiosInstance.patch<UserProfile>(`/profiles/${username}/`, { picture: null })
-      await fetchProfile(username) // Re-fetch for consistency
+      const response = await axiosInstance.patch<UserProfile>(`/profiles/${username}/`, {
+        picture: null,
+      })
+      const updatedProfile = response.data
+
+      // --- THIS IS THE FINAL FIX ---
+      // 1. Update the local profile store state
+      if (currentProfile.value && currentProfile.value.user.username === username) {
+        currentProfile.value.picture = updatedProfile.picture
+      }
+      // 2. Sync with the global authStore (for the navbar)
+      if (authStore.currentUser?.username === username) {
+        authStore.updateCurrentUserPicture(updatedProfile.picture)
+      }
+      // 3. Sync with the global postsStore (for all feed/post items)
+      if (authStore.currentUser) {
+        postsStore.updateAuthorDetailsInPosts(authStore.currentUser.id, {
+          picture: updatedProfile.picture,
+        })
+      }
+      // --- END OF FINAL FIX ---
     } catch (err: any) {
       console.error('Failed to remove profile picture:', err)
       throw new Error(

@@ -3,7 +3,6 @@ import { ref, watch } from 'vue';
 import { getAvatarUrl } from '@/utils/avatars';
 import type { UserProfile } from '@/types';
 import { useProfileStore } from '@/stores/profile';
-
 import ProfileActions from '@/components/ProfileActions.vue';
 import BaseModal from '@/components/common/BaseModal.vue';
 import IdentityForm from '@/components/profile/forms/IdentityForm.vue';
@@ -15,16 +14,11 @@ const props = defineProps<{
 }>();
 
 const profileStore = useProfileStore();
-
-// --- State for Modal ---
 const isModalOpen = ref(false);
-
 type IdentityFormData = {
     display_name: string | null;
     headline: string | null;
 };
-
-// --- State for Picture Management ---
 const selectedFile = ref<File | null>(null);
 const picturePreviewUrl = ref<string | null>(null);
 const isUploadingPicture = ref(false);
@@ -32,8 +26,6 @@ const isRemovingPicture = ref(false);
 const showPictureOptions = ref(false);
 const pictureOptionsRef = ref<HTMLDivElement | null>(null);
 
-
-// --- Save handler for the Identity Form ---
 async function handleSaveChanges(formData: IdentityFormData) {
     try {
         await profileStore.updateProfile(props.profile.user.username, formData);
@@ -43,8 +35,6 @@ async function handleSaveChanges(formData: IdentityFormData) {
         alert("Could not update profile. Please try again.");
     }
 }
-
-// --- Picture Management Functions ---
 function handleFileChange(event: Event) {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (file) {
@@ -54,7 +44,6 @@ function handleFileChange(event: Event) {
         uploadProfilePicture();
     }
 }
-
 async function uploadProfilePicture() {
     if (!selectedFile.value) return;
     isUploadingPicture.value = true;
@@ -70,7 +59,6 @@ async function uploadProfilePicture() {
         isUploadingPicture.value = false;
     }
 }
-
 async function handleRemovePicture() {
     if (window.confirm("Are you sure you want to remove your profile picture?")) {
         isRemovingPicture.value = true;
@@ -83,13 +71,11 @@ async function handleRemovePicture() {
         }
     }
 }
-
 const closeOnClickOutside = (event: MouseEvent) => {
     if (pictureOptionsRef.value && !pictureOptionsRef.value.contains(event.target as Node)) {
         showPictureOptions.value = false;
     }
 };
-
 watch(showPictureOptions, (isOpen) => {
     if (isOpen) document.addEventListener('click', closeOnClickOutside);
     else document.removeEventListener('click', closeOnClickOutside);
@@ -98,21 +84,28 @@ watch(showPictureOptions, (isOpen) => {
 
 <template>
     <div class="bg-white rounded-lg shadow-md p-6 relative">
+        <ProfileActions v-if="!isOwnProfile" />
         <button v-if="isOwnProfile" @click="isModalOpen = true"
             class="absolute top-4 right-4 p-2 rounded-full text-gray-400 hover:bg-gray-100 hover:text-blue-500 transition-colors"
             aria-label="Edit profile summary">
             <PencilIcon class="h-5 w-5" />
         </button>
 
-        <div class="flex flex-col items-center text-center">
-            <!-- Picture Section -->
-            <div data-cy="profile-picture-container" class="relative w-32 h-32 mb-4 group" ref="pictureOptionsRef">
+        <!-- 
+            --- FIX #1: VERTICAL ALIGNMENT ---
+            Changed 'items-start' to 'items-end' to align the text block with the
+            bottom of the profile picture.
+        -->
+        <div class="flex flex-row items-end space-x-6 py-8">
+
+            <!-- COLUMN 1: Profile Picture -->
+            <div data-cy="profile-picture-container" class="relative w-32 h-32 group flex-shrink-0"
+                ref="pictureOptionsRef">
                 <img data-cy="profile-picture-img"
                     :src="picturePreviewUrl || getAvatarUrl(profile.picture, profile.user.first_name, profile.user.last_name)"
                     alt="Profile Picture"
                     class="w-full h-full rounded-full object-cover border-4 border-white shadow-lg bg-gray-200">
 
-                <!-- === THIS IS THE RESTORED CODE BLOCK === -->
                 <div v-if="isOwnProfile" @click.stop="showPictureOptions = !showPictureOptions"
                     class="absolute inset-0 rounded-full bg-black bg-opacity-0 group-hover:bg-opacity-40 flex items-center justify-center cursor-pointer transition-opacity duration-300">
                     <svg xmlns="http://www.w3.org/2000/svg"
@@ -125,7 +118,7 @@ watch(showPictureOptions, (isOpen) => {
                 </div>
 
                 <div v-if="showPictureOptions"
-                    class="origin-top-left absolute left-1/2 -translate-x-1/2 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-10">
+                    class="origin-top-left absolute left-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-10">
                     <ul class="py-1">
                         <li>
                             <label for="picture-upload"
@@ -144,25 +137,28 @@ watch(showPictureOptions, (isOpen) => {
                         </li>
                     </ul>
                 </div>
-                <!-- === END OF RESTORED CODE BLOCK === -->
             </div>
 
-            <!-- Name, Username, Headline -->
-            <h1 class="text-2xl font-bold text-gray-800">
-                {{ profile.display_name || `${profile.user.first_name} ${profile.user.last_name}` }}
-            </h1>
-            <p class="text-md text-gray-500">@{{ profile.user.username }}</p>
-            <p v-if="profile.headline" class="mt-2 text-md text-gray-600">
-                {{ profile.headline }}
-            </p>
-
-            <!-- Action Buttons -->
-            <div class="w-full mt-6">
-                <ProfileActions v-if="!isOwnProfile" />
+            <!-- COLUMN 2: Name, Username, Headline -->
+            <!-- 
+                --- FIX #2: TEXT ALIGNMENT ---
+                Changed 'text-left' to 'text-center' to center the text.
+            -->
+            <div class="text-center">
+                <!-- 
+                    --- FIX #3: FONT SIZE ---
+                    Changed 'text-2xl' to 'text-xl' to make the font smaller.
+                -->
+                <h1 class="text-xl font-bold text-gray-800">
+                    {{ profile.display_name || `${profile.user.first_name} ${profile.user.last_name}` }}
+                </h1>
+                <p class="text-md text-gray-500">@{{ profile.user.username }}</p>
+                <p v-if="profile.headline" class="mt-2 text-md text-gray-600">
+                    {{ profile.headline }}
+                </p>
             </div>
         </div>
 
-        <!-- Modal for Editing Identity Info -->
         <BaseModal :show="isModalOpen" title="Edit Profile Summary" @close="isModalOpen = false">
             <IdentityForm :initial-data="profile" @save="handleSaveChanges" @cancel="isModalOpen = false" />
         </BaseModal>

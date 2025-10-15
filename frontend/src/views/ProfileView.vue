@@ -17,26 +17,20 @@ import ProfileExperienceTab from '@/components/profile/tabs/ProfileExperienceTab
 import ProfileContactTab from '@/components/profile/tabs/ProfileContactTab.vue';
 import ProfileResumeTab from '@/components/profile/tabs/ProfileResumeTab.vue';
 
-// --- NEW REFS FOR SCROLLABLE COLUMNS ---
 const leftColumn = ref<HTMLElement | null>(null);
 const rightColumn = ref<HTMLElement | null>(null);
-
 const route = useRoute();
 const profileStore = useProfileStore();
 const authStore = useAuthStore();
 const postsStore = usePostsStore();
-
 const {
   currentProfile, isLoadingProfile, isLoadingPosts,
   errorProfile, errorPosts
 } = storeToRefs(profileStore);
-
 const { currentUser, isAuthenticated } = storeToRefs(authStore);
 const username = computed(() => route.params.username as string || '');
-
 const activeTab = ref('About');
 const tabs = ['About', 'Education', 'Skills', 'Experience', 'Resume/CV', 'Contact'];
-
 const userPostIds = computed(() => profileStore.postIdsByUsername[username.value] || []);
 const userPostsNextPageUrl = computed(() => profileStore.nextPageUrlByUsername[username.value]);
 const userPosts = computed(() => postsStore.getPostsByIds(userPostIds.value));
@@ -53,7 +47,6 @@ const loadProfileData = () => {
   if (username.value) {
     profileStore.fetchProfile(username.value);
     profileStore.refreshUserPosts(username.value);
-    // Note: fetchRelationshipStatus is now handled by the main fetchProfile serializer
   }
 };
 
@@ -62,7 +55,6 @@ watch(username, () => {
   activeTab.value = 'About';
 }, { immediate: true });
 
-// --- UPDATED scrollToTop FUNCTION ---
 function scrollToTop() {
   leftColumn.value?.scrollTo({ top: 0, behavior: 'smooth' });
   rightColumn.value?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -90,8 +82,13 @@ onUnmounted(() => {
     <div v-else-if="currentProfile" class="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-20">
       <div class="grid grid-cols-12 gap-x-8 h-[calc(100vh-5rem)]">
 
-        <!-- LEFT COLUMN: ADDED ref="leftColumn" -->
-        <aside ref="leftColumn" class="col-span-12 lg:col-span-6 h-full overflow-y-auto space-y-6">
+        <!-- 
+            --- THIS IS THE FIX ---
+            Added data-cy="profile-left-column" to this aside element
+            so Cypress can specifically target it for scrolling.
+        -->
+        <aside ref="leftColumn" data-cy="profile-left-column"
+          class="col-span-12 lg:col-span-6 h-full overflow-y-auto space-y-6">
           <ProfileCard :profile="currentProfile" :is-own-profile="isOwnProfile" />
 
           <!-- Tab Section -->
@@ -124,7 +121,7 @@ onUnmounted(() => {
           </div>
         </aside>
 
-        <!-- RIGHT COLUMN: ADDED ref="rightColumn" -->
+        <!-- RIGHT COLUMN -->
         <div ref="rightColumn" class="col-span-12 lg:col-span-6 min-w-0 mt-6 lg:mt-0 h-full overflow-y-auto">
           <div v-if="isLoadingPosts && userPosts.length === 0" class="text-center p-10 text-gray-500">
             Loading posts...

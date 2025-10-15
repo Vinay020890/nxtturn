@@ -2,9 +2,6 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import axiosInstance from '@/services/axiosInstance'
-
-// --- IMPORT SHARED TYPES ---
-// All core data shapes are now imported from the central types file.
 import type { Post } from '@/types'
 
 export const usePostsStore = defineStore('posts', () => {
@@ -25,21 +22,16 @@ export const usePostsStore = defineStore('posts', () => {
       if (post && post.id) {
         const existingPost = posts.value[post.id]
         if (existingPost) {
-          // Merge new data into the existing post object
           posts.value[post.id] = { ...existingPost, ...post }
         } else {
-          // Or add it as a new post
           posts.value[post.id] = post as Post
         }
       }
     }
   }
 
-  // --- NEW FUNCTION TO HANDLE POLL UPDATES ---
   function processVoteUpdate(updatedPost: Post) {
     if (posts.value[updatedPost.id] && updatedPost.poll) {
-      // This specifically updates the poll object inside the post,
-      // which is crucial for Vue's reactivity to work correctly.
       posts.value[updatedPost.id].poll = updatedPost.poll
     }
   }
@@ -63,6 +55,17 @@ export const usePostsStore = defineStore('posts', () => {
     }
   }
 
+  // --- NEW ACTION TO FIX THE SYNCHRONIZATION BUG ---
+  function updateAuthorDetailsInPosts(authorId: number, payload: { picture: string | null }) {
+    console.log(`PostsStore: Syncing picture for author ID ${authorId}`)
+    for (const post of Object.values(posts.value)) {
+      if (post && post.author && post.author.id === authorId) {
+        post.author.picture = payload.picture
+      }
+    }
+  }
+  // --- END OF NEW ACTION ---
+
   async function fetchPostById(postId: number) {
     const existingPost = posts.value[postId]
     if (existingPost && typeof existingPost.comment_count !== 'undefined') {
@@ -78,7 +81,6 @@ export const usePostsStore = defineStore('posts', () => {
     }
   }
 
-  // --- UPDATED RETURN STATEMENT ---
   return {
     posts,
     getPostById,
@@ -88,6 +90,7 @@ export const usePostsStore = defineStore('posts', () => {
     incrementCommentCount,
     decrementCommentCount,
     fetchPostById,
-    processVoteUpdate, // Expose the new function
+    processVoteUpdate,
+    updateAuthorDetailsInPosts, // <-- Expose the new action
   }
 })
