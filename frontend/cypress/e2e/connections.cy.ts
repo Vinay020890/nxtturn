@@ -1,6 +1,6 @@
 // C:\Users\Vinay\Project\frontend\cypress\e2e\connections.cy.ts
 
-describe('Connection Request System', () => {
+describe('Icon-Based Connection and Follow System', () => {
   const apiBaseUrl = Cypress.env('VITE_API_BASE_URL')
 
   beforeEach(() => {
@@ -10,27 +10,38 @@ describe('Connection Request System', () => {
     })
   })
 
-  it('handles the full connection and follow lifecycle between two users', () => {
-    // === PART 1: User A sends a connection request to User B ===
+  it('handles the full follow, connect, accept, and disconnect lifecycle via the new icon UI', () => {
+    // === PART 1: User A follows and then sends a connection request to User B ===
     cy.login('userA', 'password123')
 
-    // --- FIX: Intercept the main profile endpoint now ---
     cy.intercept('GET', `${apiBaseUrl}/api/profiles/userB/`).as('getProfileB')
     cy.visit('/profile/userB')
-    cy.wait('@getProfileB') // Wait for the profile to load
+    cy.wait('@getProfileB')
 
-    // ASSERT initial state
+    // ASSERT 1: Initial state
+    cy.get('[data-cy="connect-button"]').should('be.visible').and('contain', 'Connect')
+    cy.get('[data-cy="follow-toggle-button"]').should('be.visible').and('contain', 'Follow')
+    cy.get('[data-cy="message-button"]').should('be.visible')
+
+    // ACTION 1: User A clicks "Follow"
+    cy.intercept('POST', `${apiBaseUrl}/api/users/userB/follow/`).as('followUser')
+    cy.intercept('GET', `${apiBaseUrl}/api/profiles/userB/`).as('getProfileB_AfterFollow')
+    cy.get('[data-cy="follow-toggle-button"]').click()
+    cy.wait(['@followUser', '@getProfileB_AfterFollow'])
+
+    // ASSERT 2: Follow state is updated
+    cy.get('[data-cy="follow-toggle-button"]').should('be.visible').and('contain', 'Following')
     cy.get('[data-cy="connect-button"]').should('be.visible')
-    cy.get('[data-cy="follow-button"]').should('be.visible')
 
-    // ACTION: User A clicks "Connect"
+    // ACTION 2: User A clicks "Connect"
     cy.intercept('POST', `${apiBaseUrl}/api/connections/requests/`).as('sendRequest')
-    cy.intercept('GET', `${apiBaseUrl}/api/profiles/userB/`).as('getProfileB_AfterConnect') // Re-intercept for the refresh
+    cy.intercept('GET', `${apiBaseUrl}/api/profiles/userB/`).as('getProfileB_AfterConnect')
     cy.get('[data-cy="connect-button"]').click()
     cy.wait(['@sendRequest', '@getProfileB_AfterConnect'])
 
-    // ASSERT: Button state changes to "Pending"
+    // ASSERT 3: Button state changes to "Pending"
     cy.get('[data-cy="pending-button"]').should('be.visible')
+    cy.get('[data-cy="follow-toggle-button"]').should('be.visible').and('contain', 'Following')
     cy.logout()
 
     // === PART 2: User B accepts the request ===
@@ -40,30 +51,36 @@ describe('Connection Request System', () => {
     cy.visit('/profile/userA')
     cy.wait('@getProfileA')
 
-    // ASSERT: User B sees "Accept Request"
-    cy.get('[data-cy="accept-request-button"]').should('be.visible')
+    // ASSERT 4: User B sees "Accept" icon
+    cy.get('[data-cy="accept-request-button"]').should('be.visible').and('contain', 'Accept')
 
-    // ACTION: User B clicks "Accept Request"
+    // ACTION 3: User B clicks "Accept"
+    // --- FINAL FIX: Intercept the correct URL that uses the username ---
     cy.intercept('POST', `${apiBaseUrl}/api/users/userA/accept-request/`).as('acceptRequest')
     cy.intercept('GET', `${apiBaseUrl}/api/profiles/userA/`).as('getProfileA_AfterAccept')
     cy.get('[data-cy="accept-request-button"]').click()
     cy.wait(['@acceptRequest', '@getProfileA_AfterAccept'])
 
-    // ASSERT: Final connected state is visible
+    // ASSERT 5: Final connected state is visible
     cy.get('[data-cy="connected-button"]').should('be.visible')
-    // The secondary follow button area should now be gone
-    cy.get('[data-cy="follow-button"]').should('not.exist')
+    cy.get('[data-cy="follow-toggle-button"]').should('not.exist')
+    cy.get('[data-cy="message-button"]').should('be.visible')
 
     // === PART 3: User B disconnects from User A ===
-    // ACTION: User B clicks "Connected" to disconnect
-    cy.intercept('DELETE', `${apiBaseUrl}/api/users/userA/follow/`).as('unfollowUser')
-    cy.intercept('GET', `${apiBaseUrl}/api/profiles/userA/`).as('getProfileA_AfterDisconnect')
-    // The "Connected" button is now the "Disconnect" button
-    cy.get('[data-cy="disconnect-button"]').click()
-    cy.wait(['@unfollowUser', '@getProfileA_AfterDisconnect'])
+    // ACTION 4: User B clicks the "Connected" icon
+    cy.get('[data-cy="connected-button"]').click()
 
-    // ASSERT: State reverts to "not_connected"
+    // ASSERT 6: The "Disconnect" button is visible
+    cy.get('[data-cy="disconnect-button"]').should('be.visible')
+
+    // ACTION 5: User B clicks "Disconnect"
+    cy.intercept('DELETE', `${apiBaseUrl}/api/users/userA/follow/`).as('disconnectUser')
+    cy.intercept('GET', `${apiBaseUrl}/api/profiles/userA/`).as('getProfileA_AfterDisconnect')
+    cy.get('[data-cy="disconnect-button"]').click()
+    cy.wait(['@disconnectUser', '@getProfileA_AfterDisconnect'])
+
+    // ASSERT 7: State reverts to default
     cy.get('[data-cy="connect-button"]').should('be.visible')
-    cy.get('[data-cy="follow-button"]').should('be.visible')
+    cy.get('[data-cy="follow-toggle-button"]').should('be.visible').and('contain', 'Follow')
   })
 })

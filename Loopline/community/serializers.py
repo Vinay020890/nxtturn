@@ -323,51 +323,65 @@ class ExperienceSerializer(serializers.ModelSerializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     
-    # NEW: Nested serializers for our new models. DRF will automatically fetch
-    # the related objects using the `related_name` we defined in models.py.
     skills = SkillSerializer(many=True, read_only=True)
     education = EducationSerializer(many=True, read_only=True)
     experience = ExperienceSerializer(many=True, read_only=True)
 
-    # IMPROVEMENT: A single field that provides the full relationship status,
-    # making the API more efficient by removing the need for a separate call.
+    ### --- KEY CHANGE --- ###
+    # This field is now the single source of truth for the frontend UI.
     relationship_status = serializers.SerializerMethodField()
 
     class Meta:
         model = UserProfile
-        # This is the new, clean list of fields for the profile API response.
-        # It removes the old deprecated fields like college_name, location_city, etc.
         fields = [
             'user', 'display_name', 
             'headline', 'bio', 'location', 'resume', 'linkedin_url', 'portfolio_url', 
-            'picture', 'updated_at', 'relationship_status',
+            'picture', 'updated_at', 'relationship_status', # <-- Keep this in the fields list
             'skills', 'education', 'experience', 'interests'
         ]
-        read_only_fields = fields # The entire profile is read-only through this serializer.
+        read_only_fields = fields
 
+    ### --- KEY CHANGE --- ###
+    # This method now provides a comprehensive object for the frontend to easily
+    # determine which icons and states to display.
     def get_relationship_status(self, obj):
         request = self.context.get('request')
+        # Return None if there's no authenticated user making the request.
         if not request or not request.user.is_authenticated:
             return None
         
         current_user = request.user
         target_user = obj.user
 
+        # Handle the case where a user is viewing their own profile.
         if target_user == current_user:
-            return { "connection_status": "self" }
+            return {
+                "connection_status": "self",
+                "is_followed_by_request_user": False,
+            }
 
-        is_following = Follow.objects.filter(follower=current_user, following=target_user).exists()
-        is_followed_by = Follow.objects.filter(follower=target_user, following=current_user).exists()
+        # Determine the follow relationship status.
+        # is_followed_by_request_user: Does the current user (A) follow the target user (B)?
+        is_followed_by_request_user = Follow.objects.filter(follower=current_user, following=target_user).exists()
+        # is_following_request_user: Does the target user (B) follow the current user (A)?
+        is_following_request_user = Follow.objects.filter(follower=target_user, following=current_user).exists()
 
         connection_status = "not_connected"
-        if is_following and is_followed_by:
+        # A 'connected' state is defined by a mutual follow.
+        if is_followed_by_request_user and is_following_request_user:
             connection_status = "connected"
+        # Check if the current user has sent a pending request to the target.
         elif ConnectionRequest.objects.filter(sender=current_user, receiver=target_user, status='pending').exists():
             connection_status = "request_sent"
+        # Check if the current user has received a pending request from the target.
         elif ConnectionRequest.objects.filter(sender=target_user, receiver=current_user, status='pending').exists():
             connection_status = "request_received"
 
-        return { "connection_status": connection_status }
+        # Return the complete status object.
+        return {
+            "connection_status": connection_status,
+            "is_followed_by_request_user": is_followed_by_request_user,
+        }
 
 
 # --- REPLACE your existing UserProfileUpdateSerializer with this one ---

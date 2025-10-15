@@ -153,43 +153,115 @@ class UserPostListView(generics.ListAPIView):
 
 # --- FINAL, CORRECTED FollowToggleView ---
 
+# C:\Users\Vinay\Project\Loopline\community\views.py
+
+# --- FINAL, CORRECTED FollowToggleView ---
+
 class FollowToggleView(APIView):
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request, username, format=None):
+        """
+        Allows current_user to follow the target 'username'.
+        If this action results in a mutual follow, it establishes a 'connected' state.
+        """
         user_to_follow = get_object_or_404(User, username__iexact=username)
         current_user = request.user
+        
         if current_user == user_to_follow:
             return Response({"detail": "You cannot follow yourself."}, status=status.HTTP_400_BAD_REQUEST)
         
         with transaction.atomic():
-            _, created = Follow.objects.get_or_create(follower=current_user, following=user_to_follow)
-            if not created: return Response({"detail": "You are already following this user."}, status=status.HTTP_400_BAD_REQUEST)
+            # Create the follow from the current user to the target user.
+            _, created_follow = Follow.objects.get_or_create(
+                follower=current_user, 
+                following=user_to_follow
+            )
+
+            # --- KEY CHANGE: Check for conditions that create a mutual connection ---
+            # Condition 1: Does the target user already follow the current user?
+            is_reciprocal_follow = Follow.objects.filter(
+                follower=user_to_follow, 
+                following=current_user
+            ).exists()
             
-            try:
-                pending_request = ConnectionRequest.objects.get(sender=user_to_follow, receiver=current_user, status='pending')
-                pending_request.status = 'accepted'
-                pending_request.save()
+            # Condition 2: Does a pending connection request exist FROM the target user?
+            pending_request_from_target = ConnectionRequest.objects.filter(
+                sender=user_to_follow, 
+                receiver=current_user, 
+                status='pending'
+            ).first()
+
+            if is_reciprocal_follow or pending_request_from_target:
+                # A mutual connection is now established.
+                
+                # Ensure the reciprocal follow exists (important for the request-based connection).
                 Follow.objects.get_or_create(follower=user_to_follow, following=current_user)
-            except ConnectionRequest.DoesNotExist: pass
-        
-        return Response({"status": "following"}, status=status.HTTP_201_CREATED)
+                
+                # Find and accept any pending request between these two users, in either direction.
+                # This covers all scenarios gracefully.
+                ConnectionRequest.objects.filter(
+                    (Q(sender=current_user, receiver=user_to_follow) | Q(sender=user_to_follow, receiver=current_user)),
+                    status='pending'
+                ).update(status='accepted')
+
+                return Response({"status": "connected"}, status=status.HTTP_200_OK)
+            
+            # If no connection was made, and a new follow was created, return 'following'.
+            if created_follow:
+                return Response({"status": "following"}, status=status.HTTP_201_CREATED)
+            else:
+                # If the follow already existed and no connection was made, it's a no-op.
+                return Response({"detail": "You are already following this user."}, status=status.HTTP_200_OK)
+
 
     def delete(self, request, username, format=None):
+        """
+        Allows current_user to unfollow the target 'username'.
+        If this breaks a mutual connection, it performs a full "disconnect".
+        """
         user_to_unfollow = get_object_or_404(User, username__iexact=username)
         current_user = request.user
         
         with transaction.atomic():
-            deleted_count, _ = Follow.objects.filter(follower=current_user, following=user_to_unfollow).delete()
-            if deleted_count == 0: return Response({"detail": "You were not following this user."}, status=status.HTTP_404_NOT_FOUND)
-            
-            ConnectionRequest.objects.filter(
-                (Q(sender=current_user, receiver=user_to_unfollow) | Q(sender=user_to_unfollow, receiver=current_user)),
-                status='accepted'
-            ).update(status='rejected')
+            # --- KEY CHANGE: Check for mutual connection BEFORE deleting anything ---
+            was_mutually_connected = Follow.objects.filter(
+                follower=current_user, 
+                following=user_to_unfollow
+            ).exists() and Follow.objects.filter(
+                follower=user_to_unfollow, 
+                following=current_user
+            ).exists()
 
-        return Response(status=status.HTTP_204_NO_CONTENT)
+            # Delete the current user's follow toward the target user.
+            deleted_count, _ = Follow.objects.filter(
+                follower=current_user, 
+                following=user_to_unfollow
+            ).delete()
+
+            if deleted_count == 0:
+                return Response({"detail": "You were not following this user."}, status=status.HTTP_404_NOT_FOUND)
+            
+            # --- KEY CHANGE: If they were connected, perform a full disconnect ---
+            if was_mutually_connected:
+                # Remove the reciprocal follow as well.
+                Follow.objects.filter(
+                    follower=user_to_unfollow, 
+                    following=current_user
+                ).delete()
+                
+                # Reset any 'accepted' ConnectionRequest between them to 'rejected'.
+                # This allows them to send new requests in the future.
+                ConnectionRequest.objects.filter(
+                    (Q(sender=current_user, receiver=user_to_unfollow) | Q(sender=user_to_unfollow, receiver=current_user)),
+                    status='accepted'
+                ).update(status='rejected')
+                
+                return Response({"status": "disconnected"}, status=status.HTTP_200_OK)
+            
+            # If not mutually connected, it was just a simple unfollow.
+            return Response({"status": "unfollowed"}, status=status.HTTP_200_OK)
     
 
 class FollowingListView(generics.ListAPIView):
@@ -301,52 +373,7 @@ class ConnectionRequestViewSet(mixins.ListModelMixin, # We no longer use CreateM
 
 # C:\Users\Vinay\Project\Loopline\community\views.py
 
-class UserRelationshipView(APIView):
-    """
-    Provides the relationship status between the authenticated user
-    and a target user, following the "Connection-First" logic.
-    """
-    permission_classes = [IsAuthenticated]
-    authentication_classes = [TokenAuthentication]
 
-    def get(self, request, username, format=None):
-        target_user = get_object_or_404(User, username=username)
-        current_user = request.user
-
-        if target_user == current_user:
-            return Response({ "follow_status": "self", "connection_status": "self" })
-
-        # --- FINAL, CORRECT "CONNECTION-FIRST" LOGIC ---
-
-        # 1. Establish the ground truth of the follow relationship.
-        is_following = Follow.objects.filter(follower=current_user, following=target_user).exists()
-        is_followed_by = Follow.objects.filter(follower=target_user, following=current_user).exists()
-
-        # 2. Determine the initial connection_status from the ConnectionRequest table.
-        connection_status = "not_connected"
-        sent_request = ConnectionRequest.objects.filter(sender=current_user, receiver=target_user, status='pending').exists()
-        received_request = ConnectionRequest.objects.filter(sender=target_user, receiver=current_user, status='pending').exists()
-        
-        # A connection is defined by mutual following, initiated by an accepted request.
-        # We check for the outcome (mutual follow) rather than the request status itself for robustness.
-        if is_following and is_followed_by:
-            connection_status = "connected"
-        elif sent_request:
-            connection_status = "request_sent"
-        elif received_request:
-            connection_status = "request_received"
-
-        # 3. Determine the follow_status based on the ground truth.
-        follow_status = "not_following"
-        if is_following:
-            follow_status = "following"
-        elif is_followed_by:
-            follow_status = "followed_by"
-            
-        return Response({
-            "follow_status": follow_status,
-            "connection_status": connection_status
-        })
     
 class AcceptConnectionRequestView(APIView):
     permission_classes = [IsAuthenticated]

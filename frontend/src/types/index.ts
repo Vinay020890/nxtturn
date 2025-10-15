@@ -45,12 +45,8 @@ export interface Skill {
 // --- UPDATED: The Main UserProfile Type ---
 export interface UserProfile {
   user: User
-
-  // --- ADDED AS PER OUR PLAN ---
   display_name: string | null
   headline: string | null
-  // --- END OF ADDITION ---
-
   bio: string | null
   location: string | null
   resume: string | null
@@ -59,10 +55,13 @@ export interface UserProfile {
   picture: string | null
   updated_at: string
 
-  is_followed_by_request_user: boolean
+  // --- THIS IS THE FIX ---
+  // The 'is_followed_by_request_user' property is REMOVED from here...
 
   relationship_status: {
     connection_status: 'not_connected' | 'request_sent' | 'request_received' | 'connected' | 'self'
+    // ...and MOVED inside the relationship_status object to match the API response.
+    is_followed_by_request_user: boolean
   } | null
 
   skills: Skill[]

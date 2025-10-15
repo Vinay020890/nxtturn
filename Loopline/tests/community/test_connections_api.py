@@ -11,6 +11,10 @@ from tests.conftest import user_factory, api_client_factory
 User = get_user_model()
 pytestmark = pytest.mark.django_db
 
+# ===================================================================
+# Tests for ConnectionRequestViewSet (These remain largely unchanged)
+# ===================================================================
+
 def test_user_can_send_connection_request(user_factory, api_client_factory):
     sender = user_factory()
     receiver = user_factory()
@@ -24,6 +28,10 @@ def test_user_can_send_connection_request(user_factory, api_client_factory):
     assert request.sender == sender
     assert request.receiver == receiver
     assert request.status == 'pending'
+    # --- NEW ASSERTION ---
+    # Verify that sending a request does NOT automatically create a follow.
+    assert not Follow.objects.filter(follower=sender, following=receiver).exists()
+
 
 def test_user_can_list_received_connection_requests(user_factory, api_client_factory):
     user_a = user_factory()
@@ -43,6 +51,7 @@ def test_user_can_list_received_connection_requests(user_factory, api_client_fac
     assert request_data['sender']['id'] == user_a.id
     assert request_data['status'] == 'pending'  
 
+
 def test_user_can_accept_connection_request(user_factory, api_client_factory):
     user_a = user_factory()
     user_b = user_factory()
@@ -53,8 +62,10 @@ def test_user_can_accept_connection_request(user_factory, api_client_factory):
     assert response.status_code == status.HTTP_200_OK
     request_obj.refresh_from_db()
     assert request_obj.status == 'accepted'
+    # Accepting a request MUST create a mutual follow.
     assert Follow.objects.filter(follower=user_a, following=user_b).exists()
     assert Follow.objects.filter(follower=user_b, following=user_a).exists()
+
 
 def test_user_can_reject_connection_request(user_factory, api_client_factory):
     user_a = user_factory()
@@ -66,116 +77,98 @@ def test_user_can_reject_connection_request(user_factory, api_client_factory):
     assert response.status_code == status.HTTP_200_OK
     request_obj.refresh_from_db()
     assert request_obj.status == 'rejected'
+    # Rejecting a request must NOT create any follows.
     assert not Follow.objects.filter(follower=user_b, following=user_a).exists()
 
-# --- NEW TESTS FOR "CONNECTION-FIRST" LOGIC ---
 
-def test_follow_back_on_pending_request_accepts_connection(user_factory, api_client_factory):
+# ===================================================================
+# --- REFACTORED TESTS for new FollowToggleView logic ---
+# ===================================================================
+
+def test_follow_creates_connection_if_reciprocal_follow_exists(user_factory, api_client_factory):
     """
-    Tests the special case where following a user who has sent a request
-    automatically accepts the connection and creates a mutual follow.
+    Tests: User A follows User B, who is already following A.
+    Result: They should become connected.
     """
     user_a = user_factory()
     user_b = user_factory()
-    ConnectionRequest.objects.create(sender=user_a, receiver=user_b, status='pending')
+    # Pre-condition: User B already follows User A
+    Follow.objects.create(follower=user_b, following=user_a)
+    
+    client = api_client_factory(user=user_a)
+    url = reverse('community:follow-toggle', kwargs={'username': user_b.username})
+    
+    # Action: User A follows User B
+    response = client.post(url)
+
+    # Assertions
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {"status": "connected"}
+    assert Follow.objects.filter(follower=user_a, following=user_b).exists()
+    assert Follow.objects.filter(follower=user_b, following=user_a).exists()
+
+
+def test_follow_back_on_pending_request_creates_connection(user_factory, api_client_factory):
+    """
+    Tests: User B follows User A, who has a pending request to B.
+    Result: They should become connected, and the request should be accepted.
+    """
+    user_a = user_factory()
+    user_b = user_factory()
+    # Pre-condition: User A has a pending request to User B
+    request_obj = ConnectionRequest.objects.create(sender=user_a, receiver=user_b, status='pending')
+    
     client = api_client_factory(user=user_b)
     url = reverse('community:follow-toggle', kwargs={'username': user_a.username})
+
+    # Action: User B follows User A
     response = client.post(url)
-    assert response.status_code == status.HTTP_201_CREATED
-    updated_request = ConnectionRequest.objects.get(sender=user_a, receiver=user_b)
-    assert updated_request.status == 'accepted'
+    
+    # Assertions
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {"status": "connected"}
+    
+    request_obj.refresh_from_db()
+    assert request_obj.status == 'accepted'
     assert Follow.objects.filter(follower=user_b, following=user_a).exists()
     assert Follow.objects.filter(follower=user_a, following=user_b).exists()
 
-def test_unfollow_breaks_connection(user_factory, api_client_factory):
+
+def test_unfollow_breaks_mutual_connection_fully(user_factory, api_client_factory):
     """
-    Tests that if a connected user unfollows the other, the connection
-    is broken (request status is changed).
+    Tests: User B, who is connected to User A, unfollows A.
+    Result: The connection is fully broken (both follows are deleted) and the
+            ConnectionRequest is reset.
     """
     user_a = user_factory()
     user_b = user_factory()
+    # Pre-condition: A and B are connected (mutual follow, accepted request)
     Follow.objects.create(follower=user_a, following=user_b)
     Follow.objects.create(follower=user_b, following=user_a)
     request_obj = ConnectionRequest.objects.create(sender=user_a, receiver=user_b, status='accepted')
+    
     client = api_client_factory(user=user_b)
     url = reverse('community:follow-toggle', kwargs={'username': user_a.username})
+
+    # Action: User B unfollows User A
     response = client.delete(url)
-    assert response.status_code == status.HTTP_204_NO_CONTENT
-    request_obj.refresh_from_db()
-    assert request_obj.status == 'rejected' # Check it's marked as broken
-    assert not Follow.objects.filter(follower=user_b, following=user_a).exists()
-
-# --- END OF NEW TESTS ---
-
-@pytest.mark.django_db
-class TestRelationshipStatusAPI:
-    def test_no_relationship(self, user_factory, api_client_factory):
-        user_a = user_factory()
-        user_b = user_factory()
-        client = api_client_factory(user=user_a)
-        url = reverse('community:user-relationship', kwargs={'username': user_b.username})
-        response = client.get(url)
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {"follow_status": "not_following", "connection_status": "not_connected"}
-
-    def test_user_a_follows_user_b(self, user_factory, api_client_factory):
-        user_a = user_factory()
-        user_b = user_factory()
-        Follow.objects.create(follower=user_a, following=user_b)
-        client = api_client_factory(user=user_a)
-        url = reverse('community:user-relationship', kwargs={'username': user_b.username})
-        response = client.get(url)
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {"follow_status": "following", "connection_status": "not_connected"}
-
-    def test_user_b_follows_user_a(self, user_factory, api_client_factory):
-        user_a = user_factory()
-        user_b = user_factory()
-        Follow.objects.create(follower=user_b, following=user_a)
-        client = api_client_factory(user=user_a)
-        url = reverse('community:user-relationship', kwargs={'username': user_b.username})
-        response = client.get(url)
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {"follow_status": "followed_by", "connection_status": "not_connected"}
-
-    def test_request_sent_from_a_to_b(self, user_factory, api_client_factory):
-        user_a = user_factory()
-        user_b = user_factory()
-        ConnectionRequest.objects.create(sender=user_a, receiver=user_b, status='pending')
-        client = api_client_factory(user=user_a)
-        url = reverse('community:user-relationship', kwargs={'username': user_b.username})
-        response = client.get(url)
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {"follow_status": "not_following", "connection_status": "request_sent"}
-        
-    def test_request_received_by_a_from_b(self, user_factory, api_client_factory):
-        user_a = user_factory()
-        user_b = user_factory()
-        ConnectionRequest.objects.create(sender=user_b, receiver=user_a, status='pending')
-        client = api_client_factory(user=user_a)
-        url = reverse('community:user-relationship', kwargs={'username': user_b.username})
-        response = client.get(url)
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {"follow_status": "not_following", "connection_status": "request_received"}
-
-    def test_users_are_connected(self, user_factory, api_client_factory):
-        user_a = user_factory()
-        user_b = user_factory()
-        Follow.objects.create(follower=user_a, following=user_b)
-        Follow.objects.create(follower=user_b, following=user_a)
-        client = api_client_factory(user=user_a)
-        url = reverse('community:user-relationship', kwargs={'username': user_b.username})
-        response = client.get(url)
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {"follow_status": "following", "connection_status": "connected"}
-
-def test_user_can_accept_request_via_username_endpoint(user_factory, api_client_factory):
-    sender = user_factory()
-    receiver = user_factory()
-    ConnectionRequest.objects.create(sender=sender, receiver=receiver)
-    client = api_client_factory(user=receiver)
-    url = reverse('community:user-accept-request', kwargs={'username': sender.username})
-    response = client.post(url)
+    
+    # Assertions
     assert response.status_code == status.HTTP_200_OK
-    assert Follow.objects.filter(follower=receiver, following=sender).exists()
-    assert Follow.objects.filter(follower=sender, following=receiver).exists()
+    assert response.json() == {"status": "disconnected"}
+    
+    request_obj.refresh_from_db()
+    assert request_obj.status == 'rejected' # Verify connection is marked as broken
+    
+    # Verify BOTH follows have been deleted
+    assert not Follow.objects.filter(follower=user_b, following=user_a).exists()
+    assert not Follow.objects.filter(follower=user_a, following=user_b).exists()
+
+
+# ===================================================================
+# --- DEPRECATED TestRelationshipStatusAPI ---
+# The UserRelationshipView has been removed. These tests are now obsolete
+# and their logic is covered by the tests in test_profile_api.py.
+# ===================================================================
+
+# (The entire TestRelationshipStatusAPI class has been removed)
