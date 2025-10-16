@@ -10,7 +10,8 @@ import type { User } from '@/stores/auth';
 import { useSearchStore } from '@/stores/search';
 import { useFeedStore } from '@/stores/feed';
 import { useGroupStore } from '@/stores/group';
-import { usePostsStore, type Post } from '@/stores/posts';
+import { usePostsStore } from '@/stores/posts';
+import type { Post } from '@/types';
 import eventBus from '@/services/eventBus';
 
 // --- Icon Imports for new dropdown ---
@@ -273,7 +274,7 @@ const handleLogout = async () => {
                   class="rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
                   <span class="sr-only">View your profile</span>
                   <img :src="getAvatarUrl(currentUser.picture, currentUser.first_name, currentUser.last_name)"
-                    alt="Your avatar" class="h-8 w-8 rounded-full object-cover">
+                    alt="Your avatar" class="h-8 w-8 rounded-full object-cover" data-cy="navbar-avatar-main">
                 </RouterLink>
 
                 <button @click="isProfileMenuOpen = !isProfileMenuOpen" type="button" data-cy="profile-menu-button"
@@ -294,7 +295,7 @@ const handleLogout = async () => {
                     <!-- Note: The profile link is now also on the avatar itself -->
                     <div class="flex items-center gap-3">
                       <img :src="getAvatarUrl(currentUser.picture, currentUser.first_name, currentUser.last_name)"
-                        alt="Your avatar" class="h-10 w-10 rounded-full object-cover">
+                        alt="Your avatar" class="h-10 w-10 rounded-full object-cover" data-cy="navbar-avatar-dropdown">
                       <div>
                         <p class="text-sm font-medium text-gray-800">{{ currentUser.first_name }} {{
                           currentUser.last_name }}</p>

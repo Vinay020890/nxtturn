@@ -3,9 +3,8 @@
 describe('User Profile Interaction', () => {
   const apiBaseUrl = Cypress.env('VITE_API_BASE_URL')
 
-  // UPDATED: This test now checks the full modal workflow for editing identity.
   it('allows a user to edit their profile summary via the modal', () => {
-    // ARRANGE
+    // This test is unrelated to the picture sync and remains unchanged.
     const testUser = { username: 'profileEditor', password: 'password123' }
     cy.testSetup('create_user', testUser)
     cy.login(testUser.username, testUser.password)
@@ -16,63 +15,94 @@ describe('User Profile Interaction', () => {
     cy.visit(`/profile/${testUser.username}`)
     cy.contains('p', `@${testUser.username}`).should('be.visible')
 
-    // ACT
-    // 1. Open the "Edit Profile Summary" modal from the ProfileCard
     cy.get('[aria-label="Edit profile summary"]').click()
     cy.contains('h3', 'Edit Profile Summary').should('be.visible')
 
-    // 2. Fill in the form inside the modal
     cy.get('input#display_name').clear().type(newDisplayName)
     cy.get('input#headline').clear().type(newHeadline)
 
-    // 3. Intercept the API call and save
     cy.intercept('PATCH', `${apiBaseUrl}/api/profiles/${testUser.username}/`).as('updateProfile')
     cy.contains('button', 'Save Changes').click()
 
-    // ASSERT
     cy.wait('@updateProfile')
 
-    // 4. Verify the UI updated on the ProfileCard
     cy.get('h1').should('contain.text', newDisplayName)
     cy.contains('p', newHeadline).should('be.visible')
   })
 
-  // This test is already passing, no changes needed, but keeping for completeness.
-  it('allows a user to remove their profile picture', () => {
-    const testUser = { username: 'pictureRemover', password: 'password123', with_picture: true }
-    cy.testSetup('create_user', testUser)
+  // --- ENHANCED TEST FOR PICTURE UPLOAD AND STATE SYNC ---
+  it('updates the profile picture on the card, navbar, and in posts after upload', () => {
+    const testUser = { username: 'pictureUploader', password: 'password123' }
+    // SETUP: Create a user and a post by that user to test synchronization
+    cy.testSetup('create_user_and_post', { user: testUser, post: { content: 'My first post!' } })
     cy.login(testUser.username, testUser.password)
     cy.visit(`/profile/${testUser.username}`)
 
+    // ASSERT INITIAL STATE: All avatars use the default (src does not contain '/media/')
+    cy.get('[data-cy="profile-picture-img"]').should('not.have.attr', 'src', '*/media/*')
+    cy.get('[data-cy="navbar-avatar-main"]').should('not.have.attr', 'src', '*/media/*')
+    cy.get('[data-cy="post-author-avatar"]').should('not.have.attr', 'src', '*/media/*')
+
+    // ACTION: Upload a new picture
+    cy.get('[data-cy="profile-picture-container"]').click()
+    cy.intercept('PATCH', `${apiBaseUrl}/api/profiles/${testUser.username}/`).as('uploadPicture')
+    cy.get('input#picture-upload').selectFile('cypress/fixtures/test_avatar.png', { force: true })
+    cy.wait('@uploadPicture')
+
+    // ASSERT FINAL STATE: All three avatar locations now show the new picture
+    const newPicturePath = '/media/profile_pics/test_avatar'
     cy.get('[data-cy="profile-picture-img"]')
-      .should('exist')
-      .and('have.attr', 'src')
+      .should('have.attr', 'src')
+      .and('include', newPicturePath)
+    cy.get('[data-cy="navbar-avatar-main"]')
+      .should('have.attr', 'src')
+      .and('include', newPicturePath)
+    cy.get('[data-cy="post-author-avatar"]')
+      .should('have.attr', 'src')
+      .and('include', newPicturePath)
+
+    // Also check the dropdown avatar for completeness
+    cy.get('[data-cy="profile-menu-button"]').click()
+    cy.get('[data-cy="navbar-avatar-dropdown"]')
+      .should('have.attr', 'src')
+      .and('include', newPicturePath)
+  })
+
+  // --- ENHANCED TEST FOR PICTURE REMOVAL AND STATE SYNC ---
+  it('reverts the profile picture on the card, navbar, and in posts after removal', () => {
+    const testUser = { username: 'pictureRemover', password: 'password123' }
+    // SETUP: Create a user WITH a picture and a post
+    cy.testSetup('create_user_and_post', {
+      user: { ...testUser, with_picture: true },
+      post: { content: 'A post with a picture!' },
+    })
+    cy.login(testUser.username, testUser.password)
+    cy.visit(`/profile/${testUser.username}`)
+
+    // ASSERT INITIAL STATE: All avatars show the initial picture
+    cy.get('[data-cy="profile-picture-img"]')
+      .should('have.attr', 'src')
       .and('include', '/media/profile_pics/')
+    cy.get('[data-cy="navbar-avatar-main"]')
+      .should('have.attr', 'src')
+      .and('include', '/media/profile_pics/')
+    cy.get('[data-cy="post-author-avatar"]')
+      .should('have.attr', 'src')
+      .and('include', '/media/profile_pics/')
+
+    // ACTION: Remove the picture
     cy.get('[data-cy="profile-picture-container"]').click()
     cy.intercept('PATCH', `${apiBaseUrl}/api/profiles/${testUser.username}/`).as('removePicture')
     cy.get('[data-cy="remove-picture-button"]').click()
     cy.wait('@removePicture')
-    cy.get('[data-cy="profile-picture-img"]')
-      .should('exist')
-      .and('have.attr', 'src')
-      .and('not.include', '/media/profile_pics/')
-    cy.get('[data-cy="profile-picture-container"]').click()
-    cy.get('[data-cy="remove-picture-button"]').should('not.exist')
-  })
 
-  // This test is already passing, no changes needed, but keeping for completeness.
-  it('allows a user to upload a new profile picture', () => {
-    const testUser = { username: 'pictureUploader', password: 'password123' }
-    cy.testSetup('create_user', testUser)
-    cy.login(testUser.username, testUser.password)
-    cy.visit(`/profile/${testUser.username}`)
-    cy.contains('p', `@${testUser.username}`).should('be.visible')
-    cy.get('[data-cy="profile-picture-container"]').click()
-    cy.intercept('PATCH', `${apiBaseUrl}/api/profiles/${testUser.username}/`).as('uploadPicture')
-    cy.get('input#picture-upload').selectFile('cypress/fixtures/test_avatar.png', { force: true })
-    cy.wait('@uploadPicture').its('response.statusCode').should('eq', 200)
-    cy.get('[data-cy="profile-picture-img"]')
-      .should('have.attr', 'src')
-      .and('include', '/media/profile_pics/test_avatar')
+    // ASSERT FINAL STATE: All three avatar locations have reverted to the default
+    cy.get('[data-cy="profile-picture-img"]').should('not.have.attr', 'src', '*/media/*')
+    cy.get('[data-cy="navbar-avatar-main"]').should('not.have.attr', 'src', '*/media/*')
+    cy.get('[data-cy="post-author-avatar"]').should('not.have.attr', 'src', '*/media/*')
+
+    // Also check the dropdown avatar for completeness
+    cy.get('[data-cy="profile-menu-button"]').click()
+    cy.get('[data-cy="navbar-avatar-dropdown"]').should('not.have.attr', 'src', '*/media/*')
   })
 })

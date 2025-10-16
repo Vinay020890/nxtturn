@@ -129,6 +129,39 @@ class TestSetupAPIView(APIView):
                         "user_a_id": user_a.id,
                         "user_b_id": user_b.id
                     }, status=status.HTTP_201_CREATED)
+                
+                # --- ADD THIS ENTIRE 'elif' BLOCK ---
+                elif action == "create_user_and_post":
+                    user_data = data.get("user", {})
+                    post_data = data.get("post", {})
+                    
+                    username = user_data.get("username")
+                    password = user_data.get("password", "password123")
+                    email = user_data.get("email", f"{username}@example.com")
+                    
+                    user, created = User.objects.get_or_create(
+                        username=username, 
+                        defaults={'email': email}
+                    )
+                    if created:
+                        user.set_password(password)
+                        user.save()
+                    
+                    create_verified_user(user)
+
+                    if user_data.get("with_picture", False):
+                        dummy_image = SimpleUploadedFile(name='test_avatar.gif', content=b'\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00\x21\xf9\x04\x01\x00\x00\x00\x00\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3b', content_type='image/gif')
+                        profile, _ = UserProfile.objects.get_or_create(user=user)
+                        profile.picture.save('test_avatar.gif', dummy_image, save=True)
+
+                    # Create the post authored by this user
+                    StatusPost.objects.create(
+                        author=user,
+                        content=post_data.get("content", "Default test post content.")
+                    )
+                    
+                    return Response({"message": f"User '{username}' and a post were created."}, status=status.HTTP_201_CREATED)
+                # --- END OF THE NEW BLOCK ---
 
                 elif action == "create_user_with_posts":
                     username = data.get("username")

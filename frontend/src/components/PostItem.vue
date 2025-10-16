@@ -3,7 +3,8 @@
 import { getAvatarUrl, buildMediaUrl } from '@/utils/avatars';
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { useFeedStore } from '@/stores/feed';
-import { usePostsStore, type Post, type PostMedia } from '@/stores/posts';
+import { usePostsStore } from '@/stores/posts';
+import type { Post, PostMedia, PollOption } from '@/types';
 import { formatDistanceToNow } from 'date-fns';
 import { useCommentStore } from '@/stores/comment';
 import CommentItem from '@/components/CommentItem.vue';
@@ -119,7 +120,7 @@ function toggleEditMode() {
   if (isEditing.value) {
     if (props.post.poll) {
       editPollQuestion.value = props.post.poll.question;
-      editPollOptions.value = props.post.poll.options.map(opt => ({ id: opt.id, text: opt.text }));
+      editPollOptions.value = props.post.poll.options.map((opt: PollOption) => ({ id: opt.id, text: opt.text }));
       deletedOptionIds.value = [];
       editContent.value = '';
       editableMedia.value = [];
@@ -151,7 +152,7 @@ function handleNewFiles(event: Event, type: 'image' | 'video') {
 }
 function flagExistingMediaForRemoval(mediaId: number) {
   mediaToDeleteIds.value.push(mediaId);
-  editableMedia.value = editableMedia.value.filter(m => m.id !== mediaId);
+  editableMedia.value = editableMedia.value.filter((m: PostMedia) => m.id !== mediaId);
 }
 function removeNewFile(index: number, type: 'image' | 'video') {
   const targetArray = type === 'image' ? newImageFiles : newVideoFiles;
@@ -167,12 +168,12 @@ async function handleUpdatePost() {
   newImageFiles.value.forEach(file => formData.append('images', file));
   newVideoFiles.value.forEach(file => formData.append('videos', file));
   if (mediaToDeleteIds.value.length > 0) formData.append('media_to_delete', JSON.stringify(mediaToDeleteIds.value));
-  
+
   try {
     const response = await axiosInstance.patch<Post>(`/posts/${props.post.id}/`, formData);
     postsStore.addOrUpdatePosts([response.data]);
     isEditing.value = false;
-  } catch(err: any) {
+  } catch (err: any) {
     localEditError.value = err.response?.data?.detail || 'Failed to update post.';
   } finally {
     postsStore.addOrUpdatePosts([{ id: props.post.id, isUpdating: false }]);
@@ -195,7 +196,7 @@ async function handleUpdatePoll() {
     const response = await axiosInstance.patch<Post>(`/posts/${props.post.id}/`, formData);
     postsStore.addOrUpdatePosts([response.data]);
     isEditing.value = false;
-  } catch(err: any) {
+  } catch (err: any) {
     localEditError.value = err.response?.data?.detail || 'Failed to update poll.';
   } finally {
     postsStore.addOrUpdatePosts([{ id: props.post.id, isUpdating: false }]);
@@ -227,7 +228,8 @@ async function handleCommentSubmit() {
       <div class="flex items-start">
         <router-link :to="{ name: 'profile', params: { username: post.author.username } }">
           <img :src="getAvatarUrl(post.author.picture, post.author.first_name, post.author.last_name)"
-            alt="author avatar" class="w-11 h-11 rounded-full object-cover mr-4 bg-gray-200">
+            alt="author avatar" class="w-11 h-11 rounded-full object-cover mr-4 bg-gray-200"
+            data-cy="post-author-avatar">
         </router-link>
         <div>
           <div class="flex items-center gap-x-2">
@@ -246,8 +248,8 @@ async function handleCommentSubmit() {
       </div>
       <div v-if="isAuthenticated" class="relative" ref="optionsMenuRef">
         <button @click.stop="toggleOptionsMenu"
-          class="p-2 rounded-full text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500" data-cy="post-options-button"><svg
-            class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          class="p-2 rounded-full text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          data-cy="post-options-button"><svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
             <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z">
             </path>
           </svg></button>
