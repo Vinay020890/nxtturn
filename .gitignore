@@ -76,7 +76,7 @@ virtualenv/
 !.env.production
 
 # Editors
-.vscode/
+
 .idea/
 *.suo
 *.ntvs*
