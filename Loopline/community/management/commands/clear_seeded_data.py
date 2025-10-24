@@ -1,46 +1,64 @@
-# C:\Users\Vinay\Project\Loopline\community\management\commands\clear_seeded_data.py
-# FINAL, UNSTOPPABLE VERSION
+# C:\Users\Vinay\Project\Loopline\community\management\commands\clear_seeded_data.py (Corrected Version)
 
 from django.core.management.base import BaseCommand
-from django.db import transaction
+from django.db import transaction, connection  # Added connection
 from django.contrib.auth import get_user_model
 from community.models import (
-    StatusPost, PostMedia, Follow, Like, Comment, Notification, Poll, Group,
-    PollVote, Report, GroupJoinRequest, GroupBlock, UserProfile
+    StatusPost,
+    PostMedia,
+    Follow,
+    Like,
+    Comment,
+    Notification,
+    Poll,
+    Group,
+    PollVote,
+    Report,
+    GroupJoinRequest,
+    GroupBlock,
+    UserProfile,
 )
 
 User = get_user_model()
 
+
 class Command(BaseCommand):
-    help = 'FINAL SCRIPT: Deletes all seeded data in sequential, committed steps.'
+    help = "Deletes all seeded data (users ending in @example.com) and their content."
 
-    # REMOVED the @transaction.atomic decorator. We will manage transactions manually.
     def handle(self, *args, **options):
-        self.stdout.write(self.style.WARNING('--- STARTING UNSTOPPABLE CLEANUP ---'))
+        self.stdout.write(self.style.WARNING("--- STARTING SEEDED DATA CLEANUP ---"))
 
-        # 1. Identify all users to delete.
-        users_to_delete = User.objects.filter(email__endswith='@example.com')
+        # 1. Identify all seeded users.
+        users_to_delete = User.objects.filter(email__endswith="@example.com")
         if not users_to_delete.exists():
-            self.stdout.write(self.style.SUCCESS('No seeded users found. Database is clean.'))
+            self.stdout.write(
+                self.style.SUCCESS("No seeded users found. Database is clean.")
+            )
             return
 
-        user_ids = list(users_to_delete.values_list('id', flat=True))
-        self.stdout.write(f'Found {len(user_ids)} seeded users to clean up.')
-        
+        user_ids = list(users_to_delete.values_list("id", flat=True))
+        self.stdout.write(f"Found {len(user_ids)} seeded users to clean up.")
+
         posts_to_delete = StatusPost.objects.filter(author__in=users_to_delete)
+        groups_to_delete = Group.objects.filter(creator__in=users_to_delete)
 
-        # --- DELETION IN SEQUENTIAL, COMMITTED STEPS ---
-
-        # STEP 1: Delete the lowest-level children (media)
         with transaction.atomic():
-            self.stdout.write('Step 1: Deleting Post Media...')
-            count, _ = PostMedia.objects.filter(post__in=posts_to_delete).delete()
-            self.stdout.write(self.style.SUCCESS(f'  > Deleted {count} media objects.'))
-        # This transaction is now COMMITTED. The media is gone from the database.
+            self.stdout.write("Deleting all related content...")
 
-        # STEP 2: Delete everything else that depends on Users or Posts
-        with transaction.atomic():
-            self.stdout.write('Step 2: Deleting all other related content (Likes, Comments, Posts, etc.)...')
+            # 1. Clear the token blacklist table to be safe
+            self.stdout.write(
+                self.style.NOTICE(
+                    "  > Clearing the outstanding token blacklist table..."
+                )
+            )
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "TRUNCATE TABLE token_blacklist_outstandingtoken CASCADE;"
+                )
+            self.stdout.write(self.style.SUCCESS("  > Token blacklist cleared."))
+
+            # 2. Delete all other objects that depend on Posts or Users
+            PostMedia.objects.filter(post__in=posts_to_delete).delete()
             Like.objects.filter(user__in=user_ids).delete()
             PollVote.objects.filter(user__in=user_ids).delete()
             Report.objects.filter(reporter__in=user_ids).delete()
@@ -52,25 +70,24 @@ class Command(BaseCommand):
             Follow.objects.filter(following__in=user_ids).delete()
             GroupJoinRequest.objects.filter(user__in=user_ids).delete()
             GroupBlock.objects.filter(user__in=user_ids).delete()
-            
-            # Now delete the posts themselves, which is now safe.
-            post_count, _ = posts_to_delete.delete()
-            self.stdout.write(self.style.SUCCESS(f'  > Deleted {post_count} post objects.'))
-        # This transaction is now COMMITTED.
 
-        # STEP 3: Clean up final user-related objects
-        with transaction.atomic():
-            self.stdout.write('Step 3: Cleaning up profiles and group memberships...')
+            # 3. Remove seeded users from any groups they might be members of
             for group in Group.objects.filter(members__in=user_ids).distinct():
                 group.members.remove(*users_to_delete)
+
+            # 4. Now delete the top-level objects
+            posts_to_delete.delete()
+            group_count, _ = groups_to_delete.delete()
+            self.stdout.write(self.style.SUCCESS(f"  > Deleted {group_count} groups."))
+
             UserProfile.objects.filter(user__in=user_ids).delete()
-        # This transaction is now COMMITTED.
 
-        # FINAL STEP: Delete the users themselves
-        with transaction.atomic():
-            self.stdout.write('Step 4: Deleting the user accounts...')
+            # 5. Finally, delete the users themselves
             user_count, _ = users_to_delete.delete()
-            self.stdout.write(self.style.SUCCESS(f'  > Deleted {user_count} user accounts.'))
-        # This transaction is now COMMITTED.
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Deleted {user_count} user accounts and all their associated data."
+                )
+            )
 
-        self.stdout.write(self.style.SUCCESS('\n--- UNSTOPPABLE CLEANUP COMPLETE ---'))
+        self.stdout.write(self.style.SUCCESS("--- SEEDED DATA CLEANUP COMPLETE ---"))
