@@ -43,7 +43,7 @@ class TestSetupAPIView(APIView):
                         prefix = data.get("username_prefix")
                         timestamp = int(time.time())
                         username = f"{prefix}_{timestamp}"
-                        email = f"{username}@example.com"
+                        email = f"{username}@cypresstest.com"
                         password = "Airtel@123"
                         user = User.objects.create_user(
                             username=username, email=email, password=password
@@ -63,7 +63,7 @@ class TestSetupAPIView(APIView):
                     elif "username" in data:
                         username = data.get("username")
                         password = data.get("password", "password123")
-                        email = data.get("email", f"{username}@example.com")
+                        email = data.get("email", f"{username}@cypresstest.com")
                         user, created = User.objects.get_or_create(
                             username=username, defaults={"email": email}
                         )
@@ -135,7 +135,7 @@ class TestSetupAPIView(APIView):
                     user_a, _ = User.objects.get_or_create(
                         username=user_a_data.get("username"),
                         defaults={
-                            "email": f'{user_a_data.get("username")}@example.com'
+                            "email": f'{user_a_data.get("username")}@cypresstest.com'
                         },
                     )
                     user_a.set_password(user_a_data.get("password"))
@@ -146,7 +146,7 @@ class TestSetupAPIView(APIView):
                     user_b, _ = User.objects.get_or_create(
                         username=user_b_data.get("username"),
                         defaults={
-                            "email": f'{user_b_data.get("username")}@example.com'
+                            "email": f'{user_b_data.get("username")}@cypresstest.com'
                         },
                     )
                     user_b.set_password(user_b_data.get("password"))
@@ -169,7 +169,7 @@ class TestSetupAPIView(APIView):
 
                     username = user_data.get("username")
                     password = user_data.get("password", "password123")
-                    email = user_data.get("email", f"{username}@example.com")
+                    email = user_data.get("email", f"{username}@cypresstest.com")
 
                     user, created = User.objects.get_or_create(
                         username=username, defaults={"email": email}
@@ -213,7 +213,8 @@ class TestSetupAPIView(APIView):
                         )
 
                     user, created = User.objects.get_or_create(
-                        username=username, defaults={"email": f"{username}@example.com"}
+                        username=username,
+                        defaults={"email": f"{username}@cypresstest.com"},
                     )
                     user.set_password(password)
                     user.save()
@@ -341,6 +342,7 @@ class TestSetupAPIView(APIView):
                     for prefix in test_user_prefixes:
                         user_query |= Q(username__startswith=prefix)
                     user_query |= Q(username__in=["userA", "userB", "userC"])
+                    user_query |= Q(email__endswith="@cypresstest.com")
 
                     # 1. Identify the users that are going to be deleted
                     users_to_delete = User.objects.filter(user_query)

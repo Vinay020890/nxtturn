@@ -48,7 +48,7 @@ describe('Authentication Flow', () => {
   it('shows an informational message when an unverified user tries to log in', () => {
     const unverifiedUser = {
       username: `unverified_user_${Date.now()}`,
-      email: `unverified_${Date.now()}@test.com`,
+      email: `unverified_${Date.now()}@cypresstest.com`,
       password: 'password123',
     }
     cy.testSetup('create_unverified_user', unverifiedUser)

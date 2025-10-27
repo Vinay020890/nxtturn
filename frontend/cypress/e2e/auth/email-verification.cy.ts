@@ -8,7 +8,7 @@ describe('Email Verification User Flow', () => {
     // Use dynamic values to ensure the user is always unique for each test run
     const uniqueId = Date.now()
     const username = `verifyuser_${uniqueId}`
-    const email = `verify_${uniqueId}@example.com`
+    const email = `verify_${uniqueId}@cypresstest.com`
     const password = 'Password123!'
 
     // 1. Visit the registration page

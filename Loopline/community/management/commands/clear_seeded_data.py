@@ -45,17 +45,32 @@ class Command(BaseCommand):
         with transaction.atomic():
             self.stdout.write("Deleting all related content...")
 
-            # 1. Clear the token blacklist table to be safe
-            self.stdout.write(
-                self.style.NOTICE(
-                    "  > Clearing the outstanding token blacklist table..."
-                )
-            )
+            # 1. Safely clear the token blacklist table if it exists
             with connection.cursor() as cursor:
+                # Get a list of all tables in the public schema
                 cursor.execute(
-                    "TRUNCATE TABLE token_blacklist_outstandingtoken CASCADE;"
+                    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
                 )
-            self.stdout.write(self.style.SUCCESS("  > Token blacklist cleared."))
+                all_tables = [table[0] for table in cursor.fetchall()]
+
+                if "token_blacklist_outstandingtoken" in all_tables:
+                    self.stdout.write(
+                        self.style.NOTICE(
+                            "  > Found token_blacklist table. Clearing it..."
+                        )
+                    )
+                    cursor.execute(
+                        "TRUNCATE TABLE token_blacklist_outstandingtoken CASCADE;"
+                    )
+                    self.stdout.write(
+                        self.style.SUCCESS("  > Token blacklist cleared.")
+                    )
+                else:
+                    self.stdout.write(
+                        self.style.NOTICE(
+                            "  > Token blacklist table not found. Skipping cleanup."
+                        )
+                    )
 
             # 2. Delete all other objects that depend on Posts or Users
             PostMedia.objects.filter(post__in=posts_to_delete).delete()

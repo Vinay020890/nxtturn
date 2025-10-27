@@ -1,4 +1,4 @@
-// C:\Users\Vinay\Project\frontend\cypress\support\e2e.ts
+// C:\Users\Vinay\Project\frontend\cypress\support\e2e.ts (Final Robust Version)
 
 // ***********************************************************
 // This example support/e2e.ts is processed and
@@ -6,10 +6,6 @@
 //
 // This is a great place to put global configuration and
 // behavior that modifies Cypress.
-//
-// You can change the location of this file or turn off
-// automatically serving support files with the
-// 'supportFile' configuration option.
 //
 // You can read more here:
 // https://on.cypress.io/configuration
@@ -19,25 +15,50 @@
 import './commands'
 
 /**
- * Global After Hook
- * -----------------
- * This code block runs a single time after ALL tests in the suite have finished.
- * Its purpose is to clean up the database by calling the backend's new
- * endpoint with the 'cleanup' action. This prevents test data from
- * polluting the development environment over time.
+ * Reusable function to call the backend cleanup endpoint.
+ * We make `failOnStatusCode: false` so a cleanup failure doesn't stop the tests.
  */
-after(() => {
-  cy.log('--- E2E Test Suite Finished: Cleaning up test data ---');
-
+function cleanupDatabase() {
   cy.request({
     method: 'POST',
-    // THIS IS THE CORRECTED URL with /test/
-    url: `${Cypress.env('VITE_API_BASE_URL')}/api/test/setup/`, 
+    url: `${Cypress.env('VITE_API_BASE_URL')}/api/test/setup/`,
     body: {
-      action: 'cleanup' // The action we created on the backend
+      action: 'cleanup',
     },
-    failOnStatusCode: true 
+    failOnStatusCode: false,
   }).then((response) => {
-    cy.log('Cleanup successful:', response.body);
-  });
-});
+    if (response.status === 200) {
+      cy.log('✅ Backend cleanup successful:', response.body)
+    } else {
+      // Log a warning instead of failing the test run
+      cy.log('⚠️ Backend cleanup may have failed.', {
+        status: response.status,
+        body: response.body,
+      })
+    }
+  })
+}
+
+/**
+ * Global Before Hook
+ * -----------------
+ * This runs ONCE before any tests start.
+ * Its primary job is to guarantee a clean slate by cleaning up data from any
+ * previous runs that might have failed or been cancelled.
+ */
+before(() => {
+  cy.log('--- E2E Test Suite Starting: Cleaning up any previous test data... ---')
+  cleanupDatabase()
+})
+
+/**
+ * Global After Hook
+ * -----------------
+ * This runs ONCE after all tests have finished.
+ * Its job is to be a good citizen and clean up the data from the run that
+ * just completed, leaving the database clean for the next developer.
+ */
+after(() => {
+  cy.log('--- E2E Test Suite Finished: Performing courtesy cleanup... ---')
+  cleanupDatabase()
+})
