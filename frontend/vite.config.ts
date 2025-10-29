@@ -1,13 +1,14 @@
-import { fileURLToPath, URL } from 'node:url'
+// C:\Users\Vinay\Project\frontend\vite.config.ts
+// --- SIMPLIFIED AND CORRECTED VERSION ---
 
-import { defineConfig, loadEnv } from 'vite' // <-- Import loadEnv
+import { fileURLToPath, URL } from 'node:url'
+import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  // <-- Change to a function to access 'mode'
-  // Load env file based on the current mode (e.g., 'development', 'cy.network')
+  // We can still load env if other parts of your build process need it.
   const env = loadEnv(mode, process.cwd(), '')
 
   return {
@@ -17,17 +18,14 @@ export default defineConfig(({ mode }) => {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
       },
     },
-    // --- ADD THIS ENTIRE 'server' BLOCK ---
+    // --- THIS IS THE FIX ---
     server: {
-      host: '0.0.0.0', // Listen on all network interfaces
-      port: 5173, // Default port for development
-      hmr: {
-        // This explicitly tells the HMR client how to connect.
-        // We will use an environment variable for the host to stay flexible.
-        clientPort: 5173,
-        host: env.VITE_WEBSOCKET_HOST || 'localhost',
-        protocol: 'ws',
-      },
+      // 'true' is the modern alias for '0.0.0.0' and enables auto-detection
+      // for the HMR client, which is what we need.
+      host: true,
+      port: 5173, // Keep the port consistent
     },
+    // By removing the explicit 'hmr' block, we allow Vite to automatically
+    // configure the client to use the correct network IP instead of 'localhost'.
   }
 })
