@@ -18,7 +18,7 @@
     "test:e2e:local:dev": "cross-env ENV_FILE=.env.cy.local cypress open",
     "test:e2e:network": "cross-env ENV_FILE=.env.cy.network cypress run",
     "test:e2e:network:dev": "cross-env ENV_FILE=.env.cy.network cypress open",
-    "test:e2e:network:file": "cross-env ENV_FILE=.env.cy.network cypress run" 
+    "test:e2e:network:file": "cross-env ENV_FILE=.env.cy.network cypress run"
   },
   "dependencies": {
     "@heroicons/vue": "^2.2.0",

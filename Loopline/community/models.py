@@ -45,15 +45,45 @@ class UserProfile(models.Model):
     bio = models.TextField(blank=True, null=True)
 
     # NEW: A single, more flexible location field.
-    location = models.CharField(max_length=255, blank=True, null=True)
+    # location = models.CharField(max_length=255, blank=True, null=True)
+
+    # --- NEW, FINAL LOCATION STRUCTURE ---
+
+    # Defines the user's primary physical location. All fields are optional.
+    location_city = models.CharField(max_length=100, blank=True, null=True)
+    location_administrative_area = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,  # <-- ADD THIS
+        help_text="State, Province, Region, or Territory",
+    )
+    location_country = models.CharField(max_length=100, blank=True, null=True)
+
+    # Defines the user's CURRENT work arrangement.
+    WORK_STYLE_CHOICES = [
+        ("on_site", "On-Site"),
+        ("hybrid", "Hybrid"),
+        ("remote", "Remote"),
+    ]
+    current_work_style = models.CharField(
+        max_length=10,
+        choices=WORK_STYLE_CHOICES,
+        blank=True,  # Optional for students or non-working users
+        help_text="Your current primary work arrangement.",
+    )
+
+    # Defines the user's PREFERENCE for future opportunities.
+    is_open_to_relocation = models.BooleanField(default=False)
+
+    # --- END OF NEW STRUCTURE ---
 
     # NEW: Resume file upload field.
     resume = models.FileField(upload_to="resumes/", null=True, blank=True)
 
     # DEPRECATED: These will be replaced by the new, more flexible models.
     # We will keep them for now to avoid breaking existing data, but phase them out.
-    location_city = models.CharField(max_length=100, blank=True, null=True)
-    location_state = models.CharField(max_length=100, blank=True, null=True)
+    # location_city = models.CharField(max_length=100, blank=True, null=True)
+    # location_state = models.CharField(max_length=100, blank=True, null=True)
     college_name = models.CharField(max_length=255, blank=True, null=True)
     major = models.CharField(max_length=255, blank=True, null=True)
     graduation_year = models.IntegerField(blank=True, null=True)
@@ -62,8 +92,8 @@ class UserProfile(models.Model):
     )
 
     # These fields are still useful.
-    linkedin_url = models.URLField(max_length=512, blank=True, null=True)
-    portfolio_url = models.URLField(max_length=512, blank=True, null=True)
+    # linkedin_url = models.URLField(max_length=512, blank=True, null=True)
+    # portfolio_url = models.URLField(max_length=512, blank=True, null=True)
     interests = ArrayField(
         models.CharField(max_length=100), blank=True, null=True, default=list
     )
@@ -695,6 +725,41 @@ class Skill(models.Model):
 
     def __str__(self):
         return f"Skill: {self.name} for {self.user.username}"
+
+
+class SocialLink(models.Model):
+    """
+    Represents a single social or professional link for a user's profile.
+    This replaces the old, static linkedin_url and portfolio_url fields.
+    """
+
+    LINK_TYPE_CHOICES = [
+        ("linkedin", "LinkedIn"),
+        ("github", "GitHub"),
+        ("twitter", "Twitter"),
+        ("portfolio", "Personal Portfolio"),
+        # This list can be easily extended in the future
+    ]
+
+    # Foreign Key to link this object back to a specific UserProfile
+    profile = models.ForeignKey(
+        UserProfile, on_delete=models.CASCADE, related_name="social_links"
+    )
+
+    # The type of link, which will be used to display the correct icon/label on the frontend
+    link_type = models.CharField(max_length=20, choices=LINK_TYPE_CHOICES)
+
+    # The actual URL for the link
+    url = models.URLField(max_length=512)
+
+    class Meta:
+        # This constraint ensures a user can only have one of each type of link
+        unique_together = ("profile", "link_type")
+        ordering = ["link_type"]  # A default order for consistency
+
+    def __str__(self):
+        # A helpful text representation for the Django admin
+        return f"{self.profile.user.username}'s {self.get_link_type_display()}"
 
 
 # @receiver(post_save, sender=User)

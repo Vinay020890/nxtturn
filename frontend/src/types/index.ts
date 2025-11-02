@@ -1,5 +1,5 @@
-// C:\Users\Vinay\Project\frontend\src/types/index.ts
-// This is the updated single source of truth for all major data shapes.
+// C:\Users\Vinay\Project\frontend\src\types\index.ts
+// --- THIS IS THE COMPLETE, REPLACEMENT CONTENT ---
 
 // --- Core User Types (Unchanged) ---
 export interface User {
@@ -15,7 +15,7 @@ export interface CurrentUser extends User {
   profile_picture: string | null
 }
 
-// --- Profile Section Types (Unchanged) ---
+// --- Profile Section Types ---
 export interface Education {
   id: number
   school: string
@@ -42,49 +42,64 @@ export interface Skill {
   name: string
 }
 
+// --- NEW: SocialLink Type ---
+export interface SocialLink {
+  id: number
+  link_type: 'linkedin' | 'github' | 'twitter' | 'portfolio'
+  url: string
+}
+
 // --- UPDATED: The Main UserProfile Type ---
 export interface UserProfile {
-  user: User
+  user: PostAuthor // Using PostAuthor as it seems to be the public user representation
   display_name: string | null
   headline: string | null
   bio: string | null
-  location: string | null
+
+  // --- NEW STRUCTURED LOCATION FIELDS ---
+  location_city: string | null
+  location_administrative_area: string | null
+  location_country: string | null
+  current_work_style: 'on_site' | 'hybrid' | 'remote' | '' | null
+  is_open_to_relocation: boolean
+  // --- END NEW FIELDS ---
+
   resume: string | null
-  linkedin_url: string | null
-  portfolio_url: string | null
   picture: string | null
   updated_at: string
-
-  // --- THIS IS THE FIX ---
-  // The 'is_followed_by_request_user' property is REMOVED from here...
-
   relationship_status: {
     connection_status: 'not_connected' | 'request_sent' | 'request_received' | 'connected' | 'self'
-    // ...and MOVED inside the relationship_status object to match the API response.
     is_followed_by_request_user: boolean
   } | null
-
   skills: Skill[]
   education: Education[]
   experience: Experience[]
   interests: string[]
+
+  // --- NEW SOCIAL LINKS FIELD ---
+  social_links: SocialLink[]
 }
 
 // --- UPDATED: The Payload for Profile Updates ---
 export type ProfileUpdatePayload = {
-  // --- ADDED AS PER OUR PLAN ---
   display_name?: string | null
   headline?: string | null
-  // --- END OF ADDITION ---
-
   bio?: string | null
-  location?: string | null
-  linkedin_url?: string | null
-  portfolio_url?: string | null
+
+  // --- NEW PAYLOAD FIELDS ---
+  location_city?: string | null
+  location_administrative_area?: string | null
+  location_country?: string | null
+  current_work_style?: 'on_site' | 'hybrid' | 'remote' | '' | null
+  is_open_to_relocation?: boolean
+  // Use Omit to create a version of SocialLink without the 'id' for creation/updates
+  social_links?: Omit<SocialLink, 'id'>[]
+  // --- END NEW PAYLOAD FIELDS ---
+
   interests?: string[]
 }
 
-// --- Post-Related Types (Preserved from your original file) ---
+// --- Post-Related Types (Unchanged) ---
 export interface PostAuthor {
   id: number
   username: string
