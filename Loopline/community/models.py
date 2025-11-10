@@ -676,20 +676,48 @@ class Report(models.Model):
 
 # --- NEW MODEL: Education ---
 class Education(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="education")
-    school = models.CharField(max_length=255)
-    degree = models.CharField(max_length=255, blank=True, null=True)
-    field_of_study = models.CharField(max_length=255, blank=True, null=True)
+    """
+    Represents a single academic entry in a user's profile.
+    Links to UserProfile, following the established project pattern.
+    """
+
+    user_profile = models.ForeignKey(
+        UserProfile, on_delete=models.CASCADE, related_name="education_history"
+    )
+
+    # The primary place of study: "K. J. Somaiya College", "IIT Bombay", etc.
+    institution = models.CharField(max_length=255)
+
+    # The title of the qualification: "Bachelor of Engineering", "HSC".
+    degree = models.CharField(max_length=255)
+
+    # The major or specialization: "Computer Science". Optional.
+    field_of_study = models.CharField(max_length=255, blank=True)
+
+    # For the affiliating university, if institution is a college. Optional.
+    university = models.CharField(max_length=255, blank=True)
+
+    # For the educational board (CBSE, etc.). Optional.
+    board = models.CharField(max_length=255, blank=True)
+
     start_date = models.DateField()
     end_date = models.DateField(blank=True, null=True)
-    description = models.TextField(blank=True, null=True)
+
+    description = models.TextField(blank=True)
+    location = models.CharField(max_length=255, blank=True)
+
+    # Stores achievements as a single comma-separated string.
+    achievements = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["-start_date"]
-        verbose_name_plural = "Education"
+        ordering = ["-end_date", "-start_date"]
+        verbose_name_plural = "Education History"
 
     def __str__(self):
-        return f"{self.degree} from {self.school} for {self.user.username}"
+        return f"{self.degree} from {self.institution}"
 
 
 # --- NEW MODEL: Experience ---

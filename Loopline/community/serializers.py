@@ -359,12 +359,16 @@ class EducationSerializer(serializers.ModelSerializer):
         model = Education
         fields = [
             "id",
-            "school",
+            "institution",
             "degree",
             "field_of_study",
+            "university",
+            "board",
             "start_date",
             "end_date",
             "description",
+            "location",
+            "achievements",
         ]
 
 
@@ -395,9 +399,13 @@ class SocialLinkSerializer(serializers.ModelSerializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
 
-    skills = SkillSerializer(many=True, read_only=True)
-    education = EducationSerializer(many=True, read_only=True)
-    experience = ExperienceSerializer(many=True, read_only=True)
+    skills = SkillSerializer(many=True, read_only=True, source="user.skills")
+    education = EducationSerializer(
+        many=True, read_only=True, source="education_history"
+    )
+    experience = ExperienceSerializer(
+        many=True, read_only=True, source="user.experience"
+    )
 
     # --- THIS IS THE FIX ---
     # Explicitly define the serializer for the 'social_links' relationship
