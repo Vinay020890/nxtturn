@@ -1,3 +1,6 @@
+# C:\Users\Vinay\Project\Loopline\tests\community\test_education_api.py
+# --- THIS IS THE FINAL, CORRECTED VERSION ---
+
 import pytest
 from django.urls import reverse
 from rest_framework import status
@@ -9,11 +12,15 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def education_payload():
-    """Provides a valid payload for creating/updating an education entry."""
+    """
+    Provides a valid payload for creating/updating an education entry.
+    This now uses 'start_date' and 'end_date' to match the final model.
+    """
     return {
         "institution": "State University",
         "degree": "Bachelor of Science",
         "field_of_study": "Computer Science",
+        # CORRECTED: Use the final DateField format
         "start_date": "2018-09-01",
         "end_date": "2022-05-15",
         "description": "Graduated with honors.",
@@ -24,7 +31,7 @@ def education_payload():
 
 class TestEducationAPI:
     """
-    Test suite for the /api/community/profile/education/ endpoint.
+    Test suite for the /api/profile/education/ endpoint.
     """
 
     def test_unauthenticated_user_cannot_access_education_endpoints(self, api_client):
@@ -65,6 +72,8 @@ class TestEducationAPI:
         assert created_entry.user_profile == user.profile
         assert response.data["institution"] == education_payload["institution"]
         assert response.data["degree"] == education_payload["degree"]
+        # CORRECTED: Assert the date field
+        assert response.data["start_date"] == education_payload["start_date"]
 
     def test_user_can_list_only_their_own_education(
         self, api_client_factory, user_factory, education_payload

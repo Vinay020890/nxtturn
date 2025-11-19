@@ -16,14 +16,18 @@ export interface CurrentUser extends User {
 }
 
 // --- Profile Section Types ---
-export interface Education {
+export interface EducationEntry {
   id: number
-  school: string
-  degree: string | null
-  field_of_study: string | null
-  start_date: string
+  institution: string
+  degree: string
+  field_of_study: string
+  university: string
+  board: string
+  start_date: string | null
   end_date: string | null
-  description: string | null
+  description: string
+  location: string
+  achievements: string
 }
 
 export interface Experience {
@@ -72,7 +76,7 @@ export interface UserProfile {
     is_followed_by_request_user: boolean
   } | null
   skills: Skill[]
-  education: Education[]
+  education: EducationEntry[]
   experience: Experience[]
   interests: string[]
 

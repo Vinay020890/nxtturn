@@ -4,7 +4,7 @@ import { defineStore } from 'pinia'
 import axiosInstance from '@/services/axiosInstance'
 import { useAuthStore } from '@/stores/auth'
 import { usePostsStore } from '@/stores/posts'
-import type { UserProfile, ProfileUpdatePayload, Post, PostAuthor, Education } from '@/types'
+import type { UserProfile, ProfileUpdatePayload, Post, PostAuthor, EducationEntry } from '@/types'
 
 // --- FILE-SPECIFIC TYPES ---
 interface PaginatedPostsResponse {
@@ -234,10 +234,10 @@ export const useProfileStore = defineStore('profile', () => {
 
   // --- EDUCATION ACTIONS ---
 
-  async function addEducation(username: string, educationData: Omit<Education, 'id'>) {
+  async function addEducation(username: string, educationData: Omit<EducationEntry, 'id'>) {
     try {
-      const response = await axiosInstance.post<Education>(
-        `/profiles/${username}/education/`,
+      const response = await axiosInstance.post<EducationEntry>(
+        `/profile/education/`, // <-- DEFINITIVE CORRECT URL
         educationData,
       )
       const newEducation = response.data
@@ -253,11 +253,11 @@ export const useProfileStore = defineStore('profile', () => {
   async function updateEducation(
     username: string,
     educationId: number,
-    educationData: Omit<Education, 'id'>,
+    educationData: Omit<EducationEntry, 'id'>,
   ) {
     try {
-      const response = await axiosInstance.put<Education>(
-        `/profiles/${username}/education/${educationId}/`,
+      const response = await axiosInstance.put<EducationEntry>(
+        `/profile/education/${educationId}/`, // <-- DEFINITIVE CORRECT URL
         educationData,
       )
       const updatedEducation = response.data
@@ -275,7 +275,7 @@ export const useProfileStore = defineStore('profile', () => {
 
   async function deleteEducation(username: string, educationId: number) {
     try {
-      await axiosInstance.delete(`/profiles/${username}/education/${educationId}/`)
+      await axiosInstance.delete(`/profile/education/${educationId}/`) // <-- DEFINITIVE CORRECT URL
       if (currentProfile.value) {
         currentProfile.value.education = currentProfile.value.education.filter(
           (edu) => edu.id !== educationId,

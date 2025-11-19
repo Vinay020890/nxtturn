@@ -689,7 +689,7 @@ class Education(models.Model):
     institution = models.CharField(max_length=255)
 
     # The title of the qualification: "Bachelor of Engineering", "HSC".
-    degree = models.CharField(max_length=255)
+    degree = models.CharField(max_length=255, blank=True, null=True)
 
     # The major or specialization: "Computer Science". Optional.
     field_of_study = models.CharField(max_length=255, blank=True)
@@ -700,7 +700,7 @@ class Education(models.Model):
     # For the educational board (CBSE, etc.). Optional.
     board = models.CharField(max_length=255, blank=True)
 
-    start_date = models.DateField()
+    start_date = models.DateField(blank=True, null=True)
     end_date = models.DateField(blank=True, null=True)
 
     description = models.TextField(blank=True)
