@@ -1,97 +1,132 @@
 <script setup lang="ts">
-import type { UserProfile, Experience } from '@/types';
-import { PencilIcon, TrashIcon, PlusIcon } from '@heroicons/vue/24/solid';
-import { format } from 'date-fns';
+import { ref, computed } from 'vue'
+import { useProfileStore } from '@/stores/profile'
+import { useAuthStore } from '@/stores/auth'
+import ExperienceCard from '../cards/ExperienceCard.vue'
+import ExperienceForm from '../forms/ExperienceForm.vue'
+import BaseModal from '@/components/common/BaseModal.vue'
+import { PlusIcon } from '@heroicons/vue/24/solid'
+import type { Experience } from '@/types'
+import { useToast } from 'vue-toastification'
 
-defineProps<{
-    profile: UserProfile;
-    isOwnProfile: boolean;
-}>();
+const profileStore = useProfileStore()
+const authStore = useAuthStore()
+const toast = useToast()
 
-/**
- * Formats a date string (YYYY-MM-DD) into a more readable format (e.g., 'Sep 2023').
- */
-function formatDate(dateString: string): string {
-    return format(new Date(dateString), 'MMM yyyy');
+// --- Computed State ---
+const experienceList = computed(() => profileStore.currentProfile?.experience || [])
+const isOwner = computed(
+  () => authStore.currentUser?.username === profileStore.currentProfile?.user.username,
+)
+
+// --- Modal State ---
+const showModal = ref(false)
+const editingItem = ref<Experience | null>(null)
+const isSubmitting = ref(false)
+
+// --- Actions ---
+const openAddModal = () => {
+  editingItem.value = null // null means "Add Mode"
+  showModal.value = true
 }
 
-/**
- * Creates a formatted date range string. Handles cases where the end date is null or is_current is true.
- */
-function formatDateRange(startDate: string, endDate: string | null, isCurrent: boolean): string {
-    const start = formatDate(startDate);
-    const end = isCurrent ? 'Present' : (endDate ? formatDate(endDate) : 'Present');
-    return `${start} - ${end}`;
+const openEditModal = (id: number) => {
+  const item = experienceList.value.find((e) => e.id === id)
+  if (item) {
+    editingItem.value = JSON.parse(JSON.stringify(item)) // Deep copy to avoid mutation
+    showModal.value = true
+  }
 }
 
-// --- Placeholder functions for future CRUD operations ---
-function handleAddExperience() {
-    // TODO: This will open a modal to add a new experience entry.
-    console.log('Open modal to add experience');
+const closeModal = () => {
+  showModal.value = false
+  editingItem.value = null
 }
 
-function handleEditExperience(experienceItem: Experience) {
-    // TODO: This will open a modal pre-filled with the experienceItem data to edit.
-    console.log('Open modal to edit experience item:', experienceItem);
+const handleSave = async (payload: Omit<Experience, 'id'>) => {
+  if (!profileStore.currentProfile) return
+
+  isSubmitting.value = true
+  try {
+    if (editingItem.value) {
+      // Update
+      await profileStore.updateExperience(
+        profileStore.currentProfile.user.username,
+        editingItem.value.id,
+        payload,
+      )
+      toast.success('Experience updated successfully')
+    } else {
+      // Create
+      await profileStore.addExperience(profileStore.currentProfile.user.username, payload)
+      toast.success('Experience added successfully')
+    }
+    closeModal()
+  } catch (error: any) {
+    toast.error(error.message || 'Failed to save experience')
+  } finally {
+    isSubmitting.value = false
+  }
 }
 
-function handleDeleteExperience(experienceId: number) {
-    // TODO: This will show a confirmation and then make an API call to delete.
-    console.log('Trigger delete for experience item ID:', experienceId);
+const handleDelete = async (id: number) => {
+  if (!confirm('Are you sure you want to delete this experience entry?')) return
+  if (!profileStore.currentProfile) return
+
+  try {
+    await profileStore.deleteExperience(profileStore.currentProfile.user.username, id)
+    toast.success('Experience deleted')
+  } catch (error: any) {
+    toast.error(error.message || 'Failed to delete experience')
+  }
 }
 </script>
 
 <template>
-    <div class="bg-white rounded-lg shadow-md p-6">
-        <!-- Header Section with "Add" button for owner -->
-        <div class="flex justify-between items-center mb-4 pb-4 border-b">
-            <h3 class="text-xl font-bold text-gray-800">Experience</h3>
-            <button v-if="isOwnProfile" @click="handleAddExperience"
-                class="p-1 rounded-full text-gray-400 hover:bg-gray-100 hover:text-blue-500 transition-colors duration-200"
-                aria-label="Add new experience">
-                <PlusIcon class="h-6 w-6" />
-            </button>
-        </div>
-
-        <!-- Conditional Content: Show list or placeholder -->
-        <div v-if="profile.experience && profile.experience.length > 0">
-            <ul class="space-y-6">
-                <li v-for="item in profile.experience" :key="item.id" class="flex justify-between items-start">
-                    <!-- Experience Details -->
-                    <div class="flex-grow">
-                        <h4 class="font-bold text-gray-800">{{ item.title }}</h4>
-                        <p class="text-sm text-gray-600">
-                            {{ item.company }}<span v-if="item.company && item.location"> &middot; </span>{{
-                                item.location }}
-                        </p>
-                        <p class="text-xs text-gray-500 mt-1">
-                            {{ formatDateRange(item.start_date, item.end_date, item.is_current) }}
-                        </p>
-                        <p v-if="item.description" class="mt-2 text-sm text-gray-700 whitespace-pre-wrap">
-                            {{ item.description }}
-                        </p>
-                    </div>
-
-                    <!-- Action Buttons for owner -->
-                    <div v-if="isOwnProfile" class="flex items-center space-x-2 ml-4 flex-shrink-0">
-                        <button @click="handleEditExperience(item)"
-                            class="text-gray-400 hover:text-blue-500 transition-colors duration-200"
-                            aria-label="Edit experience">
-                            <PencilIcon class="h-5 w-5" />
-                        </button>
-                        <button @click="handleDeleteExperience(item.id)"
-                            class="text-gray-400 hover:text-red-500 transition-colors duration-200"
-                            aria-label="Delete experience">
-                            <TrashIcon class="h-5 w-5" />
-                        </button>
-                    </div>
-                </li>
-            </ul>
-        </div>
-
-        <!-- Placeholder when no experience entries exist -->
-        <div v-else class="text-center text-gray-500 py-8">
-            <p>No experience information has been added yet.</p>
-        </div>
+  <div data-cy="experience-tab-content" class="space-y-4">
+    <!-- Header / Add Button -->
+    <div v-if="isOwner" class="flex justify-end">
+      <button
+        @click="openAddModal"
+        class="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 font-medium transition-colors"
+      >
+        <PlusIcon class="w-5 h-5" />
+        Add Experience
+      </button>
     </div>
+
+    <!-- Empty State -->
+    <div
+      v-if="experienceList.length === 0"
+      class="text-center py-12 bg-gray-50 rounded-lg border border-dashed border-gray-300"
+    >
+      <p class="text-gray-500">No experience added yet.</p>
+    </div>
+
+    <!-- List -->
+    <div v-else class="space-y-4">
+      <ExperienceCard
+        v-for="item in experienceList"
+        :key="item.id"
+        :experience="item"
+        :is-owner="isOwner"
+        @edit="openEditModal"
+        @delete="handleDelete"
+      />
+    </div>
+
+    <!-- Add/Edit Modal -->
+    <BaseModal
+      :show="showModal"
+      @close="closeModal"
+      :title="editingItem ? 'Edit Experience' : 'Add Experience'"
+    >
+      <ExperienceForm
+        :initial-data="editingItem"
+        :is-submitting="isSubmitting"
+        @submit="handleSave"
+        @cancel="closeModal"
+      />
+    </BaseModal>
+  </div>
 </template>

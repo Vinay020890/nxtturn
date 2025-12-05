@@ -2,6 +2,7 @@ from rest_framework import permissions
 from django.shortcuts import get_object_or_404
 from .models import Group
 
+
 class IsOwnerOrReadOnly(permissions.BasePermission):
     """
     Custom permission to only allow owners of an object (profile) to edit it.
@@ -21,19 +22,25 @@ class IsOwnerOrReadOnly(permissions.BasePermission):
         # --- UPDATED OWNERSHIP CHECK ---
         # Check common attribute names for the owner/author.
         # Add more checks here if your models use different field names.
-        if hasattr(obj, 'author'):
+        if hasattr(obj, "author"):
             # Check if the object's author is the requesting user
             return obj.author == request.user
-        elif hasattr(obj, 'user'):
+        elif hasattr(obj, "user"):
             # Check if the object's user is the requesting user (e.g., for UserProfile)
             return obj.user == request.user
         # Add more elif checks here if needed for other owner field names
+
+        # 3. --- NEW: Check 'user_profile' field (Education, Experience) ---
+        elif hasattr(obj, "user_profile"):
+            return obj.user_profile.user == request.user
 
         # If no owner attribute found or doesn't match, deny permission
         return False
         # --- END OF UPDATED CHECK ---
 
+
 # In C:\Users\Vinay\Project\Loopline\community\permissions.py
+
 
 # --- REPLACEMENT FOR THE IsGroupMember CLASS ---
 class IsGroupMember(permissions.BasePermission):
@@ -41,13 +48,14 @@ class IsGroupMember(permissions.BasePermission):
     Custom permission to only allow members of a specified group to create content within it.
     This version correctly handles a 'group' SLUG from the request.data.
     """
+
     message = "You must be a member of this group to perform this action."
 
     def has_permission(self, request, view):
         # Read operations are not handled by this permission; it's for creation (POST).
         # We assume another permission like IsAuthenticated handles GET.
         # This simplifies the logic. If it's not a POST, we don't block.
-        if request.method != 'POST':
+        if request.method != "POST":
             return True
 
         # For POST requests, the user must be authenticated.
@@ -56,7 +64,7 @@ class IsGroupMember(permissions.BasePermission):
 
         # --- THIS IS THE CORE FIX ---
         # 1. We now look for a 'group' SLUG in the request data.
-        group_slug = request.data.get('group')
+        group_slug = request.data.get("group")
 
         # 2. If no group slug is provided, this is a main feed post.
         #    This permission should not block it. The view's IsAuthenticated handles it.
@@ -71,11 +79,13 @@ class IsGroupMember(permissions.BasePermission):
         except Group.DoesNotExist:
             # If the group slug is invalid, deny permission.
             return False
-    
+
+
 class IsCreatorOrReadOnly(permissions.BasePermission):
     """
     Custom permission to only allow the creator of a group to edit or delete it.
     """
+
     message = "You must be the creator of this group to perform this action."
 
     def has_object_permission(self, request, view, obj):
@@ -86,18 +96,19 @@ class IsCreatorOrReadOnly(permissions.BasePermission):
         # Write permissions (DELETE, PUT, PATCH) are only allowed to the creator of the group.
         # This assumes the object 'obj' is a Group instance.
         return obj.creator == request.user
-    
+
 
 class IsGroupCreator(permissions.BasePermission):
     """
     Custom permission to only allow the creator of a group to perform an action.
     This permission checks the group based on a 'slug' from the URL kwargs.
     """
+
     message = "You must be the creator of this group to perform this action."
 
     def has_permission(self, request, view):
         # Retrieve the group slug from the URL
-        group_slug = view.kwargs.get('slug')
+        group_slug = view.kwargs.get("slug")
         if not group_slug:
             return False
 
@@ -105,15 +116,13 @@ class IsGroupCreator(permissions.BasePermission):
         try:
             group = Group.objects.get(slug=group_slug)
         except Group.DoesNotExist:
-            return False # No group found, deny access.
+            return False  # No group found, deny access.
 
         # Check if the authenticated user is the creator of the group
         if request.user and request.user.is_authenticated:
             return group.creator == request.user
-        
-        return False
-    
 
+        return False
 
 
 class IsGroupMemberOrPublicReadOnly(permissions.BasePermission):
@@ -126,7 +135,7 @@ class IsGroupMemberOrPublicReadOnly(permissions.BasePermission):
 
     def has_object_permission(self, request, view, obj):
         # 'obj' here is the Group instance.
-        
+
         # === THIS IS THE CORE CHANGE ===
         # Allow ALL read-only requests (GET, HEAD, OPTIONS).
         # The serializer will be responsible for hiding sensitive data.

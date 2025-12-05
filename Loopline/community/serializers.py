@@ -382,9 +382,22 @@ class ExperienceSerializer(serializers.ModelSerializer):
             "location",
             "start_date",
             "end_date",
-            "is_current",
             "description",
         ]
+        read_only_fields = ["id"]
+
+    def validate(self, data):
+        """
+        Check that start_date is before end_date.
+        """
+        start_date = data.get("start_date")
+        end_date = data.get("end_date")
+
+        if start_date and end_date and start_date > end_date:
+            raise serializers.ValidationError(
+                {"end_date": "End date cannot be before start date."}
+            )
+        return data
 
 
 class SocialLinkSerializer(serializers.ModelSerializer):
@@ -404,7 +417,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
         many=True, read_only=True, source="education_history"
     )
     experience = ExperienceSerializer(
-        many=True, read_only=True, source="user.experience"
+        many=True, read_only=True, source="experience_history"
     )
 
     # --- THIS IS THE FIX ---

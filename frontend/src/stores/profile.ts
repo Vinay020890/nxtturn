@@ -4,7 +4,14 @@ import { defineStore } from 'pinia'
 import axiosInstance from '@/services/axiosInstance'
 import { useAuthStore } from '@/stores/auth'
 import { usePostsStore } from '@/stores/posts'
-import type { UserProfile, ProfileUpdatePayload, Post, PostAuthor, EducationEntry } from '@/types'
+import type {
+  UserProfile,
+  ProfileUpdatePayload,
+  Post,
+  PostAuthor,
+  EducationEntry,
+  Experience,
+} from '@/types'
 
 // --- FILE-SPECIFIC TYPES ---
 interface PaginatedPostsResponse {
@@ -287,6 +294,59 @@ export const useProfileStore = defineStore('profile', () => {
     }
   }
 
+  // --- EXPERIENCE ACTIONS ---
+
+  async function addExperience(username: string, experienceData: Omit<Experience, 'id'>) {
+    try {
+      const response = await axiosInstance.post<Experience>(`/profile/experience/`, experienceData)
+      const newExperience = response.data
+      if (currentProfile.value) {
+        // Add to the top of the list
+        currentProfile.value.experience.unshift(newExperience)
+      }
+    } catch (err: any) {
+      console.error('Failed to add experience:', err)
+      throw new Error(err.response?.data?.detail || 'Failed to add experience entry.')
+    }
+  }
+
+  async function updateExperience(
+    username: string,
+    experienceId: number,
+    experienceData: Omit<Experience, 'id'>,
+  ) {
+    try {
+      const response = await axiosInstance.put<Experience>(
+        `/profile/experience/${experienceId}/`,
+        experienceData,
+      )
+      const updatedExperience = response.data
+      if (currentProfile.value) {
+        const index = currentProfile.value.experience.findIndex((exp) => exp.id === experienceId)
+        if (index !== -1) {
+          currentProfile.value.experience[index] = updatedExperience
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to update experience:', err)
+      throw new Error(err.response?.data?.detail || 'Failed to update experience entry.')
+    }
+  }
+
+  async function deleteExperience(username: string, experienceId: number) {
+    try {
+      await axiosInstance.delete(`/profile/experience/${experienceId}/`)
+      if (currentProfile.value) {
+        currentProfile.value.experience = currentProfile.value.experience.filter(
+          (exp) => exp.id !== experienceId,
+        )
+      }
+    } catch (err: any) {
+      console.error('Failed to delete experience:', err)
+      throw new Error(err.response?.data?.detail || 'Failed to delete experience entry.')
+    }
+  }
+
   function $reset() {
     currentProfile.value = null
     postIdsByUsername.value = {}
@@ -329,5 +389,8 @@ export const useProfileStore = defineStore('profile', () => {
     addEducation,
     updateEducation,
     deleteEducation,
+    addExperience,
+    updateExperience,
+    deleteExperience,
   }
 })

@@ -56,11 +56,15 @@ describe('User Profile Interaction', () => {
       cy.get('@linksCard').find('[data-cy="edit-quick-links-button"]').click()
 
       cy.contains('button', '+ Add another link').click()
-      cy.get('#link-type-0').select('github')
+
+      // FIX: Add { force: true } to handle DevTools overlay
+      cy.get('#link-type-0').select('github', { force: true })
       cy.get('#link-url-0').type('https://github.com/testuser')
 
       cy.contains('button', '+ Add another link').click()
-      cy.get('#link-type-1').select('twitter')
+
+      // FIX: Add { force: true }
+      cy.get('#link-type-1').select('twitter', { force: true })
       cy.get('#link-url-1').type('https://twitter.com/testuser')
 
       cy.get('[data-cy="remove-link-button"]').first().click()

@@ -721,21 +721,30 @@ class Education(models.Model):
 
 
 # --- NEW MODEL: Experience ---
+
+
 class Experience(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="experience")
+    user_profile = models.ForeignKey(
+        UserProfile, on_delete=models.CASCADE, related_name="experience_history"
+    )
     title = models.CharField(max_length=255)
     company = models.CharField(max_length=255)
     location = models.CharField(max_length=255, blank=True, null=True)
+
+    # Date fields: We will store the 1st of the month (e.g., 2020-06-01)
     start_date = models.DateField()
-    end_date = models.DateField(blank=True, null=True)
-    is_current = models.BooleanField(default=False)
+    end_date = models.DateField(null=True, blank=True)  # Null means "Present"
+
     description = models.TextField(blank=True, null=True)
 
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
     class Meta:
-        ordering = ["-start_date"]
+        ordering = ["-start_date"]  # Newest jobs first
 
     def __str__(self):
-        return f"{self.title} at {self.company} for {self.user.username}"
+        return f"{self.title} at {self.company}"
 
 
 # --- NEW MODEL: Skill ---

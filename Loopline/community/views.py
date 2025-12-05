@@ -188,7 +188,11 @@ class EducationViewSet(viewsets.ModelViewSet):
     """
 
     serializer_class = EducationSerializer
-    permission_classes = [IsAuthenticated]  # Ensures only logged-in users can access.
+    # Now consistent with ExperienceViewSet
+    permission_classes = [
+        permissions.IsAuthenticated,
+        IsOwnerOrReadOnly,
+    ]  # Ensures only logged-in users can access.
 
     def get_queryset(self):
         """
@@ -206,14 +210,21 @@ class EducationViewSet(viewsets.ModelViewSet):
         serializer.save(user_profile=self.request.user.profile)
 
 
-class ExperienceViewSet(BaseProfileSectionViewSet):
+class ExperienceViewSet(viewsets.ModelViewSet):
     """
-    API endpoint for Creating, Reading, Updating, and Deleting Experience entries.
-    URL: /api/community/profiles/<username>/experience/
+    CRUD operations for User Profile Experience.
     """
 
-    queryset = Experience.objects.all()
     serializer_class = ExperienceSerializer
+    permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
+
+    def get_queryset(self):
+        # Return only the experience entries for the currently logged-in user's profile
+        return Experience.objects.filter(user_profile=self.request.user.profile)
+
+    def perform_create(self, serializer):
+        # Automatically attach the new experience to the logged-in user's profile
+        serializer.save(user_profile=self.request.user.profile)
 
 
 class SkillViewSet(BaseProfileSectionViewSet):

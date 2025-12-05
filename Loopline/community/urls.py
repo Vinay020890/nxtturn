@@ -11,20 +11,17 @@ router.register(
     basename="connection-request",
 )
 
-# Router for the LEGACY nested profile sections (Experience, Skills)
-# We leave this as-is to avoid breaking existing functionality for now.
+# Router for the LEGACY nested profile sections (Skills only)
 profile_router = SimpleRouter()
-profile_router.register(
-    r"experience", views.ExperienceViewSet, basename="profile-experience"
-)
 profile_router.register(r"skills", views.SkillViewSet, basename="profile-skills")
 
-
-# --- NEW: A separate router for our new, self-contained Education endpoint ---
-# This is the only new piece of router logic.
-education_router = SimpleRouter()
-education_router.register(
+# --- NEW: Unified Router for Profile Sections (Education & Experience) ---
+profile_sections_router = SimpleRouter()
+profile_sections_router.register(
     r"education", views.EducationViewSet, basename="profile-education"
+)
+profile_sections_router.register(
+    r"experience", views.ExperienceViewSet, basename="profile-experience"
 )
 
 
@@ -33,7 +30,7 @@ app_name = "community"
 urlpatterns = [
     # --- NEW: Add the dedicated URL for the Education endpoint ---
     # This will create /api/community/profile/education/
-    path("profile/", include(education_router.urls)),
+    path("profile/", include(profile_sections_router.urls)),
     # --- User Profile, Follows, and Search ---
     # This path remains the same, but now only handles Experience and Skills from its nested router.
     path(
