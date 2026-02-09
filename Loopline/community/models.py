@@ -748,20 +748,71 @@ class Experience(models.Model):
 
 
 # --- NEW MODEL: Skill ---
-class Skill(models.Model):
+# --- NEW SKILLS ARCHITECTURE ---
+
+
+class SkillCategory(models.Model):
     """
-    Replaces the UserProfile.skills ArrayField for a more structured approach.
+    Represents a container for skills (e.g., "Frontend Technologies", "Hobbies").
+    Matches the colorful cards in your UI design.
     """
 
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="skills")
+    COLOR_CHOICES = [
+        ("blue", "Blue"),
+        ("green", "Green"),
+        ("purple", "Purple"),
+        ("orange", "Orange"),
+        ("red", "Red"),
+        ("teal", "Teal"),
+    ]
+
+    user_profile = models.ForeignKey(
+        UserProfile, on_delete=models.CASCADE, related_name="skill_categories"
+    )
     name = models.CharField(max_length=100)
+    color_theme = models.CharField(max_length=20, choices=COLOR_CHOICES, default="blue")
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ("user", "name")  # Prevent duplicate skills for the same user
-        ordering = ["name"]
+        # Prevent duplicate category names for the same user
+        unique_together = ("user_profile", "name")
+        ordering = ["created_at"]  # Oldest first (keeps order stable)
 
     def __str__(self):
-        return f"Skill: {self.name} for {self.user.username}"
+        return f"{self.name} ({self.user_profile.user.username})"
+
+
+class Skill(models.Model):
+    """
+    Represents a specific skill item inside a category (e.g., "React", "Cricket").
+    """
+
+    PROFICIENCY_CHOICES = [
+        ("beginner", "Beginner"),
+        ("intermediate", "Intermediate"),
+        ("advanced", "Advanced"),
+        ("expert", "Expert"),
+    ]
+
+    category = models.ForeignKey(
+        SkillCategory, on_delete=models.CASCADE, related_name="skills"
+    )
+    name = models.CharField(max_length=100)
+    proficiency = models.CharField(
+        max_length=20, choices=PROFICIENCY_CHOICES, default="intermediate"
+    )
+
+    # We store a string (e.g. 'fa-react' or 'react') to look up the icon on frontend
+    icon_name = models.CharField(max_length=50, blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("category", "name")
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.name} ({self.proficiency})"
 
 
 class SocialLink(models.Model):

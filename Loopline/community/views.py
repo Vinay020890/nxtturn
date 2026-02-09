@@ -61,6 +61,7 @@ from .models import (
     ConnectionRequest,
     Follow,
     Skill,
+    SkillCategory,
     Education,
     Experience,
 )
@@ -81,6 +82,7 @@ from .serializers import (
     ConnectionRequestCreateSerializer,
     ConnectionRequestListSerializer,
     SkillSerializer,
+    SkillCategorySerializer,
     EducationSerializer,
     ExperienceSerializer,
 )
@@ -227,14 +229,55 @@ class ExperienceViewSet(viewsets.ModelViewSet):
         serializer.save(user_profile=self.request.user.profile)
 
 
-class SkillViewSet(BaseProfileSectionViewSet):
+# --- SKILL SYSTEM VIEWSETS ---
+
+
+class SkillCategoryViewSet(viewsets.ModelViewSet):
     """
-    API endpoint for Creating, Reading, Updating, and Deleting Skill entries.
-    URL: /api/community/profiles/<username>/skills/
+    CRUD for Skill Categories (e.g., "Frontend", "Backend").
     """
 
-    queryset = Skill.objects.all()
+    serializer_class = SkillCategorySerializer
+    permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
+
+    def get_queryset(self):
+        # Return categories belonging to the logged-in user
+        return SkillCategory.objects.filter(user_profile=self.request.user.profile)
+
+    def perform_create(self, serializer):
+        # Link new category to the user's profile
+        serializer.save(user_profile=self.request.user.profile)
+
+
+class SkillViewSet(viewsets.ModelViewSet):
+    """
+    CRUD for individual Skills (e.g., "React", "Python").
+    """
+
     serializer_class = SkillSerializer
+    permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
+
+    def get_queryset(self):
+        # Return skills belonging to the logged-in user's categories
+        return Skill.objects.filter(category__user_profile=self.request.user.profile)
+
+    def perform_create(self, serializer):
+        # We assume the 'category' ID is passed in the request body.
+        # The serializer validates that the category exists.
+        # We just need to ensure the user owns the category they are adding to.
+        category_id = self.request.data.get("category")
+
+        # Security Check: Ensure the target category belongs to the requesting user
+        # This prevents User A from adding a skill to User B's category.
+        try:
+            category = SkillCategory.objects.get(
+                id=category_id, user_profile=self.request.user.profile
+            )
+            serializer.save(category=category)
+        except SkillCategory.DoesNotExist:
+            raise serializers.ValidationError(
+                {"category": "Invalid category or permission denied."}
+            )
 
 
 class UserPostListView(generics.ListAPIView):

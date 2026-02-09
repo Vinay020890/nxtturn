@@ -11,6 +11,8 @@ import type {
   PostAuthor,
   EducationEntry,
   Experience,
+  Skill,
+  SkillCategory,
 } from '@/types'
 
 // --- FILE-SPECIFIC TYPES ---
@@ -347,6 +349,102 @@ export const useProfileStore = defineStore('profile', () => {
     }
   }
 
+  // --- SKILLS ACTIONS ---
+
+  async function addSkillCategory(username: string, name: string) {
+    try {
+      const response = await axiosInstance.post<SkillCategory>(`/profile/skill-categories/`, {
+        name,
+      })
+      if (currentProfile.value) {
+        currentProfile.value.skill_categories.push(response.data)
+      }
+    } catch (err: any) {
+      console.error('Failed to add category:', err)
+      throw new Error(err.response?.data?.detail || 'Failed to create category.')
+    }
+  }
+
+  async function deleteSkillCategory(username: string, categoryId: number) {
+    try {
+      await axiosInstance.delete(`/profile/skill-categories/${categoryId}/`)
+      if (currentProfile.value) {
+        currentProfile.value.skill_categories = currentProfile.value.skill_categories.filter(
+          (c) => c.id !== categoryId,
+        )
+      }
+    } catch (err: any) {
+      console.error('Failed to delete category:', err)
+      throw new Error(err.response?.data?.detail || 'Failed to delete category.')
+    }
+  }
+
+  async function addSkill(username: string, categoryId: number, skillData: Omit<Skill, 'id'>) {
+    try {
+      const payload = { ...skillData, category: categoryId }
+      const response = await axiosInstance.post<Skill>(`/profile/skills/`, payload)
+
+      if (currentProfile.value) {
+        const category = currentProfile.value.skill_categories.find((c) => c.id === categoryId)
+        if (category) {
+          category.skills.push(response.data)
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to add skill:', err)
+      throw new Error(err.response?.data?.detail || 'Failed to add skill.')
+    }
+  }
+
+  async function deleteSkill(username: string, skillId: number, categoryId: number) {
+    try {
+      await axiosInstance.delete(`/profile/skills/${skillId}/`)
+
+      if (currentProfile.value) {
+        const category = currentProfile.value.skill_categories.find((c) => c.id === categoryId)
+        if (category) {
+          category.skills = category.skills.filter((s) => s.id !== skillId)
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to delete skill:', err)
+      throw new Error(err.response?.data?.detail || 'Failed to delete skill.')
+    }
+  }
+
+  // --- RESUME ACTIONS ---
+
+  async function updateResume(username: string, resumeFile: File) {
+    const formData = new FormData()
+    formData.append('resume', resumeFile)
+    try {
+      // Using PATCH on the main profile endpoint which already supports file uploads
+      const response = await axiosInstance.patch<UserProfile>(`/profiles/${username}/`, formData)
+
+      // Update local state with the new file URL from the server
+      if (currentProfile.value) {
+        currentProfile.value.resume = response.data.resume
+      }
+    } catch (err: any) {
+      // Extract specific file errors if they exist
+      throw new Error(err.response?.data?.resume?.join(' ') || 'Failed to upload resume.')
+    }
+  }
+
+  async function removeResume(username: string) {
+    try {
+      // Setting the field to null on the backend deletes the file
+      const response = await axiosInstance.patch<UserProfile>(`/profiles/${username}/`, {
+        resume: null,
+      })
+      if (currentProfile.value) {
+        currentProfile.value.resume = response.data.resume
+      }
+    } catch (err: any) {
+      throw new Error(err.response?.data?.detail || 'Failed to remove resume.')
+    }
+  }
+
   function $reset() {
     currentProfile.value = null
     postIdsByUsername.value = {}
@@ -392,5 +490,11 @@ export const useProfileStore = defineStore('profile', () => {
     addExperience,
     updateExperience,
     deleteExperience,
+    addSkillCategory,
+    deleteSkillCategory,
+    addSkill,
+    deleteSkill,
+    updateResume,
+    removeResume,
   }
 })

@@ -33,6 +33,7 @@ from .models import (
     GroupBlock,
     ConnectionRequest,
     Skill,
+    SkillCategory,
     Education,
     Experience,
     SocialLink,
@@ -349,9 +350,28 @@ class NotificationSerializer(serializers.ModelSerializer):
 
 
 class SkillSerializer(serializers.ModelSerializer):
+    """
+    Serializer for individual skill items.
+    """
+
     class Meta:
         model = Skill
-        fields = ["id", "name"]
+        fields = ["id", "name", "proficiency", "icon_name"]
+        read_only_fields = ["id"]
+
+
+class SkillCategorySerializer(serializers.ModelSerializer):
+    """
+    Serializer for skill categories (containers).
+    Includes the nested list of skills within that category.
+    """
+
+    skills = SkillSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = SkillCategory
+        fields = ["id", "name", "color_theme", "skills"]
+        read_only_fields = ["id"]
 
 
 class EducationSerializer(serializers.ModelSerializer):
@@ -412,7 +432,8 @@ class SocialLinkSerializer(serializers.ModelSerializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
 
-    skills = SkillSerializer(many=True, read_only=True, source="user.skills")
+    # Map the model's "skill_categories" to the JSON key "skill_categories"
+    skill_categories = SkillCategorySerializer(many=True, read_only=True)
     education = EducationSerializer(
         many=True, read_only=True, source="education_history"
     )
@@ -445,7 +466,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "picture",
             "updated_at",
             "relationship_status",
-            "skills",
+            "skill_categories",
             "education",
             "experience",
             "interests",

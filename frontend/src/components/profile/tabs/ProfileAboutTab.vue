@@ -16,8 +16,8 @@ const props = defineProps<{
 </script>
 
 <template>
-  <!-- 
-    This component no longer has a single white background. 
+  <!--
+    This component no longer has a single white background.
     Instead, it's a transparent container for the individual cards,
     each of which will have its own styling.
   -->

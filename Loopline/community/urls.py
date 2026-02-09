@@ -11,17 +11,21 @@ router.register(
     basename="connection-request",
 )
 
-# Router for the LEGACY nested profile sections (Skills only)
-profile_router = SimpleRouter()
-profile_router.register(r"skills", views.SkillViewSet, basename="profile-skills")
 
-# --- NEW: Unified Router for Profile Sections (Education & Experience) ---
+# --- Unified Router for Profile Sections (Education, Experience, Skills) ---
 profile_sections_router = SimpleRouter()
 profile_sections_router.register(
     r"education", views.EducationViewSet, basename="profile-education"
 )
 profile_sections_router.register(
     r"experience", views.ExperienceViewSet, basename="profile-experience"
+)
+# New Skill Endpoints
+profile_sections_router.register(
+    r"skill-categories", views.SkillCategoryViewSet, basename="profile-skill-categories"
+)
+profile_sections_router.register(
+    r"skills", views.SkillViewSet, basename="profile-skills"
 )
 
 
@@ -35,14 +39,8 @@ urlpatterns = [
     # This path remains the same, but now only handles Experience and Skills from its nested router.
     path(
         "profiles/<str:username>/",
-        include(
-            [
-                path(
-                    "", views.UserProfileDetailView.as_view(), name="userprofile-detail"
-                ),
-                path("", include(profile_router.urls)),
-            ]
-        ),
+        views.UserProfileDetailView.as_view(),
+        name="userprofile-detail",
     ),
     # ... (ALL OTHER URLS BELOW THIS LINE ARE UNCHANGED FROM YOUR ORIGINAL FILE) ...
     path(

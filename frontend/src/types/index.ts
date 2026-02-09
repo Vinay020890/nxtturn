@@ -43,6 +43,15 @@ export interface Experience {
 export interface Skill {
   id: number
   name: string
+  proficiency: 'beginner' | 'intermediate' | 'advanced' | 'expert'
+  icon_name: string | null
+}
+
+export interface SkillCategory {
+  id: number
+  name: string
+  color_theme: string
+  skills: Skill[]
 }
 
 // --- NEW: SocialLink Type ---
@@ -74,7 +83,7 @@ export interface UserProfile {
     connection_status: 'not_connected' | 'request_sent' | 'request_received' | 'connected' | 'self'
     is_followed_by_request_user: boolean
   } | null
-  skills: Skill[]
+  skill_categories: SkillCategory[]
   education: EducationEntry[]
   experience: Experience[]
   interests: string[]
