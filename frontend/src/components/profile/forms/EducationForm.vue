@@ -1,9 +1,18 @@
-<!-- C:\Users\Vinay\Project\frontend\src\components\profile\forms\EducationForm.vue -->
-<!-- --- THIS IS THE DEFINITIVE VERSION WITH VERTICAL LAYOUT --- -->
-
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import type { EducationEntry } from '@/types'
+import {
+  AcademicCapIcon,
+  BookOpenIcon,
+  CalendarIcon,
+  DocumentTextIcon,
+  MapPinIcon,
+  TrophyIcon,
+  BuildingLibraryIcon,
+  IdentificationIcon,
+  XMarkIcon,
+  CheckIcon,
+} from '@heroicons/vue/24/outline'
 
 // Omit 'id' as the backend handles that.
 type EducationFormData = Omit<EducationEntry, 'id'>
@@ -14,13 +23,13 @@ const props = defineProps<{
 
 const emit = defineEmits(['save', 'cancel'])
 
-// --- UI state for year/month ---
+// --- UI state for year/month (Vinay's Logic) ---
 const startYear = ref<number | null>(null)
 const startMonth = ref<number | null>(null)
 const endYear = ref<number | null>(null)
 const endMonth = ref<number | null>(null)
 
-// --- State for other form data ---
+// --- State for all form data (Vinay's Backend Fields) ---
 const form = ref({
   institution: '',
   degree: '',
@@ -32,16 +41,14 @@ const form = ref({
   achievements: '',
 })
 
-// Helper to combine year/month into a YYYY-MM-DD string
+// Helper to combine year/month into YYYY-MM-DD (Vinay's Logic)
 function combineDate(year: number | null, month: number | null): string | null {
-  if (!year) {
-    return null
-  }
+  if (!year) return null
   const monthStr = month ? String(month).padStart(2, '0') : '01'
   return `${year}-${monthStr}-01`
 }
 
-// Watcher to populate the form for editing
+// Watcher to populate the form (Vinay's Logic)
 watch(
   () => props.initialData,
   (newData) => {
@@ -50,20 +57,12 @@ watch(
         const startDate = new Date(newData.start_date)
         startYear.value = startDate.getUTCFullYear()
         startMonth.value = startDate.getUTCMonth() + 1
-      } else {
-        startYear.value = null
-        startMonth.value = null
       }
-
       if (newData.end_date) {
         const endDate = new Date(newData.end_date)
         endYear.value = endDate.getUTCFullYear()
         endMonth.value = endDate.getUTCMonth() + 1
-      } else {
-        endYear.value = null
-        endMonth.value = null
       }
-
       form.value = {
         institution: newData.institution || '',
         degree: newData.degree || '',
@@ -75,11 +74,7 @@ watch(
         achievements: newData.achievements || '',
       }
     } else {
-      // Reset form
-      startYear.value = null
-      startMonth.value = null
-      endYear.value = null
-      endMonth.value = null
+      startYear.value = startMonth.value = endYear.value = endMonth.value = null
       form.value = {
         institution: '',
         degree: '',
@@ -121,166 +116,189 @@ const monthOptions = [
 </script>
 
 <template>
-  <form @submit.prevent="handleSubmit">
-    <div class="space-y-4">
-      <!-- Institution -->
-      <div>
-        <label for="institution" class="block text-sm font-medium text-gray-700"
-          >Institution / School</label
-        >
+  <form @submit.prevent="handleSubmit" class="space-y-5">
+    <!-- Institution (Using Aditya's Styles) -->
+    <div class="space-y-1.5">
+      <label
+        for="institution"
+        class="flex items-center space-x-2 text-sm font-semibold text-gray-700"
+      >
+        <AcademicCapIcon class="h-4 w-4 text-blue-500" />
+        <span>Institution / School</span>
+        <span class="text-red-500">*</span>
+      </label>
+      <div class="relative">
         <input
           v-model="form.institution"
           type="text"
           id="institution"
           required
-          class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"
+          placeholder="e.g. IIT Bombay"
+          class="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all"
         />
+        <AcademicCapIcon class="h-4 w-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
       </div>
+    </div>
 
-      <!-- Degree & Field of Study -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label for="degree" class="block text-sm font-medium text-gray-700">Degree</label>
+    <!-- Degree & Field of Study Grid -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div class="space-y-1.5">
+        <label for="degree" class="flex items-center space-x-2 text-sm font-semibold text-gray-700">
+          <BookOpenIcon class="h-4 w-4 text-green-500" />
+          <span>Degree</span>
+        </label>
+        <div class="relative">
           <input
             v-model="form.degree"
             type="text"
             id="degree"
-            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"
+            placeholder="e.g. Bachelor of Tech"
+            class="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
           />
+          <BookOpenIcon class="h-4 w-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
         </div>
-        <div>
-          <label for="field_of_study" class="block text-sm font-medium text-gray-700"
-            >Field of Study</label
-          >
+      </div>
+      <div class="space-y-1.5">
+        <label for="field" class="flex items-center space-x-2 text-sm font-semibold text-gray-700">
+          <DocumentTextIcon class="h-4 w-4 text-purple-500" />
+          <span>Field of Study</span>
+        </label>
+        <div class="relative">
           <input
             v-model="form.field_of_study"
             type="text"
-            id="field_of_study"
-            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"
+            id="field"
+            placeholder="e.g. Computer Science"
+            class="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
+          />
+          <DocumentTextIcon
+            class="h-4 w-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"
           />
         </div>
-      </div>
-
-      <!-- Year and Optional Month Inputs -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <!-- Start Date Section -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700">Start Date</label>
-          <!-- THE FIX: Inputs are now stacked in a div with vertical spacing -->
-          <div class="mt-1 space-y-2">
-            <select
-              v-model.number="startMonth"
-              class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"
-            >
-              <option :value="null">Month (Optional)</option>
-              <option v-for="month in monthOptions" :key="month.value" :value="month.value">
-                {{ month.name }}
-              </option>
-            </select>
-            <input
-              v-model.number="startYear"
-              type="number"
-              placeholder="Year"
-              class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"
-            />
-          </div>
-        </div>
-        <!-- End Date Section -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700">End Date</label>
-          <!-- THE FIX: Inputs are now stacked in a div with vertical spacing -->
-          <div class="mt-1 space-y-2">
-            <select
-              v-model.number="endMonth"
-              class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"
-            >
-              <option :value="null">Month (Optional)</option>
-              <option v-for="month in monthOptions" :key="month.value" :value="month.value">
-                {{ month.name }}
-              </option>
-            </select>
-            <input
-              v-model.number="endYear"
-              type="number"
-              placeholder="Year"
-              class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"
-            />
-          </div>
-        </div>
-      </div>
-
-      <!-- Other fields... -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label for="university" class="block text-sm font-medium text-gray-700"
-            >University (Optional)</label
-          >
-          <input
-            v-model="form.university"
-            type="text"
-            id="university"
-            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"
-          />
-        </div>
-        <div>
-          <label for="board" class="block text-sm font-medium text-gray-700"
-            >Board (Optional)</label
-          >
-          <input
-            v-model="form.board"
-            type="text"
-            id="board"
-            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"
-          />
-        </div>
-      </div>
-      <div>
-        <label for="location" class="block text-sm font-medium text-gray-700"
-          >Location (e.g., City, Country)</label
-        >
-        <input
-          v-model="form.location"
-          type="text"
-          id="location"
-          class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"
-        />
-      </div>
-      <div>
-        <label for="description" class="block text-sm font-medium text-gray-700">Description</label>
-        <textarea
-          v-model="form.description"
-          id="description"
-          rows="3"
-          class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"
-        ></textarea>
-      </div>
-      <div>
-        <label for="achievements" class="block text-sm font-medium text-gray-700"
-          >Achievements / Activities</label
-        >
-        <textarea
-          v-model="form.achievements"
-          id="achievements"
-          rows="3"
-          class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"
-        ></textarea>
       </div>
     </div>
 
-    <!-- Form Actions -->
-    <div class="mt-6 flex justify-end space-x-3">
+    <!-- University & Board Grid -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div class="space-y-1.5">
+        <label for="univ" class="flex items-center space-x-2 text-sm font-semibold text-gray-700">
+          <BuildingLibraryIcon class="h-4 w-4 text-indigo-500" />
+          <span>University</span>
+        </label>
+        <input
+          v-model="form.university"
+          type="text"
+          id="univ"
+          placeholder="Affiliated University"
+          class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+        />
+      </div>
+      <div class="space-y-1.5">
+        <label for="board" class="flex items-center space-x-2 text-sm font-semibold text-gray-700">
+          <IdentificationIcon class="h-4 w-4 text-pink-500" />
+          <span>Board</span>
+        </label>
+        <input
+          v-model="form.board"
+          type="text"
+          id="board"
+          placeholder="e.g. CBSE / HSC"
+          class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 outline-none"
+        />
+      </div>
+    </div>
+
+    <!-- Dates (Vinay's Logic + Aditya's Style) -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div class="space-y-1.5">
+        <label class="flex items-center space-x-2 text-sm font-semibold text-gray-700">
+          <CalendarIcon class="h-4 w-4 text-orange-500" />
+          <span>Start Date</span>
+        </label>
+        <div class="flex gap-2">
+          <select
+            v-model.number="startMonth"
+            class="w-1/2 p-2 text-sm border border-gray-300 rounded-lg outline-none"
+          >
+            <option :value="null">Month</option>
+            <option v-for="m in monthOptions" :key="m.value" :value="m.value">{{ m.name }}</option>
+          </select>
+          <input
+            v-model.number="startYear"
+            type="number"
+            placeholder="Year"
+            class="w-1/2 p-2 text-sm border border-gray-300 rounded-lg outline-none"
+          />
+        </div>
+      </div>
+      <div class="space-y-1.5">
+        <label class="flex items-center space-x-2 text-sm font-semibold text-gray-700">
+          <CalendarIcon class="h-4 w-4 text-teal-500" />
+          <span>End Date</span>
+        </label>
+        <div class="flex gap-2">
+          <select
+            v-model.number="endMonth"
+            class="w-1/2 p-2 text-sm border border-gray-300 rounded-lg outline-none"
+          >
+            <option :value="null">Month</option>
+            <option v-for="m in monthOptions" :key="m.value" :value="m.value">{{ m.name }}</option>
+          </select>
+          <input
+            v-model.number="endYear"
+            type="number"
+            placeholder="Year"
+            class="w-1/2 p-2 text-sm border border-gray-300 rounded-lg outline-none"
+          />
+        </div>
+      </div>
+    </div>
+
+    <!-- Location & Achievements -->
+    <div class="space-y-1.5">
+      <label for="loc" class="flex items-center space-x-2 text-sm font-semibold text-gray-700">
+        <MapPinIcon class="h-4 w-4 text-red-500" />
+        <span>Location</span>
+      </label>
+      <input
+        v-model="form.location"
+        type="text"
+        id="loc"
+        placeholder="City, Country"
+        class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 outline-none"
+      />
+    </div>
+
+    <div class="space-y-1.5">
+      <label for="ach" class="flex items-center space-x-2 text-sm font-semibold text-gray-700">
+        <TrophyIcon class="h-4 w-4 text-yellow-500" />
+        <span>Achievements</span>
+      </label>
+      <textarea
+        v-model="form.achievements"
+        id="ach"
+        rows="2"
+        placeholder="Scholarships, Honors, etc."
+        class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 outline-none resize-none"
+      />
+    </div>
+
+    <!-- Actions (Aditya's Buttons) -->
+    <div class="flex justify-end space-x-3 pt-4 border-t">
       <button
         type="button"
         @click="$emit('cancel')"
-        class="px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50"
+        class="flex items-center space-x-2 px-4 py-2 text-sm bg-white border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 transition-all"
       >
-        Cancel
+        <XMarkIcon class="h-4 w-4" />
+        <span>Cancel</span>
       </button>
       <button
         type="submit"
-        class="px-4 py-2 bg-blue-600 border border-transparent rounded-md shadow-sm text-sm font-medium text-white hover:bg-blue-700"
+        class="flex items-center space-x-2 px-6 py-2 text-sm bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg font-medium text-white hover:from-blue-700 hover:to-purple-700 transition-all shadow-md"
       >
-        Save
+        <CheckIcon class="h-4 w-4" />
+        <span>Save Education</span>
       </button>
     </div>
   </form>
