@@ -15,6 +15,8 @@ declare module 'vue-router' {
   }
 }
 
+// In your router/index.ts or router.js
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -105,6 +107,16 @@ const router = createRouter({
       name: 'ResetPasswordConfirm',
       component: () => import('@/views/auth/ResetPasswordConfirmView.vue'),
       meta: { requiresGuest: true },
+    },
+    {
+      path: '/profile/:username/posts',
+      name: 'UserPosts',
+      component: () => import('@/views/UserPostsPage.vue'),
+      props: true,
+      meta: {
+        title: 'User Posts',
+        requiresAuth: false,
+      },
     },
   ],
 })

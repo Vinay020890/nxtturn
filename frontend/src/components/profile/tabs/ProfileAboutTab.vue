@@ -16,12 +16,12 @@ const props = defineProps<{
 </script>
 
 <template>
-  <!-- 
-    This component no longer has a single white background. 
+  <!--
+    This component no longer has a single white background.
     Instead, it's a transparent container for the individual cards,
     each of which will have its own styling.
   -->
-  <div class="space-y-6">
+  <div class="space-y-3">
     <!-- Professional Bio Card -->
     <BioCard :profile="props.profile" :is-own-profile="props.isOwnProfile" />
 
