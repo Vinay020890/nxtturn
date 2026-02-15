@@ -8,7 +8,6 @@ import type {
   UserProfile,
   ProfileUpdatePayload,
   Post,
-  PostAuthor,
   EducationEntry,
   Experience,
   Skill,
@@ -38,7 +37,6 @@ export const useProfileStore = defineStore('profile', () => {
   const errorPosts = ref<string | null>(null)
   const isLoadingFollow = ref(false)
 
-  // This ref now correctly uses the type from UserProfile
   const relationshipStatus = ref<UserProfile['relationship_status']>(null)
 
   function handlePostDeletedSignal(postId: number) {
@@ -126,23 +124,17 @@ export const useProfileStore = defineStore('profile', () => {
     try {
       const response = await axiosInstance.patch<UserProfile>(`/profiles/${username}/`, formData)
       const updatedProfile = response.data
-
-      // --- THIS IS THE FINAL FIX ---
-      // 1. Update the local profile store state
       if (currentProfile.value && currentProfile.value.user.username === username) {
         currentProfile.value.picture = updatedProfile.picture
       }
-      // 2. Sync with the global authStore (for the navbar)
       if (authStore.currentUser?.username === username) {
         authStore.updateCurrentUserPicture(updatedProfile.picture)
       }
-      // 3. Sync with the global postsStore (for all feed/post items)
       if (authStore.currentUser) {
         postsStore.updateAuthorDetailsInPosts(authStore.currentUser.id, {
           picture: updatedProfile.picture,
         })
       }
-      // --- END OF FINAL FIX ---
     } catch (err: any) {
       throw new Error(
         err.response?.data?.picture?.join(' ') ||
@@ -158,23 +150,17 @@ export const useProfileStore = defineStore('profile', () => {
         picture: null,
       })
       const updatedProfile = response.data
-
-      // --- THIS IS THE FINAL FIX ---
-      // 1. Update the local profile store state
       if (currentProfile.value && currentProfile.value.user.username === username) {
         currentProfile.value.picture = updatedProfile.picture
       }
-      // 2. Sync with the global authStore (for the navbar)
       if (authStore.currentUser?.username === username) {
         authStore.updateCurrentUserPicture(updatedProfile.picture)
       }
-      // 3. Sync with the global postsStore (for all feed/post items)
       if (authStore.currentUser) {
         postsStore.updateAuthorDetailsInPosts(authStore.currentUser.id, {
           picture: updatedProfile.picture,
         })
       }
-      // --- END OF FINAL FIX ---
     } catch (err: any) {
       console.error('Failed to remove profile picture:', err)
       throw new Error(
@@ -182,8 +168,6 @@ export const useProfileStore = defineStore('profile', () => {
       )
     }
   }
-
-  // --- REFACTORED ACTIONS ---
 
   async function followUser(usernameToFollow: string) {
     if (isLoadingFollow.value) return
@@ -242,19 +226,14 @@ export const useProfileStore = defineStore('profile', () => {
   }
 
   // --- EDUCATION ACTIONS ---
-
   async function addEducation(username: string, educationData: Omit<EducationEntry, 'id'>) {
     try {
       const response = await axiosInstance.post<EducationEntry>(
-        `/profile/education/`, // <-- DEFINITIVE CORRECT URL
+        `/profile/education/`,
         educationData,
       )
-      const newEducation = response.data
-      if (currentProfile.value) {
-        currentProfile.value.education.unshift(newEducation)
-      }
+      if (currentProfile.value) currentProfile.value.education.unshift(response.data)
     } catch (err: any) {
-      console.error('Failed to add education:', err)
       throw new Error(err.response?.data?.detail || 'Failed to add education entry.')
     }
   }
@@ -266,48 +245,36 @@ export const useProfileStore = defineStore('profile', () => {
   ) {
     try {
       const response = await axiosInstance.put<EducationEntry>(
-        `/profile/education/${educationId}/`, // <-- DEFINITIVE CORRECT URL
+        `/profile/education/${educationId}/`,
         educationData,
       )
-      const updatedEducation = response.data
       if (currentProfile.value) {
         const index = currentProfile.value.education.findIndex((edu) => edu.id === educationId)
-        if (index !== -1) {
-          currentProfile.value.education[index] = updatedEducation
-        }
+        if (index !== -1) currentProfile.value.education[index] = response.data
       }
     } catch (err: any) {
-      console.error('Failed to update education:', err)
       throw new Error(err.response?.data?.detail || 'Failed to update education entry.')
     }
   }
 
   async function deleteEducation(username: string, educationId: number) {
     try {
-      await axiosInstance.delete(`/profile/education/${educationId}/`) // <-- DEFINITIVE CORRECT URL
-      if (currentProfile.value) {
+      await axiosInstance.delete(`/profile/education/${educationId}/`)
+      if (currentProfile.value)
         currentProfile.value.education = currentProfile.value.education.filter(
           (edu) => edu.id !== educationId,
         )
-      }
     } catch (err: any) {
-      console.error('Failed to delete education:', err)
       throw new Error(err.response?.data?.detail || 'Failed to delete education entry.')
     }
   }
 
   // --- EXPERIENCE ACTIONS ---
-
   async function addExperience(username: string, experienceData: Omit<Experience, 'id'>) {
     try {
       const response = await axiosInstance.post<Experience>(`/profile/experience/`, experienceData)
-      const newExperience = response.data
-      if (currentProfile.value) {
-        // Add to the top of the list
-        currentProfile.value.experience.unshift(newExperience)
-      }
+      if (currentProfile.value) currentProfile.value.experience.unshift(response.data)
     } catch (err: any) {
-      console.error('Failed to add experience:', err)
       throw new Error(err.response?.data?.detail || 'Failed to add experience entry.')
     }
   }
@@ -322,15 +289,11 @@ export const useProfileStore = defineStore('profile', () => {
         `/profile/experience/${experienceId}/`,
         experienceData,
       )
-      const updatedExperience = response.data
       if (currentProfile.value) {
         const index = currentProfile.value.experience.findIndex((exp) => exp.id === experienceId)
-        if (index !== -1) {
-          currentProfile.value.experience[index] = updatedExperience
-        }
+        if (index !== -1) currentProfile.value.experience[index] = response.data
       }
     } catch (err: any) {
-      console.error('Failed to update experience:', err)
       throw new Error(err.response?.data?.detail || 'Failed to update experience entry.')
     }
   }
@@ -338,29 +301,23 @@ export const useProfileStore = defineStore('profile', () => {
   async function deleteExperience(username: string, experienceId: number) {
     try {
       await axiosInstance.delete(`/profile/experience/${experienceId}/`)
-      if (currentProfile.value) {
+      if (currentProfile.value)
         currentProfile.value.experience = currentProfile.value.experience.filter(
           (exp) => exp.id !== experienceId,
         )
-      }
     } catch (err: any) {
-      console.error('Failed to delete experience:', err)
       throw new Error(err.response?.data?.detail || 'Failed to delete experience entry.')
     }
   }
 
   // --- SKILLS ACTIONS ---
-
   async function addSkillCategory(username: string, name: string) {
     try {
       const response = await axiosInstance.post<SkillCategory>(`/profile/skill-categories/`, {
         name,
       })
-      if (currentProfile.value) {
-        currentProfile.value.skill_categories.push(response.data)
-      }
+      if (currentProfile.value) currentProfile.value.skill_categories.push(response.data)
     } catch (err: any) {
-      console.error('Failed to add category:', err)
       throw new Error(err.response?.data?.detail || 'Failed to create category.')
     }
   }
@@ -368,30 +325,26 @@ export const useProfileStore = defineStore('profile', () => {
   async function deleteSkillCategory(username: string, categoryId: number) {
     try {
       await axiosInstance.delete(`/profile/skill-categories/${categoryId}/`)
-      if (currentProfile.value) {
+      if (currentProfile.value)
         currentProfile.value.skill_categories = currentProfile.value.skill_categories.filter(
           (c) => c.id !== categoryId,
         )
-      }
     } catch (err: any) {
-      console.error('Failed to delete category:', err)
       throw new Error(err.response?.data?.detail || 'Failed to delete category.')
     }
   }
 
   async function addSkill(username: string, categoryId: number, skillData: Omit<Skill, 'id'>) {
     try {
-      const payload = { ...skillData, category: categoryId }
-      const response = await axiosInstance.post<Skill>(`/profile/skills/`, payload)
-
+      const response = await axiosInstance.post<Skill>(`/profile/skills/`, {
+        ...skillData,
+        category: categoryId,
+      })
       if (currentProfile.value) {
         const category = currentProfile.value.skill_categories.find((c) => c.id === categoryId)
-        if (category) {
-          category.skills.push(response.data)
-        }
+        if (category) category.skills.push(response.data)
       }
     } catch (err: any) {
-      console.error('Failed to add skill:', err)
       throw new Error(err.response?.data?.detail || 'Failed to add skill.')
     }
   }
@@ -399,49 +352,48 @@ export const useProfileStore = defineStore('profile', () => {
   async function deleteSkill(username: string, skillId: number, categoryId: number) {
     try {
       await axiosInstance.delete(`/profile/skills/${skillId}/`)
-
       if (currentProfile.value) {
         const category = currentProfile.value.skill_categories.find((c) => c.id === categoryId)
-        if (category) {
-          category.skills = category.skills.filter((s) => s.id !== skillId)
-        }
+        if (category) category.skills = category.skills.filter((s) => s.id !== skillId)
       }
     } catch (err: any) {
-      console.error('Failed to delete skill:', err)
       throw new Error(err.response?.data?.detail || 'Failed to delete skill.')
     }
   }
 
   // --- RESUME ACTIONS ---
-
   async function updateResume(username: string, resumeFile: File) {
     const formData = new FormData()
     formData.append('resume', resumeFile)
     try {
-      // Using PATCH on the main profile endpoint which already supports file uploads
       const response = await axiosInstance.patch<UserProfile>(`/profiles/${username}/`, formData)
-
-      // Update local state with the new file URL from the server
-      if (currentProfile.value) {
-        currentProfile.value.resume = response.data.resume
-      }
+      if (currentProfile.value) currentProfile.value.resume = response.data.resume
     } catch (err: any) {
-      // Extract specific file errors if they exist
       throw new Error(err.response?.data?.resume?.join(' ') || 'Failed to upload resume.')
     }
   }
 
   async function removeResume(username: string) {
     try {
-      // Setting the field to null on the backend deletes the file
       const response = await axiosInstance.patch<UserProfile>(`/profiles/${username}/`, {
         resume: null,
       })
-      if (currentProfile.value) {
-        currentProfile.value.resume = response.data.resume
-      }
+      if (currentProfile.value) currentProfile.value.resume = response.data.resume
     } catch (err: any) {
       throw new Error(err.response?.data?.detail || 'Failed to remove resume.')
+    }
+  }
+
+  // --- CONTACT ACTIONS (NEW) ---
+  async function updateContactDetails(payload: Partial<UserProfile>) {
+    try {
+      const response = await axiosInstance.patch<UserProfile>('/profile/contact/', payload)
+      if (currentProfile.value) {
+        Object.assign(currentProfile.value, response.data)
+      }
+      return response.data
+    } catch (err: any) {
+      throw new Error(err.response?.data?.detail || 'Failed to update contact info.')
     }
   }
 
@@ -496,5 +448,6 @@ export const useProfileStore = defineStore('profile', () => {
     deleteSkill,
     updateResume,
     removeResume,
+    updateContactDetails, // Added here
   }
 })

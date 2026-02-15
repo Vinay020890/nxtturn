@@ -90,6 +90,16 @@ export interface UserProfile {
 
   // --- NEW SOCIAL LINKS FIELD ---
   social_links: SocialLink[]
+
+  email: string // Fetched from User model
+  phone_number: string | null
+  phone_visibility: 'public' | 'followers' | 'connections' | 'self'
+  email_visibility: 'public' | 'followers' | 'connections' | 'self'
+
+  followers_count: number
+  following_count: number
+  connections_count: number
+  posts_count: number
 }
 
 // --- UPDATED: The Payload for Profile Updates ---
@@ -109,6 +119,10 @@ export type ProfileUpdatePayload = {
   // --- END NEW PAYLOAD FIELDS ---
 
   interests?: string[]
+
+  phone_number?: string | null
+  phone_visibility?: 'public' | 'followers' | 'connections' | 'self'
+  email_visibility?: 'public' | 'followers' | 'connections' | 'self'
 }
 
 // --- Post-Related Types (Unchanged) ---

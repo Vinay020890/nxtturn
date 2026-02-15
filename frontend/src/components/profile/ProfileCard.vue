@@ -66,11 +66,12 @@ const femaleAvatars = [
 ]
 
 // Use real posts count from props
+// Use dynamic stats calculated by the backend
 const socialStats = computed(() => ({
-  followers: 245,
-  following: 178,
-  connections: 542,
-  posts: props.postsCount, // Use real posts count
+  followers: props.profile.followers_count || 0,
+  following: props.profile.following_count || 0,
+  connections: props.profile.connections_count || 0,
+  posts: props.profile.posts_count || 0,
 }))
 
 // Track if component is mounted

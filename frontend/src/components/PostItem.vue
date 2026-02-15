@@ -345,6 +345,7 @@ function closeMediaModal() {
                 getAvatarUrl(post.author.picture, post.author.first_name, post.author.last_name)
               "
               class="w-10 h-10 rounded-full object-cover mr-3 bg-gray-200"
+              data-cy="post-author-avatar"
             />
           </router-link>
           <div class="min-w-0">
@@ -463,7 +464,9 @@ function closeMediaModal() {
             data-cy="like-button"
           >
             <FontAwesomeIcon :icon="faThumbsUp" class="mobile-action-icon" />
-            <span class="text-xs md:text-sm font-medium">Like {{ post.like_count || '' }}</span>
+            <span class="text-xs md:text-sm font-medium"
+              >Like <span data-cy="like-count">{{ post.like_count ?? 0 }}</span></span
+            >
           </button>
           <button
             @click="showComments = !showComments"
@@ -472,7 +475,7 @@ function closeMediaModal() {
           >
             <FontAwesomeIcon :icon="faCommentDots" class="mobile-action-icon" />
             <span class="text-xs md:text-sm font-medium"
-              >Comment {{ post.comment_count || '' }}</span
+              >Comment <span data-cy="comment-count">{{ post.comment_count ?? 0 }}</span></span
             >
           </button>
           <button
@@ -505,6 +508,7 @@ function closeMediaModal() {
               :parentObjectId="post.object_id"
               :parentPostActualId="post.id"
               @report-content="handleCommentReport"
+              data-cy="comment-container"
             />
             <div
               v-if="commentsForThisPost.length === 0"

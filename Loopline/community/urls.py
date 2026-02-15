@@ -1,9 +1,8 @@
-# community/urls.py
 from django.urls import path, include
 from . import views
 from rest_framework.routers import DefaultRouter, SimpleRouter
 
-# Main router for standalone endpoints
+# 1. Main router for standalone endpoints
 router = DefaultRouter()
 router.register(
     r"connections/requests",
@@ -11,8 +10,7 @@ router.register(
     basename="connection-request",
 )
 
-
-# --- Unified Router for Profile Sections (Education, Experience, Skills) ---
+# 2. Unified Router for Profile Sections (Education, Experience, Skills)
 profile_sections_router = SimpleRouter()
 profile_sections_router.register(
     r"education", views.EducationViewSet, basename="profile-education"
@@ -20,7 +18,6 @@ profile_sections_router.register(
 profile_sections_router.register(
     r"experience", views.ExperienceViewSet, basename="profile-experience"
 )
-# New Skill Endpoints
 profile_sections_router.register(
     r"skill-categories", views.SkillCategoryViewSet, basename="profile-skill-categories"
 )
@@ -28,21 +25,23 @@ profile_sections_router.register(
     r"skills", views.SkillViewSet, basename="profile-skills"
 )
 
-
 app_name = "community"
 
 urlpatterns = [
-    # --- NEW: Add the dedicated URL for the Education endpoint ---
-    # This will create /api/community/profile/education/
+    # --- Profile Endpoints ---
+    # This must come BEFORE the include(profile_sections_router.urls)
+    path(
+        "profile/contact/", views.ProfileContactView.as_view(), name="profile-contact"
+    ),
+    # This handles /profile/education/, /profile/experience/, etc.
     path("profile/", include(profile_sections_router.urls)),
-    # --- User Profile, Follows, and Search ---
-    # This path remains the same, but now only handles Experience and Skills from its nested router.
+    # Individual User Profiles
     path(
         "profiles/<str:username>/",
         views.UserProfileDetailView.as_view(),
         name="userprofile-detail",
     ),
-    # ... (ALL OTHER URLS BELOW THIS LINE ARE UNCHANGED FROM YOUR ORIGINAL FILE) ...
+    # --- Social & Follow Endpoints ---
     path(
         "users/<str:username>/posts/",
         views.UserPostListView.as_view(),
@@ -68,10 +67,12 @@ urlpatterns = [
         views.AcceptConnectionRequestView.as_view(),
         name="user-accept-request",
     ),
+    # --- Search ---
     path("search/users/", views.UserSearchAPIView.as_view(), name="user-search"),
     path(
         "search/content/", views.ContentSearchAPIView.as_view(), name="content-search"
     ),
+    # --- Posts & Content ---
     path(
         "posts/",
         views.StatusPostListCreateView.as_view(),
@@ -92,6 +93,7 @@ urlpatterns = [
         views.ReportCreateAPIView.as_view(),
         name="content-report",
     ),
+    # --- Groups ---
     path("groups/", views.GroupListView.as_view(), name="group-list"),
     path(
         "groups/<slug:slug>/", views.GroupRetrieveAPIView.as_view(), name="group-detail"
@@ -131,6 +133,7 @@ urlpatterns = [
         views.GroupBlockManageView.as_view(),
         name="group-block-manage",
     ),
+    # --- Comments ---
     path(
         "comments/<str:content_type>/<int:object_id>/",
         views.CommentListCreateAPIView.as_view(),
@@ -141,7 +144,9 @@ urlpatterns = [
         views.CommentRetrieveUpdateDestroyAPIView.as_view(),
         name="comment-detail",
     ),
+    # --- Feed ---
     path("feed/", views.FeedListView.as_view(), name="user-feed"),
+    # --- Notifications ---
     path(
         "notifications/",
         views.NotificationListAPIView.as_view(),
@@ -167,6 +172,7 @@ urlpatterns = [
         views.MarkAllNotificationsAsReadAPIView.as_view(),
         name="notifications-mark-all-as-read",
     ),
+    # --- Messaging ---
     path(
         "conversations/", views.ConversationListView.as_view(), name="conversation-list"
     ),
@@ -176,6 +182,7 @@ urlpatterns = [
         name="message-list",
     ),
     path("messages/send/", views.SendMessageView.as_view(), name="send-message"),
+    # --- Polls & Saves ---
     path(
         "polls/<int:poll_id>/options/<int:option_id>/vote/",
         views.PollVoteAPIView.as_view(),
@@ -187,7 +194,13 @@ urlpatterns = [
         name="post-save-toggle",
     ),
     path("posts/saved/", views.SavedPostListView.as_view(), name="saved-post-list"),
+    # --- System ---
     path("health-check/", views.health_check_view, name="health-check"),
 ]
 
+# Append the main router urls (connections/requests)
 urlpatterns += router.urls
+
+# NOTE: We do NOT append profile_sections_router.urls here because
+# they are already included inside the urlpatterns list above
+# using: path("profile/", include(profile_sections_router.urls))

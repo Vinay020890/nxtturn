@@ -90,6 +90,7 @@ const handleDelete = async () => {
             class="hidden"
             accept=".pdf"
             @change="handleFileUpload"
+            data-cy="resume-file-input"
           />
           <button
             @click="fileInput?.click()"

@@ -118,7 +118,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "username", "first_name", "last_name", "picture"]
+        fields = ["id", "username", "first_name", "last_name", "email", "picture"]
 
     def get_picture(self, obj):
         """
@@ -432,7 +432,16 @@ class SocialLinkSerializer(serializers.ModelSerializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
 
-    # Map the model's "skill_categories" to the JSON key "skill_categories"
+    # Change these to MethodFields so we can apply the 4-tier privacy logic
+    email = serializers.SerializerMethodField()
+    phone_number = serializers.SerializerMethodField()
+
+    # --- NEW: Dynamic Count Fields Added ---
+    followers_count = serializers.SerializerMethodField()
+    following_count = serializers.SerializerMethodField()
+    connections_count = serializers.SerializerMethodField()
+    posts_count = serializers.SerializerMethodField()
+
     skill_categories = SkillCategorySerializer(many=True, read_only=True)
     education = EducationSerializer(
         many=True, read_only=True, source="education_history"
@@ -440,28 +449,22 @@ class UserProfileSerializer(serializers.ModelSerializer):
     experience = ExperienceSerializer(
         many=True, read_only=True, source="experience_history"
     )
-
-    # --- THIS IS THE FIX ---
-    # Explicitly define the serializer for the 'social_links' relationship
     social_links = SocialLinkSerializer(many=True, read_only=True)
-    # --- END OF FIX ---
-
     relationship_status = serializers.SerializerMethodField()
 
     class Meta:
         model = UserProfile
         fields = [
             "user",
+            "email",
             "display_name",
             "headline",
             "bio",
-            # New Location Fields
             "location_city",
             "location_administrative_area",
             "location_country",
             "current_work_style",
             "is_open_to_relocation",
-            # Other fields
             "resume",
             "picture",
             "updated_at",
@@ -470,56 +473,95 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "education",
             "experience",
             "interests",
-            # New Social Links Field (will be added automatically by the serializer)
             "social_links",
+            "phone_number",
+            "email_visibility",
+            "phone_visibility",
+            # --- Added new count fields to Meta ---
+            "followers_count",
+            "following_count",
+            "connections_count",
+            "posts_count",
         ]
         read_only_fields = fields
 
-    ### --- KEY CHANGE --- ###
-    # This method now provides a comprehensive object for the frontend to easily
-    # determine which icons and states to display.
+    # --- New Methods for Counts ---
+    def get_followers_count(self, obj):
+        return obj.user.followers.count()
+
+    def get_following_count(self, obj):
+        return obj.user.following.count()
+
+    def get_posts_count(self, obj):
+        # Counts all StatusPosts authored by this user
+        return obj.user.status_posts.count()
+
+    def get_connections_count(self, obj):
+        # Calculates mutual follows (A follows B AND B follows A)
+        user = obj.user
+        following_ids = user.following.values_list("following_id", flat=True)
+        return user.followers.filter(follower_id__in=following_ids).count()
+
+    # --- RETAINED: Existing Privacy Logic ---
+    def _check_visibility(self, obj, field_value, visibility_setting):
+        request = self.context.get("request")
+        if request and request.user.is_authenticated and request.user == obj.user:
+            return field_value
+        if visibility_setting == "public":
+            return field_value
+        if not request or not request.user.is_authenticated:
+            return None
+        is_follower = obj.user.followers.filter(follower=request.user).exists()
+        if visibility_setting == "followers" and is_follower:
+            return field_value
+        if visibility_setting == "connections":
+            is_following_back = request.user.followers.filter(
+                follower=obj.user
+            ).exists()
+            if is_follower and is_following_back:
+                return field_value
+        return None
+
+    def get_email(self, obj):
+        return self._check_visibility(obj, obj.user.email, obj.email_visibility)
+
+    def get_phone_number(self, obj):
+        return self._check_visibility(obj, obj.phone_number, obj.phone_visibility)
+
+    # --- RETAINED: Existing Relationship Logic ---
     def get_relationship_status(self, obj):
         request = self.context.get("request")
-        # Return None if there's no authenticated user making the request.
         if not request or not request.user.is_authenticated:
             return None
 
         current_user = request.user
         target_user = obj.user
 
-        # Handle the case where a user is viewing their own profile.
         if target_user == current_user:
             return {
                 "connection_status": "self",
                 "is_followed_by_request_user": False,
             }
 
-        # Determine the follow relationship status.
-        # is_followed_by_request_user: Does the current user (A) follow the target user (B)?
         is_followed_by_request_user = Follow.objects.filter(
             follower=current_user, following=target_user
         ).exists()
-        # is_following_request_user: Does the target user (B) follow the current user (A)?
         is_following_request_user = Follow.objects.filter(
             follower=target_user, following=current_user
         ).exists()
 
         connection_status = "not_connected"
-        # A 'connected' state is defined by a mutual follow.
         if is_followed_by_request_user and is_following_request_user:
             connection_status = "connected"
-        # Check if the current user has sent a pending request to the target.
         elif ConnectionRequest.objects.filter(
             sender=current_user, receiver=target_user, status="pending"
         ).exists():
             connection_status = "request_sent"
-        # Check if the current user has received a pending request from the target.
         elif ConnectionRequest.objects.filter(
             sender=target_user, receiver=current_user, status="pending"
         ).exists():
             connection_status = "request_received"
 
-        # Return the complete status object.
         return {
             "connection_status": connection_status,
             "is_followed_by_request_user": is_followed_by_request_user,
@@ -532,6 +574,8 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
 class UserProfileUpdateSerializer(serializers.ModelSerializer):
     # Define the nested serializer for incoming data. It's not read-only.
+    # Fetches the email from the User model. read_only=True prevents editing here.
+    email = serializers.EmailField(source="user.email", read_only=True)
     social_links = SocialLinkSerializer(many=True, required=False)
 
     # Define fields for file uploads
@@ -542,6 +586,7 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
         model = UserProfile
         fields = [
             # Standard text fields
+            "email",
             "display_name",
             "headline",
             "bio",
@@ -557,6 +602,10 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
             "interests",
             # The key for our nested data
             "social_links",  # <--- THIS IS NOW CORRECTLY INCLUDED
+            # --- CONTACT & PRIVACY FIELDS ---
+            "phone_number",
+            "email_visibility",
+            "phone_visibility",
         ]
 
     @transaction.atomic

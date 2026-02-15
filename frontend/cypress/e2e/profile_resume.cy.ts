@@ -30,7 +30,7 @@ describe('User Profile - Resume Tab', () => {
     cy.intercept('PATCH', `/api/profiles/${testUser.username}/`).as('uploadResume')
 
     // Select the file (Creating a dummy PDF buffer)
-    cy.get('input[type="file"]').selectFile(
+    cy.get('[data-cy="resume-file-input"]').selectFile(
       {
         contents: Cypress.Buffer.from('%PDF-1.4 dummy content'),
         fileName: 'my_resume.pdf',

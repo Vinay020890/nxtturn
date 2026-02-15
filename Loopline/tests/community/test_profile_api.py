@@ -3,7 +3,9 @@
 import pytest
 from rest_framework import status
 from django.urls import reverse
-from community.models import Follow, ConnectionRequest
+
+# --- UPDATED IMPORT: Added StatusPost ---
+from community.models import Follow, ConnectionRequest, StatusPost
 
 pytestmark = pytest.mark.django_db
 
@@ -159,3 +161,43 @@ def test_user_can_unfollow_another_user(user_factory, api_client_factory):
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {"status": "unfollowed"}
     assert not Follow.objects.filter(follower=user_a, following=user_b).exists()
+
+
+# --- NEW TEST: Verifying Dynamic Profile Stats ---
+def test_profile_stats_counts(api_client_factory, user_factory):
+    """
+    Ensures that followers_count, following_count, connections_count,
+    and posts_count are calculated correctly in the profile detail view.
+    """
+    # 1. Setup: 3 distinct users
+    me = user_factory(username="me")
+    friend = user_factory(username="friend")
+    fan = user_factory(username="fan")
+
+    # 2. Setup Relationships:
+    # 'friend' follows 'me', and 'me' follows 'friend' (Mutual Connection = 1)
+    Follow.objects.create(follower=friend, following=me)
+    Follow.objects.create(follower=me, following=friend)
+    # 'fan' follows 'me' (One-way follower, Total followers for 'me' = 2)
+    Follow.objects.create(follower=fan, following=me)
+
+    # 3. Setup Content: 'me' creates 2 posts
+    StatusPost.objects.create(author=me, content="Hello World 1")
+    StatusPost.objects.create(author=me, content="Hello World 2")
+
+    # 4. Request the profile for 'me'
+    client = api_client_factory(user=me)
+    url = reverse("community:userprofile-detail", kwargs={"username": me.username})
+    response = client.get(url)
+
+    assert response.status_code == status.HTTP_200_OK
+
+    # 5. Assert logic:
+    # Followers = friend + fan = 2
+    assert response.data["followers_count"] == 2
+    # Following = friend = 1
+    assert response.data["following_count"] == 1
+    # Connections = Only friend (mutual) = 1
+    assert response.data["connections_count"] == 1
+    # Posts = 2
+    assert response.data["posts_count"] == 2

@@ -79,6 +79,24 @@ class UserProfile(models.Model):
 
     # NEW: Resume file upload field.
     resume = models.FileField(upload_to="resumes/", null=True, blank=True)
+    phone_number = models.CharField(max_length=20, blank=True, null=True)
+
+    # --- PRIVACY SETTINGS ---
+    VISIBILITY_CHOICES = [
+        ("public", "Everyone"),
+        ("followers", "My Followers"),  # Broad private circle
+        ("connections", "Mutual Connections"),  # Tight private circle
+        ("self", "Only Me"),  # Private
+    ]
+
+    # ... update the fields to use the choices ...
+    email_visibility = models.CharField(
+        max_length=12, choices=VISIBILITY_CHOICES, default="connections"
+    )
+
+    phone_visibility = models.CharField(
+        max_length=12, choices=VISIBILITY_CHOICES, default="connections"
+    )
 
     # DEPRECATED: These will be replaced by the new, more flexible models.
     # We will keep them for now to avoid breaking existing data, but phase them out.

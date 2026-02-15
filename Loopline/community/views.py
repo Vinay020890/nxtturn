@@ -786,6 +786,21 @@ class PollVoteAPIView(APIView):
 # ==================================
 
 
+class ProfileContactView(generics.RetrieveUpdateAPIView):
+    """
+    Handles CRUD operations for Contact Details (phone_number, visibility settings)
+    on the currently logged-in user's UserProfile.
+    """
+
+    serializer_class = UserProfileUpdateSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        # Directly return the profile of the logged-in user.
+        # This allows us to use /api/profile/contact/ without an ID.
+        return self.request.user.profile
+
+
 # ==================================
 # Group Views
 # ==================================
