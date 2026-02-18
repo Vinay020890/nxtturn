@@ -1190,6 +1190,7 @@ class CommentSerializer(serializers.ModelSerializer):
             "is_liked_by_user",
             "comment_content_type_id",
         ]
+        # FIXED: Only list the fields that SHOULD NOT be editable
         read_only_fields = [
             "id",
             "author",
@@ -1203,32 +1204,20 @@ class CommentSerializer(serializers.ModelSerializer):
         ]
 
     def create(self, validated_data):
-        """
-        Custom create method to handle comment creation and mention processing.
-        """
-        # The view now provides all the context we need.
         request = self.context["request"]
         view = self.context["view"]
+        model_name = view.kwargs.get("content_type").lower()
+        content_type = ContentType.objects.get(model=model_name)
 
-        content_type_model_name = view.kwargs.get("content_type").lower()
-        object_id = view.kwargs.get("object_id")
-
-        content_type = ContentType.objects.get(model=content_type_model_name)
-
-        # Set the author and the generic foreign key fields
         validated_data["author"] = request.user
         validated_data["content_type"] = content_type
-        validated_data["object_id"] = object_id
+        validated_data["object_id"] = view.kwargs.get("object_id")
 
-        # Create the comment instance
         comment = Comment.objects.create(**validated_data)
-
-        # Now, process mentions in the comment's content
         if comment.content:
             process_mentions(
                 actor=request.user, target_object=comment, content_text=comment.content
             )
-
         return comment
 
     def get_like_count(self, obj: Comment) -> int:
@@ -1238,9 +1227,9 @@ class CommentSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if not request or not request.user.is_authenticated:
             return False
-        comment_model_content_type = ContentType.objects.get_for_model(Comment)
+        content_type = ContentType.objects.get_for_model(Comment)
         return Like.objects.filter(
-            content_type=comment_model_content_type, object_id=obj.pk, user=request.user
+            content_type=content_type, object_id=obj.pk, user=request.user
         ).exists()
 
     def get_comment_content_type_id_for_like(self, obj: Comment) -> int:

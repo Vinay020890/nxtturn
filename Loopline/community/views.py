@@ -984,22 +984,22 @@ class GroupPostListView(generics.ListAPIView):
 # ==================================
 class CommentListCreateAPIView(generics.ListCreateAPIView):
     serializer_class = CommentSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
-    pagination_class = None  # KEEP: No pagination for comments (show all)
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    pagination_class = None
 
     def get_queryset(self):
-        content_type = get_object_or_404(
-            ContentType, model=self.kwargs.get("content_type").lower()
-        )
-        parent_object = get_object_or_404(
-            content_type.model_class(), pk=self.kwargs.get("object_id")
-        )
+        # 1. Get and normalize the type (e.g., 'statuspost')
+        model_name = self.kwargs.get("content_type").lower()
+        object_id = self.kwargs.get("object_id")
+
+        # 2. Find the ContentType record
+        content_type = get_object_or_404(ContentType, model=model_name)
+
+        # 3. Filter directly. This fixes the "Disappearing Comments" bug.
         return (
-            Comment.objects.filter(
-                content_type=content_type, object_id=parent_object.id
-            )
-            .select_related("author__profile")
-            .order_by("created_at")
+            Comment.objects.filter(content_type=content_type, object_id=object_id)
+            .select_related("author__profile")  # UI team optimization
+            .order_by("created_at")  # UI team optimization
         )
 
     def get_serializer_context(self):
