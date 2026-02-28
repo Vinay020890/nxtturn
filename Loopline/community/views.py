@@ -85,6 +85,7 @@ from .serializers import (
     SkillCategorySerializer,
     EducationSerializer,
     ExperienceSerializer,
+    NetworkUserSerializer,
 )
 from .permissions import (
     IsOwnerOrReadOnly,
@@ -1518,3 +1519,66 @@ def password_reset_redirect_view(request, uidb64, token):
     frontend_url = settings.FRONTEND_URL
     # We construct the full URL to our frontend's reset page
     return redirect(f"http://{frontend_url}/auth/reset-password/{uidb64}/{token}/")
+
+
+# ==================================
+# Network Hub Views
+# ==================================
+
+
+class NetworkFollowersView(generics.ListAPIView):
+    """
+    List of users following the current user.
+    """
+
+    serializer_class = NetworkUserSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        return (
+            User.objects.filter(following__following=self.request.user)
+            .select_related("profile")
+            .distinct()
+        )
+
+
+class NetworkFollowingView(generics.ListAPIView):
+    """
+    List of users the current user follows.
+    """
+
+    serializer_class = NetworkUserSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        return (
+            User.objects.filter(followers__follower=self.request.user)
+            .select_related("profile")
+            .distinct()
+        )
+
+
+class NetworkConnectionsView(generics.ListAPIView):
+    """
+    List of Mutual Connections (I follow them AND they follow me).
+    """
+
+    serializer_class = NetworkUserSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        user = self.request.user
+        # 1. Get IDs of people I follow
+        my_following_ids = Follow.objects.filter(follower=user).values_list(
+            "following_id", flat=True
+        )
+
+        # 2. Return users who follow me AND are in that list
+        return (
+            User.objects.filter(following__following=user, id__in=my_following_ids)
+            .select_related("profile")
+            .distinct()
+        )

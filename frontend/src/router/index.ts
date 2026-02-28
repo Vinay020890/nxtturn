@@ -52,6 +52,11 @@ const router = createRouter({
           name: 'notifications',
           component: () => import('@/views/NotificationsPage.vue'),
         },
+        {
+          path: 'network',
+          name: 'network',
+          component: () => import('@/views/NetworkView.vue'),
+        },
         { path: 'search', name: 'search', component: () => import('@/views/SearchPage.vue') },
         {
           path: 'posts/:postId',

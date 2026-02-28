@@ -1346,3 +1346,57 @@ class CustomLoginSerializer(LoginSerializer):
 
             # CRITICAL: Always re-raise the original exception to ensure the login still fails
             raise e
+
+
+class NetworkUserSerializer(serializers.ModelSerializer):
+    """
+    Serializer for listing users in Network Hub.
+    - 'username': Compulsory unique identifier.
+    - 'name': Smart display logic (Display Name > Full Name > Username).
+    """
+
+    # 1. Compulsory Username (Always available)
+    username = serializers.CharField(read_only=True)
+
+    # 2. Smart Name Field (Calculated)
+    name = serializers.SerializerMethodField()
+
+    # 3. Context Fields
+    headline = serializers.CharField(source="profile.headline", read_only=True)
+    profile_picture = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ["id", "username", "name", "headline", "profile_picture"]
+
+    def get_name(self, obj):
+        """
+        Determines the best name to display in the UI.
+        Priority: Profile Display Name -> User Full Name -> Username
+        """
+        # Priority 1: Custom Display Name from Profile
+        if hasattr(obj, "profile") and obj.profile.display_name:
+            return obj.profile.display_name
+
+        # Priority 2: Full Name (e.g., from future Google Auth)
+        full_name = obj.get_full_name()
+        if full_name and full_name.strip():
+            return full_name
+
+        # Priority 3: Fallback to Username
+        return obj.username
+
+    def get_profile_picture(self, obj):
+        """
+        Returns absolute URL for the profile picture.
+        """
+        request = self.context.get("request")
+        try:
+            if hasattr(obj, "profile") and obj.profile.picture:
+                url = obj.profile.picture.url
+                if request:
+                    return request.build_absolute_uri(url)
+                return url
+        except Exception:
+            pass
+        return None

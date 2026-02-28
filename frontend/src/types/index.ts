@@ -15,6 +15,14 @@ export interface CurrentUser extends User {
   profile_picture: string | null
 }
 
+export interface NetworkUser {
+  id: number
+  username: string
+  name: string // This is our smart field (Display Name > Full Name > Username)
+  headline: string | null
+  profile_picture: string | null
+}
+
 // --- Profile Section Types ---
 export interface EducationEntry {
   id: number

@@ -67,6 +67,22 @@ urlpatterns = [
         views.AcceptConnectionRequestView.as_view(),
         name="user-accept-request",
     ),
+    # --- Network Hub ---
+    path(
+        "network/followers/",
+        views.NetworkFollowersView.as_view(),
+        name="network-followers",
+    ),
+    path(
+        "network/following/",
+        views.NetworkFollowingView.as_view(),
+        name="network-following",
+    ),
+    path(
+        "network/connections/",
+        views.NetworkConnectionsView.as_view(),
+        name="network-connections",
+    ),
     # --- Search ---
     path("search/users/", views.UserSearchAPIView.as_view(), name="user-search"),
     path(

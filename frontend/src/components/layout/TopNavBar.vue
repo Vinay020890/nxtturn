@@ -856,10 +856,10 @@ const currentUsername = computed(() => currentUser.value?.username || '')
             </div>
 
             <!-- NETWORK -->
-            <button
-              type="button"
-              @click="handleNonNavigableClick"
+            <RouterLink
+              to="/network"
               class="nav-btn group relative flex flex-col items-center justify-center gap-0 focus-ring min-w-[50px] lg:min-w-[60px] hover:bg-network-hover"
+              active-class="active-network"
               aria-label="My Network"
             >
               <font-awesome-icon
@@ -868,7 +868,7 @@ const currentUsername = computed(() => currentUser.value?.username || '')
                 aria-hidden="true"
               />
               <span class="nav-label nav-label-network">Network</span>
-            </button>
+            </RouterLink>
 
             <!-- MESSAGES (Now with color-filled solid icon and slightly bigger) -->
             <button
@@ -1550,13 +1550,15 @@ const currentUsername = computed(() => currentUser.value?.username || '')
               </div>
 
               <!-- NETWORK -->
-              <button
-                @click="handleNonNavigableClick"
+
+              <RouterLink
+                to="/network"
+                @click="isMobileMenuOpen = false"
                 class="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-network-hover transition-colors text-left"
               >
                 <font-awesome-icon :icon="['fas', 'users']" class="icon-network text-lg" />
                 <span class="font-medium text-gray-900">Network</span>
-              </button>
+              </RouterLink>
 
               <!-- MESSAGES (Swapped in mobile too) -->
               <button
@@ -1675,7 +1677,6 @@ const currentUsername = computed(() => currentUser.value?.username || '')
 .profile-image-btn:not(.profile-on-page):active {
   outline: none !important;
   box-shadow: none !important;
-  ring-width: 0 !important;
 }
 
 /* Very thin blue ring only when on profile page */
@@ -1765,11 +1766,6 @@ const currentUsername = computed(() => currentUser.value?.username || '')
 
 .menu-item:hover .menu-ico {
   color: #2f78f0;
-}
-
-/* Compact search dropdown styles */
-.compact-search-dropdown {
-  /* No scroll, just compact layout */
 }
 
 .compact-search-dropdown .py-1 {
@@ -1940,6 +1936,7 @@ const currentUsername = computed(() => currentUser.value?.username || '')
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -2096,5 +2093,22 @@ button:focus {
 .mobile-search-bar-leave-to {
   opacity: 0;
   transform: translateY(-10px);
+}
+
+/* --- ACTIVE STATE FOR NETWORK --- */
+
+/* Background tint when active */
+.active-network {
+  background: rgba(245, 158, 11, 0.1) !important;
+}
+
+/* Icon color when active */
+.active-network .icon-network {
+  color: #d97706 !important;
+}
+
+/* Label text color when active */
+.active-network .nav-label-network {
+  color: #d97706 !important;
 }
 </style>
