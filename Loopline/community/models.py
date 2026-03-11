@@ -880,3 +880,29 @@ class SocialLink(models.Model):
 #          instance.userprofile.save()
 #     else:
 #         UserProfile.objects.get_or_create(user=instance)
+
+
+class RecommendationImpression(models.Model):
+    """
+    Tracks how many distinct days a user has been shown a specific recommendation.
+    Used to filter out 'stale' suggestions after 5 ignores.
+    """
+
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="recommendation_impressions"
+    )
+    suggested_user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="impressions_as_suggestion"
+    )
+    impression_count = models.PositiveIntegerField(default=0)
+    # We track the last date to ensure we only increment count once per day
+    last_shown_date = models.DateField(auto_now=True)
+
+    class Meta:
+        unique_together = ("user", "suggested_user")
+        indexes = [
+            models.Index(fields=["user", "suggested_user"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} saw {self.suggested_user.username} ({self.impression_count} times)"

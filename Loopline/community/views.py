@@ -11,6 +11,9 @@ from django.db.models import Q, Count, Value, CharField, Case, When
 from django.db import transaction
 from django.utils import timezone
 
+from datetime import date
+import random
+
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 
@@ -64,6 +67,7 @@ from .models import (
     SkillCategory,
     Education,
     Experience,
+    RecommendationImpression,
 )
 from .serializers import (
     UserSerializer,
@@ -1582,3 +1586,145 @@ class NetworkConnectionsView(generics.ListAPIView):
             .select_related("profile")
             .distinct()
         )
+
+
+class NetworkDiscoverView(generics.ListAPIView):
+    """
+    Implements an advanced, multi-tiered recommendation algorithm.
+    1. Globally excludes existing connections, pending requests, and 'fatigued' users.
+    2. Fetches candidates in prioritized 'waterfall' buckets (Mutuals > Alumni > etc.).
+    3. Deduplicates results, ensuring a user appears only in their highest-value category.
+    4. Increments impression counts for shown users to enable the fatigue filter.
+    """
+
+    serializer_class = NetworkUserSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = self.request.user
+        today = date.today()
+
+        # --- STEP 1: DEFINE GLOBAL EXCLUSIONS ---
+        following_ids = Follow.objects.filter(follower=user).values_list(
+            "following_id", flat=True
+        )
+        pending_request_ids = ConnectionRequest.objects.filter(
+            sender=user, status="pending"
+        ).values_list("receiver_id", flat=True)
+
+        # People who are "fatigued" (shown >= 5 times)
+        fatigued_ids = RecommendationImpression.objects.filter(
+            user=user, impression_count__gte=5
+        ).values_list("suggested_user_id", flat=True)
+
+        # Combine all exclusions into a single set for fast lookups
+        block_list_ids = (
+            set(following_ids) | set(pending_request_ids) | set(fatigued_ids)
+        )
+        block_list_ids.add(user.id)  # Always exclude the user themselves
+
+        # --- STEP 2: WATERFALL BUCKETS & DEDUPLICATION ---
+        results = {
+            "mutual_connections": [],
+            "alumni": [],
+            "similar_skills": [],
+            "local_professionals": [],
+        }
+
+        seen_ids = set(block_list_ids)
+
+        # Bucket 1: Mutual Connections (Highest Priority)
+        my_connections = Follow.objects.filter(follower=user).values_list(
+            "following_id", flat=True
+        )
+        mutual_candidates = list(
+            User.objects.filter(followers__follower_id__in=my_connections)
+            .exclude(id__in=seen_ids)
+            .annotate(
+                mutual_count=Count(
+                    "followers", filter=Q(followers__follower_id__in=my_connections)
+                ),
+                follower_count=Count("followers"),
+            )
+            .order_by("-mutual_count", "-follower_count")[:15]
+        )
+
+        for candidate in mutual_candidates:
+            results["mutual_connections"].append(candidate)
+            seen_ids.add(candidate.id)
+
+        # Bucket 2: Alumni
+        my_institutions = Education.objects.filter(
+            user_profile=user.profile
+        ).values_list("institution", flat=True)
+        if my_institutions:
+            alumni_candidates = list(
+                User.objects.filter(
+                    profile__education_history__institution__in=my_institutions
+                )
+                .exclude(id__in=seen_ids)
+                .annotate(follower_count=Count("followers"))
+                .order_by("-follower_count")[:15]
+            )
+
+            for candidate in alumni_candidates:
+                results["alumni"].append(candidate)
+                seen_ids.add(candidate.id)
+
+        # Bucket 3: Location
+        if user.profile.location_city:
+            local_candidates = list(
+                User.objects.filter(profile__location_city=user.profile.location_city)
+                .exclude(id__in=seen_ids)
+                .annotate(follower_count=Count("followers"))
+                .order_by("-follower_count")[:15]
+            )
+
+            for candidate in local_candidates:
+                results["local_professionals"].append(candidate)
+                seen_ids.add(candidate.id)
+
+        # --- STEP 3: THE DAILY SHUFFLE (Stability within the same block) ---
+        # Seed logic: User ID + Date + 6-Hour Block
+        # This keeps the list stable for 6 hours, then shuffles to prevent staleness
+        import datetime
+
+        current_hour = datetime.datetime.now().hour
+        time_block = current_hour // 6
+        seed_string = f"{user.id}_{today}_{time_block}"
+
+        random.seed(seed_string)
+        random.shuffle(results["mutual_connections"])
+        random.shuffle(results["alumni"])
+        random.shuffle(results["local_professionals"])
+
+        # --- STEP 4: SERIALIZE AND UPDATE IMPRESSIONS ---
+        # We only take the top 5 from each shuffled bucket to send to the frontend
+        serialized_data = {
+            "mutual_connections": self.get_serializer(
+                results["mutual_connections"][:5], many=True
+            ).data,
+            "alumni": self.get_serializer(results["alumni"][:5], many=True).data,
+            "similar_skills": [],
+            "local_professionals": self.get_serializer(
+                results["local_professionals"][:5], many=True
+            ).data,
+        }
+
+        # Background task: Update impression counts for everyone we just sent
+        all_shown_ids = [
+            person["id"] for category in serialized_data.values() for person in category
+        ]
+
+        for shown_id in all_shown_ids:
+            impression, created = RecommendationImpression.objects.get_or_create(
+                user=user, suggested_user_id=shown_id
+            )
+
+            # Only increment the count if it's a new day
+            if impression.last_shown_date != today:
+                impression.impression_count += 1
+                impression.last_shown_date = today
+                impression.save()
+
+        return Response(serialized_data, status=status.HTTP_200_OK)

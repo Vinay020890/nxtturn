@@ -83,6 +83,11 @@ urlpatterns = [
         views.NetworkConnectionsView.as_view(),
         name="network-connections",
     ),
+    path(
+        "network/discover/",
+        views.NetworkDiscoverView.as_view(),
+        name="network-discover",
+    ),
     # --- Search ---
     path("search/users/", views.UserSearchAPIView.as_view(), name="user-search"),
     path(
