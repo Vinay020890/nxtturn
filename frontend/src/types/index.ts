@@ -23,6 +23,13 @@ export interface NetworkUser {
   profile_picture: string | null
 }
 
+export interface DiscoveryResponse {
+  mutual_connections: NetworkUser[]
+  alumni: NetworkUser[]
+  similar_skills: NetworkUser[]
+  local_professionals: NetworkUser[]
+}
+
 // --- Profile Section Types ---
 export interface EducationEntry {
   id: number

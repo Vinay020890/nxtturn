@@ -397,6 +397,16 @@ export const useProfileStore = defineStore('profile', () => {
     }
   }
 
+  async function sendConnectRequestById(receiverId: number) {
+    try {
+      await axiosInstance.post('/connections/requests/', { receiver: receiverId })
+    } catch (error: any) {
+      console.error('Failed to send connection request from widget:', error)
+      // We re-throw the error so the component knows it failed
+      throw error
+    }
+  }
+
   function $reset() {
     currentProfile.value = null
     postIdsByUsername.value = {}
@@ -448,6 +458,7 @@ export const useProfileStore = defineStore('profile', () => {
     deleteSkill,
     updateResume,
     removeResume,
-    updateContactDetails, // Added here
+    updateContactDetails,
+    sendConnectRequestById,
   }
 })

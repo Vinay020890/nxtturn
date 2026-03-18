@@ -1,13 +1,14 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import axiosInstance from '@/services/axiosInstance'
-import type { NetworkUser } from '@/types'
+import type { NetworkUser, DiscoveryResponse } from '@/types'
 
 export const useNetworkStore = defineStore('network', () => {
   // --- STATE ---
   const followers = ref<NetworkUser[]>([])
   const following = ref<NetworkUser[]>([])
   const connections = ref<NetworkUser[]>([])
+  const discoverResults = ref<DiscoveryResponse | null>(null)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
 
@@ -60,6 +61,20 @@ export const useNetworkStore = defineStore('network', () => {
     }
   }
 
+  async function fetchDiscover() {
+    isLoading.value = true
+    error.value = null
+    try {
+      const response = await axiosInstance.get<DiscoveryResponse>('/network/discover/')
+      discoverResults.value = response.data
+    } catch (err: any) {
+      error.value = 'Failed to load recommendations'
+      console.error(err)
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   /**
 
     Resets the store's state, called on logout.
@@ -68,6 +83,7 @@ export const useNetworkStore = defineStore('network', () => {
     followers.value = []
     following.value = []
     connections.value = []
+    discoverResults.value = null
     error.value = null
     isLoading.value = false
   }
@@ -77,12 +93,14 @@ export const useNetworkStore = defineStore('network', () => {
     followers,
     following,
     connections,
+    discoverResults,
     isLoading,
     error,
     // Actions
     fetchFollowers,
     fetchFollowing,
     fetchConnections,
+    fetchDiscover,
     reset,
   }
 })

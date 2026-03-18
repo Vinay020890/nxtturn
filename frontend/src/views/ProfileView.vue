@@ -168,9 +168,45 @@ watch(
   username,
   () => {
     loadProfileData()
-    activeTab.value = 'About'
+
+    // Switch to the correct tab based on the URL
+    const editTarget = route.query.edit as string
+    if (editTarget === 'education') {
+      activeTab.value = 'Education'
+    } else {
+      activeTab.value = 'About'
+    }
   },
   { immediate: true },
+)
+
+// --- NEW: Signal Listener for the Profile Strength Widget ---
+watch(
+  () => route.query.edit,
+  (newEditTarget) => {
+    // Check if it exists and we are on our own profile
+    if (newEditTarget && isOwnProfile.value) {
+      // Force it to be a string (if it's an array, take the first item)
+      const targetString = String(newEditTarget)
+
+      nextTick(() => {
+        eventBus.emit('trigger-profile-edit', targetString)
+      })
+    }
+  },
+  { immediate: true },
+)
+
+// Watch for changes to the ?edit= query parameter
+watch(
+  () => route.query.edit,
+  (newEditTarget) => {
+    if (newEditTarget === 'education') {
+      activeTab.value = 'Education'
+    } else if (newEditTarget === 'basic-info' || newEditTarget === 'photo') {
+      activeTab.value = 'About'
+    }
+  },
 )
 
 function scrollToTop() {

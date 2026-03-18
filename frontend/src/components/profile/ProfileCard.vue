@@ -7,6 +7,7 @@ import ProfileActions from '@/components/ProfileActions.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import IdentityForm from '@/components/profile/forms/IdentityForm.vue'
 import { PencilIcon, XMarkIcon, CheckIcon } from '@heroicons/vue/24/solid'
+import eventBus from '@/services/eventBus'
 
 // Import your avatar files - adjust the path according to your project structure
 import maleAvatar1 from '@/assets/avatars/male-1.png'
@@ -80,6 +81,18 @@ const isComponentMounted = ref(false)
 // Setup lifecycle hooks
 onMounted(() => {
   isComponentMounted.value = true
+
+  // --- NEW: Listen for instructions from the Profile Strength Widget ---
+  eventBus.on('trigger-profile-edit', (target: string) => {
+    // Only open if the user is looking at their own profile
+    if (!props.isOwnProfile) return
+
+    if (target === 'photo') {
+      openPreviewModal() // This opens the Photo Preview/Upload modal
+    } else if (target === 'basic-info') {
+      isModalOpen.value = true // This opens the Identity/Headline/Location modal
+    }
+  })
 })
 
 async function handleSaveChanges(formData: IdentityFormData) {
@@ -312,6 +325,8 @@ function handlePostsClick() {
 onUnmounted(() => {
   // Mark component as unmounted
   isComponentMounted.value = false
+
+  eventBus.off('trigger-profile-edit')
 
   // Clean up any object URLs to prevent memory leaks
   if (picturePreviewUrl.value) {
