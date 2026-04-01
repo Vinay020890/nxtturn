@@ -138,6 +138,20 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function verifyEmail(key: string) {
+    isLoading.value = true
+    try {
+      // This calls the backend to confirm the secret key from the email
+      await axiosInstance.post('/auth/registration/verify-email/', { key })
+      return true
+    } catch (error) {
+      console.error('Email verification failed in store:', error)
+      throw error
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   async function initializeAuth() {
     const tokenFromStorage = localStorage.getItem('authToken')
     if (tokenFromStorage && !authToken.value) setToken(tokenFromStorage)
@@ -180,6 +194,7 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     fetchUserProfile,
     register,
+    verifyEmail,
     initializeAuth,
     updateCurrentUserPicture,
     resetAuthState,

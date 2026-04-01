@@ -14,18 +14,24 @@ DEBUG = not IS_PRODUCTION
 if not IS_PRODUCTION and not SECRET_KEY:
     SECRET_KEY = "a-dummy-secret-key-for-local-development-only-do-not-use-in-prod"
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "192.168.10.38"]
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "192.168.10.35"]
 if IS_PRODUCTION:
     pass
 else:
     ALLOWED_HOSTS.extend(
         [
             "*",
-            "192.168.10.38",
+            "192.168.10.35",
         ]
     )
 
-FRONTEND_URL = os.getenv("FRONTEND_URL", "192.168.10.38:5173")
+
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://192.168.10.35:5173")
+
+# This tells dj-rest-auth where to send the user for password resets
+# It will build a link like: http://192.168.10.35:5173/auth/reset-password/UID/TOKEN
+
+# PASSWORD_RESET_CONFIRM_URL = f"{FRONTEND_URL}/auth/reset-password/{{uid}}/{{token}}/"
 
 INSTALLED_APPS = [
     "channels",
@@ -36,6 +42,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django.contrib.sites",
+    "anymail",
     "rest_framework",
     "rest_framework.authtoken",
     "dj_rest_auth",
@@ -123,7 +130,31 @@ STORAGES = {
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+# Email Configuration (Brevo)
+# ==============================================================================
+# --- SMART EMAIL CONFIGURATION (Final Version for Tests) ---
+EMAIL_MODE = os.getenv("EMAIL_MODE", "console")
+DEFAULT_FROM_EMAIL = "nxtturn <noreply@nxtturn.com>"
+SERVER_EMAIL = "admin@nxtturn.com"
+
+# 1. Check if we are running Cypress tests (This overrides everything else)
+# This handles missing variables and mixed casing (True/true) perfectly
+if os.getenv("CYPRESS_TESTING", "false").lower() == "true":
+    # This stores emails in memory so the test utility can read them
+    EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+# 2. Otherwise, check our normal dev/prod mode
+elif EMAIL_MODE == "brevo":
+    EMAIL_BACKEND = "anymail.backends.brevo.EmailBackend"
+    ANYMAIL = {
+        "BREVO_API_KEY": os.getenv("BREVO_API_KEY"),
+    }
+else:
+    # Default local console mode
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+# This allows users to confirm email just by clicking the link in the email
+ACCOUNT_CONFIRM_EMAIL_ON_GET = True
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -148,6 +179,8 @@ ACCOUNT_UNIQUE_EMAIL = True
 ACCOUNT_USERNAME_REQUIRED = True
 ACCOUNT_EMAIL_VERIFICATION = "mandatory"
 
+ACCOUNT_ADAPTER = "community.adapters.NxtTurnAccountAdapter"
+
 REST_AUTH = {
     "USE_SESSION_AUTH": False,
     "SESSION_LOGIN": False,
@@ -155,6 +188,7 @@ REST_AUTH = {
     "REGISTER_SERIALIZER": "community.serializers.CustomRegisterSerializer",
     "LOGIN_SERIALIZER": "community.serializers.CustomLoginSerializer",
     "PASSWORD_RESET_CONFIRM_SERIALIZER": "community.serializers.CustomPasswordResetConfirmSerializer",
+    "PASSWORD_RESET_CONFIRM_URL": f"{FRONTEND_URL}/auth/reset-password/{{uid}}/{{token}}/",
     "SIGNUP_FIELDS": {
         "username": {"required": True},
         "email": {"required": True},
@@ -170,7 +204,7 @@ REST_AUTH = {
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",  # For local-only frontend development
     "http://127.0.0.1:5173",  # Alternative for local-only
-    "http://192.168.10.38:5173",  # For accessing the frontend from other devices on the network
+    "http://192.168.10.35:5173",  # For accessing the frontend from other devices on the network
 ]
 
 # ==============================================================================
@@ -182,7 +216,7 @@ CORS_ALLOWED_ORIGINS = [
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "http://192.168.10.38:5173",
+    "http://192.168.10.35:5173",
 ]
 
 CHANNEL_LAYERS = {

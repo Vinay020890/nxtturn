@@ -1520,9 +1520,11 @@ def password_reset_redirect_view(request, uidb64, token):
     """
     Redirects the password reset link from the backend to the frontend app.
     """
+    # frontend_url now contains the full 'http://192.168.1.24:5173' from .env
     frontend_url = settings.FRONTEND_URL
-    # We construct the full URL to our frontend's reset page
-    return redirect(f"http://{frontend_url}/auth/reset-password/{uidb64}/{token}/")
+
+    # We construct the URL WITHOUT adding an extra http://
+    return redirect(f"{frontend_url}/auth/reset-password/{uidb64}/{token}/")
 
 
 # ==================================

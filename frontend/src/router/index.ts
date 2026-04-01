@@ -100,6 +100,15 @@ const router = createRouter({
       component: CheckEmailView,
       meta: { requiresGuest: true },
     },
+
+    {
+      path: '/verify-email/:key',
+      name: 'VerifyEmail',
+      // Since you created the file in views/VerifyEmailView.vue:
+      component: () => import('@/views/VerifyEmailView.vue'),
+      meta: { requiresGuest: true },
+    },
+
     {
       path: '/auth/forgot-password',
       name: 'ForgotPassword',

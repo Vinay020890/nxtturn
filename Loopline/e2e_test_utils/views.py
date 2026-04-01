@@ -312,6 +312,28 @@ class TestSetupAPIView(APIView):
                         status=status.HTTP_201_CREATED,
                     )
 
+                elif action == "get_last_email":
+                    from django.core import mail
+
+                    if mail.outbox:
+                        last_email = mail.outbox[-1]  # Get the most recent email
+                        return Response(
+                            {
+                                "status": "success",
+                                "data": {
+                                    "subject": last_email.subject,
+                                    "body": last_email.body,
+                                    "to": last_email.to[0] if last_email.to else None,
+                                },
+                            },
+                            status=status.HTTP_200_OK,
+                        )
+                    else:
+                        return Response(
+                            {"error": "No emails found in outbox"},
+                            status=status.HTTP_404_NOT_FOUND,
+                        )
+
                 elif action == "cleanup":
                     # Define the patterns for identifying test users
                     test_user_prefixes = [
