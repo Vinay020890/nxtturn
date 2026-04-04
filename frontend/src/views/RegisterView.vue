@@ -30,15 +30,22 @@ const isSubmitDisabled = computed(() => {
 
 const parseError = (error: unknown): string => {
   const axiosError = error as AxiosError<Record<string, string[]>>
-  if (axiosError.response?.data) {
-    const errorMessages = Object.entries(axiosError.response.data)
-      .map(([field, messages]) => `${field}: ${messages.join(', ')}`)
-      .join('; ')
-    if (axiosError.response.data.non_field_errors) {
-      return axiosError.response.data.non_field_errors.join('; ')
+  const data = axiosError.response?.data
+
+  if (data) {
+    // 1. Check for the "non_field_errors" (This is where our custom backend message lives)
+    if (data.non_field_errors) {
+      return data.non_field_errors.join('; ')
     }
-    return errorMessages
+
+    // 2. If it's a specific field error, just show the message without the field name
+    // Example: instead of "email: message", just show "message"
+    const firstError = Object.values(data)[0]
+    if (firstError) {
+      return Array.isArray(firstError) ? firstError[0] : firstError
+    }
   }
+
   return 'An unexpected error occurred during registration.'
 }
 
@@ -92,11 +99,11 @@ const handleGoogleLogin = () => {
         <!-- Error Message -->
         <div
           v-if="errorMessage"
-          class="bg-red-50 border-l-3 border-red-500 text-red-700 p-3 rounded-md mb-3 text-xs"
+          class="bg-red-50 border-l-3 border-red-500 text-red-700 p-4 rounded-xl mb-4 text-xs leading-relaxed shadow-sm flex items-center gap-3"
           role="alert"
         >
-          <p class="font-semibold">Error</p>
-          <p>{{ errorMessage }}</p>
+          <span class="text-red-500 text-lg">⚠️</span>
+          <p class="flex-1">{{ errorMessage }}</p>
         </div>
 
         <form @submit.prevent="handleRegister" class="space-y-3">

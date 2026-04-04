@@ -10,38 +10,37 @@ from django.conf import settings
 from django.conf.urls.static import static
 
 # Import all necessary views from the community app
-from community.views import ForcefulLogoutView, CustomConfirmEmailView, password_reset_redirect_view
+from community.views import (
+    ForcefulLogoutView,
+    CustomConfirmEmailView,
+    password_reset_redirect_view,
+    GoogleLogin,
+)
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    
-    path('api/auth/logout/', ForcefulLogoutView.as_view(), name='forceful_rest_logout'),
-
+    path("admin/", admin.site.urls),
+    path("api/auth/logout/", ForcefulLogoutView.as_view(), name="forceful_rest_logout"),
     re_path(
-        r'^api/auth/registration/account-confirm-email/(?P<key>[-:\w]+)/$',
+        r"^api/auth/registration/account-confirm-email/(?P<key>[-:\w]+)/$",
         CustomConfirmEmailView.as_view(),
-        name='account_confirm_email'
+        name="account_confirm_email",
     ),
-
-    path('api/auth/', include('dj_rest_auth.urls')),
-    path('api/auth/registration/', include('dj_rest_auth.registration.urls')),
-
+    path("api/auth/", include("dj_rest_auth.urls")),
+    path("api/auth/registration/", include("dj_rest_auth.registration.urls")),
+    path("api/auth/google/", GoogleLogin.as_view(), name="google_login"),
     # This URL bridges the backend email link to the frontend page.
     path(
-        'password-reset/<str:uidb64>/<str:token>/',
+        "password-reset/<str:uidb64>/<str:token>/",
         password_reset_redirect_view,
-        name='password_reset_confirm'
+        name="password_reset_confirm",
     ),
-
-    path('api/', include('community.urls', namespace='community')),
+    path("api/", include("community.urls", namespace="community")),
 ]
 
 # The rest of your file remains unchanged
 if settings.DEBUG:
     # --- TYPO FIX IS HERE ---
-    urlpatterns.append(
-        path('api/test/', include('e2e_test_utils.urls'))
-    )
+    urlpatterns.append(path("api/test/", include("e2e_test_utils.urls")))
     # --- END OF FIX ---
 
 if settings.DEBUG:

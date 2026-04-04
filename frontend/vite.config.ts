@@ -24,6 +24,7 @@ export default defineConfig(({ mode }) => {
       // for the HMR client, which is what we need.
       host: true,
       port: 5173, // Keep the port consistent
+      allowedHosts: true,
     },
     // By removing the explicit 'hmr' block, we allow Vite to automatically
     // configure the client to use the correct network IP instead of 'localhost'.

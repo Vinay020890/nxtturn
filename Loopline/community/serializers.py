@@ -141,19 +141,28 @@ class UserSerializer(serializers.ModelSerializer):
         return None
 
 
+# community/serializers.py
+
+
+# community/serializers.py
+
+
 class CustomRegisterSerializer(RegisterSerializer):
-    # This field will be used to explicitly validate email uniqueness.
-    email = serializers.EmailField(
-        required=True,
-        # This validator checks if an object with this email already exists in the User model.
-        validators=[validators.UniqueValidator(queryset=User.objects.all())],
-    )
+    email = serializers.EmailField(required=True)
+
+    def validate(self, attrs):
+        # 1. RUN THE PARENT CHECKS FIRST (This fixes the Password Match failure)
+        attrs = super().validate(attrs)
+
+        # 2. RUN OUR CLEAN EMAIL CHECK (This provides the professional error)
+        email = attrs.get("email")
+        if email and User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError(
+                "An account with this email already exists. Please sign in instead."
+            )
+        return attrs
 
     def custom_signup(self, request, user):
-        """
-        You can add custom logic here that runs after a user is created.
-        For now, we just pass.
-        """
         pass
 
 
@@ -1400,3 +1409,61 @@ class NetworkUserSerializer(serializers.ModelSerializer):
         except Exception:
             pass
         return None
+
+
+## community/serializers.py (At the bottom)
+from dj_rest_auth.registration.serializers import SocialLoginSerializer
+from allauth.socialaccount.helpers import complete_social_login
+from django.contrib.auth import get_user_model
+
+
+# community/serializers.py (At the bottom)
+
+
+class NxtTurnSocialLoginSerializer(SocialLoginSerializer):
+    def validate(self, attrs):
+        view = self.context.get("view")
+        request = self._get_request()
+        adapter_class = getattr(view, "adapter_class", None)
+        adapter = adapter_class(request)
+
+        provider = adapter.get_provider()
+        app = provider.app if hasattr(provider, "app") else adapter.get_app(request)
+
+        # 1. Manually exchange the Code for a Token and Response
+        # This part is required to satisfy the 4-argument requirement
+        if "code" in attrs:
+            self.callback_url = getattr(view, "callback_url", None)
+            client_class = getattr(view, "client_class", None)
+            client = client_class(
+                request,
+                app.client_id,
+                app.secret,
+                adapter.access_token_method,
+                adapter.access_token_url,
+                self.callback_url,
+                scope_delimiter=adapter.scope_delimiter,
+                headers=adapter.headers,
+                basic_auth=adapter.basic_auth,
+            )
+            token = client.get_access_token(attrs["code"])
+        else:
+            token = attrs.get("access_token") or attrs.get("id_token")
+
+        # Extract the raw response (required by your version of the library)
+        response = getattr(token, "response", token)
+
+        # 2. THE STABLE HANDSHAKE (Now with all 4 required arguments!)
+        login = self.get_social_login(adapter, app, token, response)
+
+        # 3. THE MATCHMAKER
+        # This triggers our Adapter logic to link the accounts silently
+        complete_social_login(request, login)
+
+        # 4. THE FIX FOR SCENARIO 1:
+        # We use 'login.user' (memory) instead of 'login.account.user' (database)
+        # to prevent the "SocialAccount has no user" crash.
+        attrs["user"] = login.user
+        attrs["login"] = login
+
+        return attrs

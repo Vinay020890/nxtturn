@@ -39,6 +39,7 @@ pyasn1==0.6.1
 pyasn1_modules==0.4.2
 pycparser==2.22
 Pygments==2.19.2
+PyJWT==2.12.1
 pyOpenSSL==25.1.0
 pytest==8.4.1
 pytest-asyncio==1.1.0

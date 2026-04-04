@@ -93,6 +93,37 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function loginWithGoogle(code: string) {
+    isLoading.value = true
+    try {
+      // 1. Send the authorization code to your Django backend
+      const response = await axiosInstance.post('/auth/google/', { code })
+
+      if (response.data && response.data.key) {
+        // 2. Set the token and initialize the user session
+        setToken(response.data.key)
+        await fetchUserProfile()
+
+        // 3. Connect real-time services (Notifications/Websocket)
+        notificationService.connect()
+        const notificationStore = useNotificationStore()
+        await notificationStore.fetchUnreadCount()
+
+        return true
+      } else {
+        throw new Error('Google login failed: Backend did not return a key.')
+      }
+    } catch (error) {
+      // Clean up on failure
+      setToken(null)
+      setUser(null)
+      console.error('Store loginWithGoogle action failed:', error)
+      throw error
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   async function logout() {
     // --- NEW: Cleanly disconnect WebSocket and reset stores before logging out ---
     notificationService.disconnect()
@@ -191,6 +222,7 @@ export const useAuthStore = defineStore('auth', () => {
     setToken,
     setUser,
     login,
+    loginWithGoogle,
     logout,
     fetchUserProfile,
     register,

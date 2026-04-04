@@ -10,6 +10,9 @@ from django.http import Http404
 from django.db.models import Q, Count, Value, CharField, Case, When
 from django.db import transaction
 from django.utils import timezone
+from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
+from allauth.socialaccount.providers.oauth2.client import OAuth2Client
+from dj_rest_auth.registration.views import SocialLoginView
 
 from datetime import date
 import random
@@ -90,6 +93,7 @@ from .serializers import (
     EducationSerializer,
     ExperienceSerializer,
     NetworkUserSerializer,
+    NxtTurnSocialLoginSerializer,
 )
 from .permissions import (
     IsOwnerOrReadOnly,
@@ -1730,3 +1734,30 @@ class NetworkDiscoverView(generics.ListAPIView):
                 impression.save()
 
         return Response(serialized_data, status=status.HTTP_200_OK)
+
+
+from dj_rest_auth.registration.views import SocialLoginView
+from dj_rest_auth.registration.serializers import SocialLoginSerializer
+from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
+from .social_utils import FixedOAuth2Client
+
+
+class CustomGoogleOAuth2Adapter(GoogleOAuth2Adapter):
+    """
+    Compatibility bridge: django-allauth >= 0.56 removed 'get_app()' from adapters.
+    dj-rest-auth still calls it. We restore it here to prevent the 500 crash.
+    """
+
+    def get_app(self, request, **kwargs):
+        provider = self.get_provider()
+        if hasattr(provider, "app"):
+            return provider.app
+        return super().get_app(request, **kwargs)
+
+
+# At the bottom of community/views.py
+class GoogleLogin(SocialLoginView):
+    adapter_class = CustomGoogleOAuth2Adapter
+    callback_url = "postmessage"
+    client_class = FixedOAuth2Client
+    serializer_class = NxtTurnSocialLoginSerializer  # <-- THE FIX

@@ -14,22 +14,22 @@ DEBUG = not IS_PRODUCTION
 if not IS_PRODUCTION and not SECRET_KEY:
     SECRET_KEY = "a-dummy-secret-key-for-local-development-only-do-not-use-in-prod"
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "192.168.10.35"]
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "192.168.10.41", "192.168.10.41.nip.io"]
 if IS_PRODUCTION:
     pass
 else:
-    ALLOWED_HOSTS.extend(
-        [
-            "*",
-            "192.168.10.35",
-        ]
-    )
+    ALLOWED_HOSTS.extend(["*", "192.168.10.41", "192.168.10.41.nip.io"])
 
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://192.168.10.41.nip.io:5173")
 
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://192.168.10.35:5173")
+# --- ADD THIS BLOCK IMMEDIATELY BELOW IT ---
+if os.getenv("CYPRESS_TESTING", "false").lower() == "true":
+    # Force raw IP during tests so it matches the Cypress browser origin
+    FRONTEND_URL = "http://192.168.10.41:5173"
+# --------------------------------------------
 
 # This tells dj-rest-auth where to send the user for password resets
-# It will build a link like: http://192.168.10.35:5173/auth/reset-password/UID/TOKEN
+# It will build a link like: http://192.168.10.41:5173/auth/reset-password/UID/TOKEN
 
 # PASSWORD_RESET_CONFIRM_URL = f"{FRONTEND_URL}/auth/reset-password/{{uid}}/{{token}}/"
 
@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "django_extensions",
     "community.apps.CommunityConfig",
+    "allauth.socialaccount.providers.google",
 ]
 
 if DEBUG:
@@ -140,8 +141,9 @@ SERVER_EMAIL = "admin@nxtturn.com"
 # 1. Check if we are running Cypress tests (This overrides everything else)
 # This handles missing variables and mixed casing (True/true) perfectly
 if os.getenv("CYPRESS_TESTING", "false").lower() == "true":
-    # This stores emails in memory so the test utility can read them
     EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+    # This makes the link match the Cypress browser window:
+
 
 # 2. Otherwise, check our normal dev/prod mode
 elif EMAIL_MODE == "brevo":
@@ -180,6 +182,7 @@ ACCOUNT_USERNAME_REQUIRED = True
 ACCOUNT_EMAIL_VERIFICATION = "mandatory"
 
 ACCOUNT_ADAPTER = "community.adapters.NxtTurnAccountAdapter"
+SOCIALACCOUNT_ADAPTER = "community.adapters.NxtTurnSocialAccountAdapter"
 
 REST_AUTH = {
     "USE_SESSION_AUTH": False,
@@ -204,7 +207,8 @@ REST_AUTH = {
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",  # For local-only frontend development
     "http://127.0.0.1:5173",  # Alternative for local-only
-    "http://192.168.10.35:5173",  # For accessing the frontend from other devices on the network
+    "http://192.168.10.41:5173",  # For accessing the frontend from other devices on the network
+    "http://192.168.10.41.nip.io:5173",
 ]
 
 # ==============================================================================
@@ -216,7 +220,8 @@ CORS_ALLOWED_ORIGINS = [
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "http://192.168.10.35:5173",
+    "http://192.168.10.41:5173",
+    "http://192.168.10.41.nip.io:5173",
 ]
 
 CHANNEL_LAYERS = {
@@ -227,3 +232,34 @@ CHANNEL_LAYERS = {
         },
     },
 }
+
+# --- GOOGLE SOCIAL AUTHENTICATION (Database-Free Version) ---
+SOCIALACCOUNT_PROVIDERS = {
+    "google": {
+        "APPS": [
+            {
+                "client_id": os.getenv("GOOGLE_CLIENT_ID"),
+                "secret": os.getenv("GOOGLE_CLIENT_SECRET"),
+                "key": "",  # Leave as empty string
+            },
+        ],
+        "SCOPE": ["profile", "email"],
+        "AUTH_PARAMS": {"access_type": "online"},
+    }
+}
+
+# This tells Allauth to automatically create the account if the email is new
+SOCIALACCOUNT_AUTO_SIGNUP = True
+
+# --- IDENTITY CONFLICT MANAGEMENT ---
+# 1. Allow logging in with Google if the email matches an existing manual account
+SOCIALACCOUNT_EMAIL_AUTHENTICATION = True
+
+# 2. Automatically link the Google account to the existing manual account
+SOCIALACCOUNT_QUERY_EMAIL = True
+
+# 3. Trust Google's verification status (prevents double-verification loops)
+SOCIALACCOUNT_EMAIL_VERIFICATION = "optional"
+
+
+SOCIALACCOUNT_JWT_LEEWAY = 30

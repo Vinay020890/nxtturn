@@ -3,6 +3,9 @@ import { ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 
+import { useCodeClient } from 'vue3-google-signin'
+import { useToast } from 'vue-toastification'
+
 const username = ref('')
 const password = ref('')
 const errorMessage = ref<string | null>(null)
@@ -44,9 +47,32 @@ const handleLogin = async () => {
   }
 }
 
-// Placeholder function for Google login only
+const toast = useToast()
+
+// This handles the secure handshake with Google's servers
+const { login: triggerGoogleLogin } = useCodeClient({
+  onSuccess: async (codeResponse) => {
+    // 1. Google gives us a one-time code
+    try {
+      // 2. We send that code to our Auth Store (and then to Django)
+      await authStore.loginWithGoogle(codeResponse.code)
+
+      toast.success('Successfully signed in with Google!')
+      router.push({ name: 'feed' })
+    } catch (error) {
+      console.error('Google Auth Error:', error)
+      toast.error('Failed to authenticate with Google. Please try again.')
+    }
+  },
+  onError: (error) => {
+    console.error('Google Popup Error:', error)
+    toast.error('Google Sign-In was cancelled or failed.')
+  },
+})
+
+// This function now starts the real process
 const handleGoogleLogin = () => {
-  console.log('Google login')
+  triggerGoogleLogin()
 }
 </script>
 
