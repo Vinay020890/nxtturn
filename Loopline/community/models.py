@@ -189,9 +189,24 @@ class StatusPost(models.Model):
     author = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="status_posts"
     )
-    content = models.TextField(
-        blank=True, null=True
-    )  # Now optional, validation moves to serializer
+    content = models.TextField(blank=True, null=True)
+
+    # --- ADD THIS NEW FIELD FOR REPOSTS ---
+    # This allows a post to point to an "original" post.
+    # We use 'self' because it points to another StatusPost.
+    parent_post = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="reposts"
+    )
+    # --------------------------------------
+
+    # This stores the "Middleman" (the person you saw it from)
+    shared_via = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="shares_via_me",
+    )
 
     group = models.ForeignKey(
         "Group",
@@ -419,12 +434,25 @@ class Comment(models.Model):
 
 
 class Like(models.Model):
+
+    REACTION_TYPES = [
+        ("like", "Like"),
+        ("love", "Love"),
+        ("happy", "Happy"),
+        ("celebrate", "Celebrate"),
+        ("insightful", "Insightful"),
+        ("brilliant", "Brilliant"),
+    ]
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="likes"
     )
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
     object_id = models.PositiveIntegerField()
     content_object = GenericForeignKey("content_type", "object_id")
+    reaction_type = models.CharField(
+        max_length=20, choices=REACTION_TYPES, default="like"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     @property

@@ -696,6 +696,16 @@ class StatusPostSerializer(serializers.ModelSerializer):
     poll_data = serializers.CharField(write_only=True, required=False, allow_blank=True)
     is_saved = serializers.SerializerMethodField()
 
+    user_reaction = serializers.SerializerMethodField()
+    reaction_counts = serializers.SerializerMethodField()
+    shared_via = UserSerializer(read_only=True)
+
+    parent_post = serializers.SerializerMethodField()
+    shared_via = UserSerializer(read_only=True)
+    parent_post_id = serializers.IntegerField(
+        write_only=True, required=False, allow_null=True
+    )
+
     class Meta:
         model = StatusPost
         # 'group_id' has been removed from this list.
@@ -719,6 +729,11 @@ class StatusPostSerializer(serializers.ModelSerializer):
             "poll",
             "poll_data",
             "is_saved",
+            "user_reaction",
+            "reaction_counts",
+            "parent_post",
+            "parent_post_id",
+            "shared_via",
         ]
         # The read_only_fields are identical to your original code.
         read_only_fields = [
@@ -736,6 +751,10 @@ class StatusPostSerializer(serializers.ModelSerializer):
             "poll",
             "group",
             "is_saved",
+            "user_reaction",
+            "reaction_counts",
+            "parent_post",
+            "shared_via",
         ]
 
     # This new method formats the group data correctly when you READ a post.
@@ -817,6 +836,14 @@ class StatusPostSerializer(serializers.ModelSerializer):
         new_images = data.get("images", [])
         new_videos = data.get("videos", [])
         poll_data = data.get("poll_data")
+
+        # --- THE FIX: Check if this post is a repost ---
+        # It's a repost if it has a parent_post_id (new) or a parent_post (existing update)
+        is_repost = data.get("parent_post_id") or (
+            is_update and self.instance.parent_post
+        )
+        # -----------------------------------------------
+
         if is_update:
             media_to_delete_ids = data.get("media_to_delete", [])
             surviving_media_count = self.instance.media.exclude(
@@ -825,14 +852,27 @@ class StatusPostSerializer(serializers.ModelSerializer):
             final_media_count = (
                 surviving_media_count + len(new_images) + len(new_videos)
             )
-            if not content and final_media_count == 0 and not poll_data:
+            # Allow empty if it's a repost
+            if (
+                not content
+                and final_media_count == 0
+                and not poll_data
+                and not is_repost
+            ):
                 raise serializers.ValidationError(
-                    "A post cannot be empty. It must have text content, media, or a poll."
+                    "A post cannot be empty. It must have text content, media, a poll, or be a repost."
                 )
         else:
-            if not content and not new_images and not new_videos and not poll_data:
+            # Allow empty if it's a repost
+            if (
+                not content
+                and not new_images
+                and not new_videos
+                and not poll_data
+                and not is_repost
+            ):
                 raise serializers.ValidationError(
-                    "A post must have text content, media, or a poll."
+                    "A post must have text content, media, a poll, or be a repost."
                 )
         return data
 
@@ -843,6 +883,30 @@ class StatusPostSerializer(serializers.ModelSerializer):
         videos_data = validated_data.pop("videos", [])
         poll_data = validated_data.pop("poll_data", None)
         validated_data.pop("media_to_delete", None)
+
+        # --- SMART REPOST LOGIC (Industry Standard Flattening) ---
+        parent_post_id = validated_data.pop("parent_post_id", None)
+        if parent_post_id:
+            try:
+                target_post = StatusPost.objects.get(id=parent_post_id)
+
+                if target_post.parent_post:
+                    # SCENARIO: You are reposting a repost (Rahii shared Navjyot)
+                    # 1. We flatten: Your new post points directly to Navjyot (the Root)
+                    validated_data["parent_post"] = target_post.parent_post
+                    # 2. We attribute: We record that you saw it via Rahii
+                    validated_data["shared_via"] = target_post.author
+                else:
+                    # SCENARIO: You are reposting an original post (Navjyot)
+                    # Your new post points to Navjyot, no middleman needed.
+                    validated_data["parent_post"] = target_post
+
+            except StatusPost.DoesNotExist:
+                raise serializers.ValidationError(
+                    {"parent_post_id": "Original post not found."}
+                )
+        # ---------------------------------------------------------
+
         if poll_data:
             validated_data["content"] = poll_data.get("question", "")
         validated_data["author"] = request.user
@@ -946,6 +1010,32 @@ class StatusPostSerializer(serializers.ModelSerializer):
             ).exists()
         return False
 
+    def get_user_reaction(self, obj):
+        """
+        Returns the specific type of reaction the current user has given
+        (e.g., 'love', 'celebrate') or None if they haven't reacted.
+        """
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            content_type = ContentType.objects.get_for_model(obj)
+            like = Like.objects.filter(
+                content_type=content_type, object_id=obj.pk, user=request.user
+            ).first()
+            if like:
+                return like.reaction_type
+        return None
+
+    def get_reaction_counts(self, obj):
+        """
+        Returns a dictionary showing how many of each emoji type exist.
+        Example: {"like": 5, "love": 2}
+        """
+        # We query the related 'likes', group them by type, and count them
+        counts = obj.likes.values("reaction_type").annotate(
+            count=Count("reaction_type")
+        )
+        return {item["reaction_type"]: item["count"] for item in counts}
+
     def get_content_type_id(self, obj):
         return ContentType.objects.get_for_model(obj).id
 
@@ -962,6 +1052,15 @@ class StatusPostSerializer(serializers.ModelSerializer):
                 content_type=content_type, object_id=obj.pk
             ).count()
         return 0
+
+    def get_parent_post(self, obj):
+        """
+        If this post is a repost, we return the full data of the original post.
+        """
+        if obj.parent_post:
+            # We call the same serializer again to show the original author/content
+            return StatusPostSerializer(obj.parent_post, context=self.context).data
+        return None
 
 
 # --- END OF REPLACEMENT FOR StatusPostSerializer ---

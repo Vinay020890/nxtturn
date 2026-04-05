@@ -105,6 +105,11 @@ urlpatterns = [
         name="statuspost-detail",
     ),
     path(
+        "posts/<int:post_id>/reactions/",
+        views.PostReactionListView.as_view(),
+        name="post-reactions",
+    ),
+    path(
         "content/<int:content_type_id>/<int:object_id>/like/",
         views.LikeToggleAPIView.as_view(),
         name="like-toggle",

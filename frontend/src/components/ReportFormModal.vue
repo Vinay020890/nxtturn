@@ -180,7 +180,7 @@ watch(
         <form v-else @submit.prevent="handleSubmit" class="space-y-4">
           <!-- Compact Reason Selection -->
           <div>
-            <label class="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
+            <label class="flex items-center text-sm font-semibold text-gray-700 mb-2">
               <ExclamationTriangleIcon class="w-4 h-4 text-orange-500 mr-1.5" />
               Select Reason
             </label>
@@ -221,7 +221,7 @@ watch(
           >
             <label
               for="report-details"
-              class="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center"
+              class="flex items-center text-sm font-semibold text-gray-700 mb-1.5"
             >
               <PencilSquareIcon class="w-4 h-4 text-blue-500 mr-1.5" />
               Additional Details

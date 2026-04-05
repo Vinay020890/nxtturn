@@ -15,6 +15,8 @@ import MentionAutocomplete from './MentionAutocomplete.vue'
 import eventBus from '@/services/eventBus'
 import ReportFormModal from './ReportFormModal.vue'
 import axiosInstance from '@/services/axiosInstance'
+import { useRouter } from 'vue-router' // <--- ADD THIS
+import { useToast } from 'vue-toastification'
 
 // Font Awesome Icons
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
@@ -144,6 +146,8 @@ const feedStore = useFeedStore()
 const postsStore = usePostsStore()
 const commentStore = useCommentStore()
 const authStore = useAuthStore()
+const router = useRouter()
+const toast = useToast()
 const { currentUser, isAuthenticated } = storeToRefs(authStore)
 const { isCreatingComment, createCommentError } = storeToRefs(commentStore)
 const showComments = ref(false)
@@ -1357,21 +1361,25 @@ async function toggleCommentDisplay() {
   }
 }
 
-async function toggleLike() {
-  if (!isAuthenticated.value) return alert('Please login to like posts.')
-  if (props.post.isLiking) return
-  await feedStore.toggleLike(props.post.id)
-}
-
 async function handleReaction(reactionType: string) {
+  // 1. Security check: Only logged-in users can react
   if (!isAuthenticated.value) return alert('Please login to react to posts.')
-  if (reactionType === 'like') {
-    await feedStore.toggleLike(props.post.id)
-  } else {
-    console.log(`${reactionType} reaction clicked`)
+
+  // 2. Local guard: Prevent multiple simultaneous requests for the same post
+  if (isLiking.value) return
+  isLiking.value = true
+
+  try {
+    // 3. Dispatch to store: This now sends 'love', 'happy', etc. to Django
+    await feedStore.toggleLike(props.post.id, reactionType)
+  } catch (err) {
+    console.error('Failed to send reaction:', err)
+  } finally {
+    // 4. UI Polish: Close the emoji picker and reset loading state
+    isLiking.value = false
+    showReactions.value = false
+    hoveredReaction.value = null
   }
-  showReactions.value = false
-  hoveredReaction.value = null
 }
 
 async function handleModalReaction(reactionType: string) {
@@ -1612,6 +1620,149 @@ function handleEmojiClick() {
   console.log('Emoji picker would open here')
   alert('Emoji functionality would be implemented here with an emoji picker')
 }
+
+function getActiveReactionIcon(type: string | null) {
+  // If no reaction, show the standard thumbs up
+  if (!type) return faThumbsUp
+  // Find the icon from your 'reactions' array defined earlier in the file
+  const reaction = reactions.find((r) => r.name === type)
+  return reaction ? reaction.icon : faThumbsUp
+}
+
+function getActiveReactionColor(type: string | null) {
+  // If no reaction, show gray
+  if (!type) return 'text-gray-400'
+  // Find the color class from your 'reactions' array
+  const reaction = reactions.find((r) => r.name === type)
+  return reaction ? reaction.color : 'text-blue-500'
+}
+
+// --- Logic for the Social Proof text ---
+function getReactionText(post: Post) {
+  const total = post.like_count || 0
+  const userReacted = !!post.user_reaction
+
+  if (userReacted) {
+    // If you reacted: "You", "You and 1 other", or "You and 10 others"
+    if (total <= 1) return 'You'
+    if (total === 2) return `You and 1 other`
+    return `You and ${total - 1} others`
+  } else {
+    // If you haven't reacted: "1 reaction" or "10 reactions"
+    if (total === 1) return '1 reaction'
+    return `${total} reactions`
+  }
+}
+
+// --- Fix for the summary icon colors ---
+function getActiveReactionBg(type: string | null) {
+  const bgMap: Record<string, string> = {
+    like: 'bg-blue-600',
+    love: 'bg-red-500',
+    happy: 'bg-yellow-500',
+    celebrate: 'bg-purple-500',
+    insightful: 'bg-indigo-400',
+    brilliant: 'bg-teal-500',
+  }
+  return type ? bgMap[type] || 'bg-gray-400' : 'bg-gray-400'
+}
+
+// --- Logic to find the top 2 most popular emojis for the summary row ---
+const topReactionTypes = computed(() => {
+  // 1. Fallback if no counts are available
+  if (!props.post.reaction_counts || Object.keys(props.post.reaction_counts).length === 0) {
+    return ['like']
+  }
+
+  // 2. Sort the breakdown by count (highest first) and take the top 2
+  // This ensures the summary row shows what users actually picked
+  return Object.entries(props.post.reaction_counts)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 2)
+    .map(([type]) => type)
+})
+
+// --- Step 1: Repost Action Logic ---
+
+// --- Part A: Open the preview modal ---
+function handleRepost() {
+  if (!isAuthenticated.value) return alert('Please login to repost.')
+  openRepostModal() // Just opens the UI
+}
+
+// --- Part B: The actual submission (Inside the Modal) ---
+async function submitRepost() {
+  try {
+    // We send the original post ID AND the user's new text
+    const newPost = await feedStore.repost(props.post.id, repostContent.value)
+
+    if (newPost) {
+      toast.success('Post shared to your feed!')
+      closeRepostModal() // Hide the modal
+
+      // --- INDUSTRY STANDARD UX: SCROLL TO TOP ---
+      // We kept your scroll logic here so it happens after the post is live
+      nextTick(() => {
+        window.scrollTo({
+          top: 0,
+          behavior: 'smooth',
+        })
+      })
+    }
+  } catch (err) {
+    console.error('Failed to repost:', err)
+    toast.error('Could not repost. Please try again.')
+  }
+}
+
+// --- State for the Reaction Details Modal ---
+const showReactionModal = ref(false)
+const reactionList = ref<any[]>([])
+const isLoadingReactions = ref(false)
+
+async function openReactionModal() {
+  // Prevent body scroll when modal is open
+  document.body.classList.add('overflow-hidden')
+  showReactionModal.value = true
+  isLoadingReactions.value = true
+
+  try {
+    // Calls the new API endpoint: /api/posts/<id>/reactions/
+    const response = await axiosInstance.get(`/posts/${props.post.id}/reactions/`)
+    reactionList.value = response.data
+  } catch (error) {
+    console.error('Failed to fetch reactions:', error)
+  } finally {
+    isLoadingReactions.value = false
+  }
+}
+
+function closeReactionModal() {
+  document.body.classList.remove('overflow-hidden')
+  showReactionModal.value = false
+}
+
+function navigateToReactionUser(username: string) {
+  // 1. Close the modal first
+  closeReactionModal()
+  // 2. Navigate to the user's profile
+  router.push({ name: 'profile', params: { username } })
+}
+
+// --- State for the Repost / Quote Post Modal ---
+const showRepostModal = ref(false)
+const repostContent = ref('')
+
+function openRepostModal() {
+  repostContent.value = '' // Start with empty text
+  showRepostModal.value = true
+  document.body.classList.add('overflow-hidden') // Prevent background scrolling
+}
+
+function closeRepostModal() {
+  showRepostModal.value = false
+  document.body.classList.remove('overflow-hidden')
+}
 </script>
 
 <template>
@@ -1701,7 +1852,23 @@ function handleEmojiClick() {
                 </router-link>
               </template>
             </div>
-            <p class="text-xs md:text-sm text-gray-500 mt-0.5">{{ formattedTimestamp }}</p>
+            <div class="flex items-center gap-1.5 mt-0.5">
+              <p class="text-xs md:text-sm text-gray-500">{{ formattedTimestamp }}</p>
+
+              <!-- NEW: Industry Standard Attribution Label -->
+              <template v-if="post.shared_via">
+                <span class="text-gray-400 text-[10px]">|</span>
+                <span class="text-xs text-gray-400 italic">
+                  shared via
+                  <router-link
+                    :to="{ name: 'profile', params: { username: post.shared_via.username } }"
+                    class="font-semibold hover:underline text-gray-500 not-italic"
+                  >
+                    {{ post.shared_via.username }}
+                  </router-link>
+                </span>
+              </template>
+            </div>
           </div>
         </div>
         <div v-if="isAuthenticated" class="relative" ref="optionsMenuRef">
@@ -1816,6 +1983,59 @@ function handleEmojiClick() {
 
         <!-- Original Poll Display -->
         <PollDisplay v-if="post.poll" :poll="post.poll" :post-id="post.id" />
+
+        <!-- NEW: Repost Container (The Box inside the Post) -->
+        <div
+          v-if="post.parent_post"
+          class="mt-3 mx-3 md:mx-4 p-4 rounded-xl border border-gray-200 hover:bg-gray-50 transition-all cursor-pointer group/repost"
+          @click.stop="
+            router.push({ name: 'single-post', params: { postId: post.parent_post.id } })
+          "
+        >
+          <!-- Original Author Info -->
+          <div class="flex items-center gap-2 mb-2">
+            <img
+              :src="
+                getAvatarUrl(
+                  post.parent_post.author.picture,
+                  post.parent_post.author.first_name,
+                  post.parent_post.author.last_name,
+                )
+              "
+              class="w-6 h-6 rounded-full object-cover bg-gray-100"
+            />
+            <span class="text-xs font-bold text-gray-900 group-hover/repost:text-blue-600">
+              {{ post.parent_post.author.username }}
+            </span>
+            <span class="text-[10px] text-gray-400">
+              • {{ formatDistanceToNow(new Date(post.parent_post.created_at)) }}
+            </span>
+          </div>
+
+          <!-- Original Text -->
+          <div
+            v-if="post.parent_post.content"
+            class="text-xs text-gray-700 line-clamp-3 whitespace-pre-wrap mb-3 leading-relaxed"
+          >
+            {{ post.parent_post.content }}
+          </div>
+
+          <!-- Original Media Thumbnail -->
+          <div
+            v-if="post.parent_post.media && post.parent_post.media.length > 0"
+            class="rounded-lg overflow-hidden border border-gray-100 bg-gray-50"
+          >
+            <img
+              v-if="post.parent_post.media[0].media_type === 'image'"
+              :src="buildMediaUrl(post.parent_post.media[0].file_url)"
+              class="w-full h-40 object-cover"
+            />
+            <div v-else class="w-full h-40 flex flex-col items-center justify-center bg-gray-100">
+              <FontAwesomeIcon :icon="faVideo" class="text-gray-300 text-xl mb-1" />
+              <span class="text-[10px] font-medium text-gray-400">Video Post</span>
+            </div>
+          </div>
+        </div>
 
         <!-- Media Grid Layout -->
         <div v-if="post.media && post.media.length > 0" class="mt-3 px-3 md:px-4">
@@ -1992,6 +2212,35 @@ function handleEmojiClick() {
       </div>
 
       <!-- FIXED: Actions Footer with mobile layout showing counts next to text -->
+
+      <!-- NEW: Reaction Summary Row (Social Proof) -->
+      <div v-if="post.like_count > 0" class="px-4 py-2.5 flex items-center border-t border-gray-50">
+        <!-- Overlapping Emoji Icons -->
+        <!-- Dynamic Overlapping Icons Stack -->
+        <div class="flex -space-x-1.5 mr-3">
+          <!-- Loop through top reaction types with sharp explicit colors -->
+          <div
+            v-for="(type, index) in topReactionTypes"
+            :key="type"
+            class="w-5 h-5 rounded-full flex items-center justify-center border-2 border-white shadow-sm"
+            :class="getActiveReactionBg(type)"
+            :style="{ zIndex: 10 - index }"
+          >
+            <!-- White icon for maximum contrast against the colored circle -->
+            <FontAwesomeIcon :icon="getActiveReactionIcon(type)" class="text-white text-[10px]" />
+          </div>
+        </div>
+
+        <!-- Smart Text: "You and X others" or "X reactions" -->
+        <span
+          @click="openReactionModal"
+          data-cy="reaction-summary"
+          class="text-xs text-gray-500 font-medium hover:text-blue-600 hover:underline cursor-pointer transition-colors"
+        >
+          {{ getReactionText(post) }}
+        </span>
+      </div>
+
       <footer
         v-if="!isEditing"
         ref="actionsFooterRef"
@@ -2009,43 +2258,33 @@ function handleEmojiClick() {
               @mouseleave="hideReactionPicker"
             >
               <button
-                @click="handleReaction('like')"
+                @click="handleReaction(post.user_reaction || 'like')"
                 :disabled="isLiking"
-                class="flex flex-col md:flex-row items-center justify-center transition-all duration-200 hover:text-blue-500 disabled:opacity-50 group w-full mobile-action-button"
-                :class="{ 'text-blue-500 font-semibold': post.is_liked_by_user }"
+                class="flex flex-col md:flex-row items-center justify-center transition-all duration-200 hover:bg-gray-50 disabled:opacity-50 group w-full mobile-action-button"
+                :class="{ 'font-semibold': post.user_reaction }"
                 data-cy="like-button"
               >
-                <!-- Mobile: Icon on one line, Text + Count below -->
+                <!-- Icon changes color and shape based on reaction -->
                 <div class="flex items-center justify-center mb-0.5 md:mb-0">
                   <FontAwesomeIcon
-                    :icon="faThumbsUp"
-                    class="w-4 h-4 md:w-4 md:h-4 group-hover:scale-110 transition-transform duration-200 group-hover:text-blue-500 mobile-action-icon"
-                    :class="post.is_liked_by_user ? 'text-blue-500 fill-current' : 'text-gray-400'"
+                    :icon="getActiveReactionIcon(post.user_reaction)"
+                    class="w-4 h-4 md:w-4 md:h-4 group-hover:scale-110 transition-transform duration-200 mobile-action-icon"
+                    :class="getActiveReactionColor(post.user_reaction)"
                   />
                 </div>
 
-                <!-- Mobile: Text + Count in one line below the icon -->
-                <div
-                  class="md:hidden flex items-center justify-center gap-1 mobile-text-count-container"
-                >
-                  <span class="text-xs font-medium mobile-action-text">Like</span>
+                <div class="flex items-center justify-center gap-1 ml-1">
+                  <!-- Text changes from 'Like' to 'Love', 'Happy', etc. -->
                   <span
-                    data-cy="like-count"
-                    class="text-xs font-medium mobile-action-count"
-                    :class="{ 'text-blue-500': post.is_liked_by_user }"
-                    >{{ post.like_count ?? 0 }}</span
+                    class="text-xs md:text-sm font-medium capitalize"
+                    :class="
+                      post.user_reaction
+                        ? getActiveReactionColor(post.user_reaction)
+                        : 'text-gray-600'
+                    "
                   >
-                </div>
-
-                <!-- Desktop: Text + Count in one line with icon -->
-                <div class="hidden md:flex items-center gap-1">
-                  <span class="text-sm font-medium mobile-action-label">Like</span>
-                  <span
-                    data-cy="like-count"
-                    class="text-sm font-medium mobile-action-count"
-                    :class="{ 'text-blue-500': post.is_liked_by_user }"
-                    >{{ post.like_count ?? 0 }}</span
-                  >
+                    {{ post.user_reaction || 'Like' }}
+                  </span>
                 </div>
               </button>
             </div>
@@ -2135,6 +2374,7 @@ function handleEmojiClick() {
 
           <!-- Repost Button (Placeholder) -->
           <button
+            @click="handleRepost"
             class="flex flex-col md:flex-row items-center justify-center transition-all duration-200 hover:text-rose-500 group flex-1 min-w-0 mobile-action-item mobile-action-button"
           >
             <!-- Mobile: Icon on one line, Text below -->
@@ -3094,6 +3334,160 @@ function handleEmojiClick() {
       :target="reportTarget"
       @close="isReportModalOpen = false"
     />
+
+    <Transition name="modal">
+      <div
+        v-if="showReactionModal"
+        class="fixed inset-0 z-[20000] flex items-center justify-center p-4"
+      >
+        <div
+          class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+          @click="closeReactionModal"
+        ></div>
+        <div
+          class="relative bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[70vh]"
+        >
+          <div
+            class="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50"
+          >
+            <h3 class="font-bold text-gray-900">Reactions</h3>
+            <button @click="closeReactionModal" class="text-gray-400 hover:text-gray-600 p-1">
+              <FontAwesomeIcon :icon="faXmark" class="w-5 h-5" />
+            </button>
+          </div>
+          <div class="overflow-y-auto p-2">
+            <div v-if="isLoadingReactions" class="py-10 text-center">
+              <FontAwesomeIcon :icon="faSpinner" class="animate-spin text-blue-500 text-2xl" />
+            </div>
+            <div v-else class="space-y-1">
+              <div
+                v-for="item in reactionList"
+                :key="item.user.id"
+                class="flex items-center justify-between p-2 hover:bg-gray-50 rounded-xl transition-colors cursor-pointer"
+                @click="navigateToReactionUser(item.user.username)"
+              >
+                <div class="flex items-center gap-3">
+                  <img
+                    :src="
+                      getAvatarUrl(item.user.picture, item.user.first_name, item.user.last_name)
+                    "
+                    class="w-10 h-10 rounded-full object-cover border border-gray-100"
+                  />
+                  <div>
+                    <p class="text-sm font-bold text-gray-900">{{ item.user.username }}</p>
+                    <p class="text-[10px] text-gray-500">
+                      {{ item.user.first_name }} {{ item.user.last_name }}
+                    </p>
+                  </div>
+                </div>
+                <div
+                  class="w-6 h-6 rounded-full flex items-center justify-center border-2 border-white shadow-sm"
+                  :class="getActiveReactionBg(item.reaction_type)"
+                >
+                  <FontAwesomeIcon
+                    :icon="getActiveReactionIcon(item.reaction_type)"
+                    class="text-white text-[10px]"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- NEW: Repost / Quote Post Modal (Preview) -->
+    <Transition name="modal">
+      <div
+        v-if="showRepostModal"
+        class="fixed inset-0 z-[20000] flex items-center justify-center p-4"
+      >
+        <!-- Backdrop -->
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="closeRepostModal"></div>
+
+        <!-- Modal Content -->
+        <div
+          class="relative bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        >
+          <!-- Header -->
+          <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
+            <h3 class="font-bold text-gray-900">Repost this post</h3>
+            <button @click="closeRepostModal" class="text-gray-400 hover:text-gray-600 p-1">
+              <FontAwesomeIcon :icon="faXmark" class="w-5 h-5" />
+            </button>
+          </div>
+
+          <!-- Body -->
+          <div class="p-4 overflow-y-auto">
+            <!-- User Info (The one reposting) -->
+            <div class="flex items-center gap-3 mb-4">
+              <img
+                :src="
+                  getAvatarUrl(
+                    currentUser?.picture,
+                    currentUser?.first_name,
+                    currentUser?.last_name,
+                  )
+                "
+                class="w-9 h-9 rounded-full object-cover"
+              />
+              <span class="font-bold text-gray-900 text-sm">{{ currentUser?.username }}</span>
+            </div>
+
+            <!-- Text input for "Quote Post" -->
+            <textarea
+              v-model="repostContent"
+              rows="3"
+              placeholder="What do you want to say about this?"
+              class="w-full border-0 focus:ring-0 text-gray-800 text-base placeholder-gray-400 resize-none p-0 mb-4"
+            ></textarea>
+
+            <!-- THE PREVIEW BOX (The original post inside a bordered card) -->
+            <div class="p-4 rounded-xl border border-gray-200 bg-gray-50/50">
+              <div class="flex items-center gap-2 mb-2">
+                <img
+                  :src="
+                    getAvatarUrl(post.author.picture, post.author.first_name, post.author.last_name)
+                  "
+                  class="w-6 h-6 rounded-full object-cover"
+                />
+                <span class="text-xs font-bold text-gray-900">{{ post.author.username }}</span>
+              </div>
+
+              <div v-if="post.content" class="text-xs text-gray-600 line-clamp-3 mb-3 italic">
+                {{ post.content }}
+              </div>
+
+              <!-- Media Thumbnail in Preview -->
+              <div
+                v-if="post.media && post.media.length > 0"
+                class="rounded-lg overflow-hidden border border-gray-100 bg-gray-100 h-32"
+              >
+                <img
+                  v-if="post.media[0].media_type === 'image'"
+                  :src="buildMediaUrl(post.media[0].file_url)"
+                  class="w-full h-full object-cover"
+                />
+                <div v-else class="w-full h-full flex items-center justify-center">
+                  <FontAwesomeIcon :icon="faVideo" class="text-gray-300 text-xl" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Footer Actions -->
+          <div class="px-4 py-3 border-t border-gray-100 flex justify-end bg-white">
+            <button
+              @click="submitRepost"
+              :disabled="feedStore.isCreatingPost"
+              class="px-8 py-2 bg-indigo-600 text-white font-bold rounded-full hover:bg-indigo-700 transition-all active:scale-95 disabled:bg-indigo-300 disabled:cursor-not-allowed"
+            >
+              {{ feedStore.isCreatingPost ? 'Posting...' : 'Post' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 

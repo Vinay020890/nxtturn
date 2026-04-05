@@ -173,8 +173,10 @@ export interface Post {
   id: number
   post_type: string
   author: PostAuthor
+  shared_via: PostAuthor | null
   created_at: string
   updated_at: string
+  parent_post: Post | null
   title: string | null
   content: string | null
   media: PostMedia[]
@@ -182,6 +184,8 @@ export interface Post {
   like_count: number
   comment_count?: number
   is_liked_by_user: boolean
+  user_reaction: string | null
+  reaction_counts: Record<string, number>
   content_type_id: number
   object_id: number
   isLiking?: boolean

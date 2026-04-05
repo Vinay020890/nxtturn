@@ -718,23 +718,88 @@ class LikeToggleAPIView(APIView):
         content_type_id = kwargs.get("content_type_id")
         object_id = kwargs.get("object_id")
 
+        # Get the specific reaction type from the request body (defaults to 'like')
+        reaction_type = request.data.get("reaction_type", "like")
+
         content_type = get_object_or_404(ContentType, pk=content_type_id)
         target_object = get_object_or_404(content_type.model_class(), pk=object_id)
 
+        # Look for an existing reaction by this user on this object
         like, created = Like.objects.get_or_create(
             user=request.user, content_type=content_type, object_id=target_object.id
         )
 
         if not created:
-            # If 'created' is False, the like already existed, so we delete it (unlike).
-            like.delete()
-        # The 'else' block is now empty. A Django signal is responsible for creating
-        # the notification and sending the real-time message. This prevents duplicates.
+            # SCENARIO: User already reacted.
+            if like.reaction_type == reaction_type:
+                # If they clicked the SAME emoji, they want to remove it (Unlike)
+                like.delete()
+                result_liked = False
+            else:
+                # If they clicked a DIFFERENT emoji, they want to change their reaction
+                like.reaction_type = reaction_type
+                like.save()
+                result_liked = True
+        else:
+            # SCENARIO: New reaction.
+            like.reaction_type = reaction_type
+            like.save()
+            result_liked = True
+
+        # --- THE FIX: Calculate the breakdown before returning ---
+        counts = target_object.likes.values("reaction_type").annotate(
+            count=Count("reaction_type")
+        )
+        reaction_counts = {item["reaction_type"]: item["count"] for item in counts}
+        # ---------------------------------------------------------
 
         return Response(
-            {"liked": created, "like_count": target_object.likes.count()},
+            {
+                "liked": result_liked,
+                "reaction_type": reaction_type,
+                "like_count": target_object.likes.count(),
+                "reaction_counts": reaction_counts,  # Now it exists!
+            },
             status=status.HTTP_200_OK,
         )
+
+
+class PostReactionListView(generics.ListAPIView):
+    """
+    API endpoint to retrieve the list of users who reacted to a post.
+    Used for the "You and X others" clickable modal.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, post_id):
+        # 1. Get the post (ensures it exists)
+        post = get_object_or_404(StatusPost, pk=post_id)
+
+        # 2. Fetch all reactions for this post
+        # We use select_related to get profile data in one go (Industry Standard for performance)
+        reactions = (
+            Like.objects.filter(
+                content_type=ContentType.objects.get_for_model(StatusPost),
+                object_id=post.id,
+            )
+            .select_related("user", "user__profile")
+            .order_by("-created_at")
+        )
+
+        # 3. Serialize the data manually to include the emoji type
+        data = []
+        for reaction in reactions:
+            data.append(
+                {
+                    "user": UserSerializer(
+                        reaction.user, context={"request": request}
+                    ).data,
+                    "reaction_type": reaction.reaction_type,
+                }
+            )
+
+        return Response(data, status=status.HTTP_200_OK)
 
 
 # ==================================

@@ -14,22 +14,22 @@ DEBUG = not IS_PRODUCTION
 if not IS_PRODUCTION and not SECRET_KEY:
     SECRET_KEY = "a-dummy-secret-key-for-local-development-only-do-not-use-in-prod"
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "192.168.10.41", "192.168.10.41.nip.io"]
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "192.168.10.33", "192.168.10.33.nip.io"]
 if IS_PRODUCTION:
     pass
 else:
-    ALLOWED_HOSTS.extend(["*", "192.168.10.41", "192.168.10.41.nip.io"])
+    ALLOWED_HOSTS.extend(["*", "192.168.10.33", "192.168.10.33.nip.io"])
 
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://192.168.10.41.nip.io:5173")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://192.168.10.33.nip.io:5173")
 
 # --- ADD THIS BLOCK IMMEDIATELY BELOW IT ---
 if os.getenv("CYPRESS_TESTING", "false").lower() == "true":
     # Force raw IP during tests so it matches the Cypress browser origin
-    FRONTEND_URL = "http://192.168.10.41:5173"
+    FRONTEND_URL = "http://192.168.10.33:5173"
 # --------------------------------------------
 
 # This tells dj-rest-auth where to send the user for password resets
-# It will build a link like: http://192.168.10.41:5173/auth/reset-password/UID/TOKEN
+# It will build a link like: http://192.168.10.33:5173/auth/reset-password/UID/TOKEN
 
 # PASSWORD_RESET_CONFIRM_URL = f"{FRONTEND_URL}/auth/reset-password/{{uid}}/{{token}}/"
 
@@ -207,8 +207,8 @@ REST_AUTH = {
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",  # For local-only frontend development
     "http://127.0.0.1:5173",  # Alternative for local-only
-    "http://192.168.10.41:5173",  # For accessing the frontend from other devices on the network
-    "http://192.168.10.41.nip.io:5173",
+    "http://192.168.10.33:5173",  # For accessing the frontend from other devices on the network
+    "http://192.168.10.33.nip.io:5173",
 ]
 
 # ==============================================================================
@@ -220,8 +220,8 @@ CORS_ALLOWED_ORIGINS = [
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "http://192.168.10.41:5173",
-    "http://192.168.10.41.nip.io:5173",
+    "http://192.168.10.33:5173",
+    "http://192.168.10.33.nip.io:5173",
 ]
 
 CHANNEL_LAYERS = {
@@ -233,7 +233,7 @@ CHANNEL_LAYERS = {
     },
 }
 
-# --- GOOGLE SOCIAL AUTHENTICATION (Database-Free Version) ---
+# --- GOOGLE SOCIAL AUTHENTICATION ---
 SOCIALACCOUNT_PROVIDERS = {
     "google": {
         "APPS": [
@@ -245,6 +245,8 @@ SOCIALACCOUNT_PROVIDERS = {
         ],
         "SCOPE": ["profile", "email"],
         "AUTH_PARAMS": {"access_type": "online"},
+        # Industry Standard: Add leeway specifically for the Google Provider
+        "JWT_LEEWAY": 300,
     }
 }
 
@@ -262,4 +264,5 @@ SOCIALACCOUNT_QUERY_EMAIL = True
 SOCIALACCOUNT_EMAIL_VERIFICATION = "optional"
 
 
-SOCIALACCOUNT_JWT_LEEWAY = 30
+# Allow 5 minutes of clock drift globally for all social accounts
+SOCIALACCOUNT_JWT_LEEWAY = 300

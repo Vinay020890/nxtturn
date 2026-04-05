@@ -3,7 +3,8 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import axiosInstance from '@/services/axiosInstance'
 import { useAuthStore } from './auth'
-import { usePostsStore, type Post } from './posts'
+import { usePostsStore } from './posts'
+import type { Post } from '@/types'
 import { useProfileStore } from './profile'
 import { useGroupStore } from './group'
 
@@ -184,6 +185,36 @@ export const useFeedStore = defineStore('feed', () => {
     }
   }
 
+  async function repost(originalPostId: number, content: string = ''): Promise<Post | null> {
+    isCreatingPost.value = true
+    createPostError.value = null
+    try {
+      // Sends the original post ID as 'parent_post_id' to the backend
+      const response = await axiosInstance.post<Post>('/posts/', {
+        parent_post_id: originalPostId,
+        content: content,
+      })
+
+      const newPost = { ...response.data, isLiking: false, isDeleting: false, isUpdating: false }
+
+      // 1. Update the central cache
+      postsStore.addOrUpdatePosts([newPost])
+
+      // 2. Put the repost at the top of the local feed immediately
+      mainFeedPostIds.value.unshift(newPost.id)
+
+      // 3. Update the profile store so the user sees it on their own profile
+      profileStore.addPostToProfileFeed(newPost)
+
+      return newPost
+    } catch (err: any) {
+      createPostError.value = 'Failed to repost.'
+      return null
+    } finally {
+      isCreatingPost.value = false
+    }
+  }
+
   async function deletePost(postId: number): Promise<boolean> {
     postsStore.addOrUpdatePosts([{ id: postId, isDeleting: true } as Partial<Post>])
     try {
@@ -197,32 +228,42 @@ export const useFeedStore = defineStore('feed', () => {
     }
   }
 
-  async function toggleLike(postId: number) {
+  async function toggleLike(postId: number, reactionType: string = 'like') {
     const post = postsStore.getPostById(postId)
     if (!post || post.isLiking) return
-    const originalState = { is_liked_by_user: post.is_liked_by_user, like_count: post.like_count }
-    const newLikeCount = (post.like_count ?? 0) + (post.is_liked_by_user ? -1 : 1)
+
+    // 1. Set local loading state
     postsStore.addOrUpdatePosts([
       {
         id: postId,
         isLiking: true,
-        is_liked_by_user: !post.is_liked_by_user,
-        like_count: newLikeCount,
       } as Partial<Post>,
     ])
+
     try {
-      const response = await axiosInstance.post<{ liked: boolean; like_count: number }>(
-        `/content/${post.content_type_id}/${post.object_id}/like/`,
-      )
+      // 2. Send the reaction to the backend
+      const response = await axiosInstance.post<{
+        liked: boolean
+        like_count: number
+        reaction_type: string
+        reaction_counts: Record<string, number> // Included in response
+      }>(`/content/${post.content_type_id}/${post.object_id}/like/`, {
+        reaction_type: reactionType,
+      })
+
+      // 3. Update the post with ALL the data from the server
       postsStore.addOrUpdatePosts([
         {
           id: postId,
           is_liked_by_user: response.data.liked,
           like_count: response.data.like_count,
+          user_reaction: response.data.liked ? response.data.reaction_type : null,
+          // Update the counts breakdown for the summary row
+          reaction_counts: response.data.reaction_counts,
         } as Partial<Post>,
       ])
     } catch (err) {
-      postsStore.addOrUpdatePosts([{ id: postId, ...originalState } as Partial<Post>])
+      console.error('Failed to toggle reaction:', err)
     } finally {
       postsStore.addOrUpdatePosts([{ id: postId, isLiking: false } as Partial<Post>])
     }
@@ -305,6 +346,7 @@ export const useFeedStore = defineStore('feed', () => {
     fetchNextPageOfSavedPosts: () => fetchSavedPosts(savedPostsNextPageUrl.value),
     searchPosts,
     createPost,
+    repost,
     deletePost,
     toggleLike,
     toggleSavePost,
