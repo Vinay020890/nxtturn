@@ -31,6 +31,7 @@ import {
   faComment,
   faCommentDots,
   faPaperPlane,
+  faShareNodes,
   faRepeat,
   faImage,
   faVideo,
@@ -74,6 +75,7 @@ library.add(
   faComment,
   faCommentDots,
   faPaperPlane,
+  faShareNodes,
   faRepeat,
   faImage,
   faVideo,
@@ -1682,6 +1684,13 @@ const topReactionTypes = computed(() => {
     .map(([type]) => type)
 })
 
+// --- Logic to ensure Repost Preview always shows the Original Source ---
+const postToPreview = computed(() => {
+  // If the current post is a repost, show its parent (the original) in the modal
+  // Otherwise, show the post itself.
+  return props.post.parent_post || props.post
+})
+
 // --- Step 1: Repost Action Logic ---
 
 // --- Part A: Open the preview modal ---
@@ -1762,6 +1771,64 @@ function openRepostModal() {
 function closeRepostModal() {
   showRepostModal.value = false
   document.body.classList.remove('overflow-hidden')
+}
+
+function handleShare() {
+  console.log('Share button was clicked!')
+  const postUrl = `${window.location.origin}/posts/${props.post.id}`
+  const postTitle = `Check out this post by ${props.post.author.username} on nxtturn`
+
+  // 1. Try Native Mobile Share
+  if (navigator.share) {
+    navigator
+      .share({
+        title: 'nxtturn',
+        text: postTitle,
+        url: postUrl,
+      })
+      .then(() => console.log('Successful share'))
+      .catch((error) => console.log('Error sharing', error))
+  }
+  // 2. Fallback to Clipboard for Desktop
+  else {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard
+        .writeText(postUrl)
+        .then(() => {
+          toast.success('Link copied to clipboard!')
+        })
+        .catch(() => {
+          fallbackCopyTextToClipboard(postUrl)
+        })
+    } else {
+      fallbackCopyTextToClipboard(postUrl)
+    }
+  }
+}
+
+// Keep this function here! handleShare needs it.
+function fallbackCopyTextToClipboard(text: string) {
+  const textArea = document.createElement('textarea')
+  textArea.value = text
+  textArea.style.position = 'fixed'
+  textArea.style.left = '-999999px'
+  textArea.style.top = '-999999px'
+  document.body.appendChild(textArea)
+  textArea.focus()
+  textArea.select()
+
+  try {
+    const successful = document.execCommand('copy')
+    if (successful) {
+      toast.success('Link copied to clipboard!')
+    } else {
+      toast.error('Unable to copy')
+    }
+  } catch (err) {
+    toast.error('Failed to copy link')
+  }
+
+  document.body.removeChild(textArea)
 }
 </script>
 
@@ -2396,26 +2463,27 @@ function closeRepostModal() {
             </div>
           </button>
 
-          <!-- Send Button (Placeholder) -->
+          <!-- Share Button -->
           <button
+            @click.stop="handleShare"
             class="flex flex-col md:flex-row items-center justify-center transition-all duration-200 hover:text-purple-600 group flex-1 min-w-0 mobile-action-item mobile-action-button"
           >
             <!-- Mobile: Icon on one line, Text below -->
             <div class="flex items-center justify-center mb-0.5 md:mb-0">
               <FontAwesomeIcon
-                :icon="faPaperPlane"
+                :icon="faShareNodes"
                 class="w-4 h-4 md:w-4 md:h-4 group-hover:scale-110 transition-transform duration-200 text-gray-400 group-hover:text-purple-600 mobile-action-icon"
               />
             </div>
 
             <!-- Mobile: Text only below the icon -->
             <div class="md:hidden">
-              <span class="text-xs font-medium mobile-action-text">Send</span>
+              <span class="text-xs font-medium mobile-action-text">Share</span>
             </div>
 
             <!-- Desktop: Text only with icon -->
             <div class="hidden md:flex items-center gap-1">
-              <span class="text-sm font-medium mobile-action-label">Send</span>
+              <span class="text-sm font-medium mobile-action-label">Share</span>
             </div>
           </button>
         </div>
@@ -3442,30 +3510,43 @@ function closeRepostModal() {
               class="w-full border-0 focus:ring-0 text-gray-800 text-base placeholder-gray-400 resize-none p-0 mb-4"
             ></textarea>
 
-            <!-- THE PREVIEW BOX (The original post inside a bordered card) -->
+            <!-- THE PREVIEW BOX (Always shows the Original Source) -->
             <div class="p-4 rounded-xl border border-gray-200 bg-gray-50/50">
               <div class="flex items-center gap-2 mb-2">
                 <img
                   :src="
-                    getAvatarUrl(post.author.picture, post.author.first_name, post.author.last_name)
+                    getAvatarUrl(
+                      postToPreview.author.picture,
+                      postToPreview.author.first_name,
+                      postToPreview.author.last_name,
+                    )
                   "
                   class="w-6 h-6 rounded-full object-cover"
                 />
-                <span class="text-xs font-bold text-gray-900">{{ post.author.username }}</span>
+                <span class="text-xs font-bold text-gray-900">{{
+                  postToPreview.author.username
+                }}</span>
+                <!-- Small indicator if we are looking at the parent of a repost -->
+                <span v-if="post.parent_post" class="text-[10px] text-gray-400 italic">
+                  (Original Source)
+                </span>
               </div>
 
-              <div v-if="post.content" class="text-xs text-gray-600 line-clamp-3 mb-3 italic">
-                {{ post.content }}
+              <div
+                v-if="postToPreview.content"
+                class="text-xs text-gray-600 line-clamp-3 mb-3 italic"
+              >
+                {{ postToPreview.content }}
               </div>
 
               <!-- Media Thumbnail in Preview -->
               <div
-                v-if="post.media && post.media.length > 0"
+                v-if="postToPreview.media && postToPreview.media.length > 0"
                 class="rounded-lg overflow-hidden border border-gray-100 bg-gray-100 h-32"
               >
                 <img
-                  v-if="post.media[0].media_type === 'image'"
-                  :src="buildMediaUrl(post.media[0].file_url)"
+                  v-if="postToPreview.media[0].media_type === 'image'"
+                  :src="buildMediaUrl(postToPreview.media[0].file_url)"
                   class="w-full h-full object-cover"
                 />
                 <div v-else class="w-full h-full flex items-center justify-center">

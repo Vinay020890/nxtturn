@@ -13,7 +13,20 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
-from community.models import Follow, Group, StatusPost, Poll, PollOption, UserProfile
+from community.models import (
+    Follow,
+    Group,
+    StatusPost,
+    Poll,
+    PollOption,
+    UserProfile,
+    Skill,
+    SkillCategory,
+    Education,
+    Experience,
+    Comment,
+    Like,
+)
 from allauth.account.models import EmailAddress
 
 User = get_user_model()
@@ -335,64 +348,49 @@ class TestSetupAPIView(APIView):
                         )
 
                 elif action == "cleanup":
-                    # Define the patterns for identifying test users
-                    test_user_prefixes = [
-                        "scroll_tester",
-                        "creator_",
-                        "requester_",
-                        "member_",
-                        "user_",
-                        "auth_test_",
-                        "multitab_",
-                        "pollTester",
-                        "interaction_",
-                        "profileEditor",
-                        "pictureRemover",
-                        "pictureUploader",
-                        "user_with_posts_",
-                        "reactive_",
-                        "main_",
-                        "joiner_",
-                        "viewer_",
-                        "follower_",
-                        "denied_",
-                        "blocked_",
-                    ]
+                    # --- 1. Identify users by the specific Cypress domain ONLY ---
+                    # We also exclude superusers as a final "emergency brake"
+                    users_to_delete = User.objects.filter(
+                        email__endswith="@cypresstest.com"
+                    ).exclude(is_superuser=True)
 
-                    # Build the query to find all test users
-                    user_query = Q()
-                    for prefix in test_user_prefixes:
-                        user_query |= Q(username__startswith=prefix)
-                    user_query |= Q(username__in=["userA", "userB", "userC"])
-                    user_query |= Q(email__endswith="@cypresstest.com")
+                    # --- 2. Targeted cleanup of data belonging ONLY to these users ---
+                    # This ensures "Frontend Magic" is gone for Cypress users,
+                    # but if YOU created "Frontend Magic" on your real account, it stays!
 
-                    # 1. Identify the users that are going to be deleted
-                    users_to_delete = User.objects.filter(user_query)
+                    SkillCategory.objects.filter(
+                        user_profile__user__in=users_to_delete
+                    ).delete()
+                    Skill.objects.filter(
+                        category__user_profile__user__in=users_to_delete
+                    ).delete()
+                    Education.objects.filter(
+                        user_profile__user__in=users_to_delete
+                    ).delete()
+                    Experience.objects.filter(
+                        user_profile__user__in=users_to_delete
+                    ).delete()
 
-                    # 2. Delete all Groups created by those specific users FIRST
-                    groups_to_delete = Group.objects.filter(creator__in=users_to_delete)
-                    _, groups_deleted_details = groups_to_delete.delete()
+                    Comment.objects.filter(author__in=users_to_delete).delete()
+                    StatusPost.objects.filter(author__in=users_to_delete).delete()
 
-                    # 3. NOW that the groups are gone, it is safe to delete the users
-                    _, users_deleted_details = users_to_delete.delete()
+                    # Groups created by these specific test users
+                    groups_deleted_count, _ = Group.objects.filter(
+                        creator__in=users_to_delete
+                    ).delete()
 
-                    # Return a success response
+                    # --- 3. Finally, delete the test users themselves ---
+                    users_deleted_count, _ = users_to_delete.delete()
+
                     return Response(
                         {
                             "status": "success",
-                            "message": "Test data cleanup complete. Groups and their creators were deleted.",
-                            "users_deleted": users_deleted_details.get("auth.User", 0),
-                            "groups_deleted": groups_deleted_details.get(
-                                "community.Group", 0
-                            ),
+                            "message": "Domain-locked cleanup complete. Only @cypresstest.com users removed.",
+                            "users_deleted": users_deleted_count,
+                            "groups_deleted": groups_deleted_count,
                         },
                         status=status.HTTP_200_OK,
                     )
-
-            return Response(
-                {"error": "Invalid action specified."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

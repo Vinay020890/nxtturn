@@ -1,32 +1,33 @@
 // C:\Users\Vinay\Project\frontend\vite.config.ts
-// --- SIMPLIFIED AND CORRECTED VERSION ---
 
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 
-// https://vite.dev/config/
-export default defineConfig(({ mode }) => {
-  // We can still load env if other parts of your build process need it.
+export default defineConfig(({ command, mode }) => {
+  // Load environment variables if needed
   const env = loadEnv(mode, process.cwd(), '')
 
   return {
-    plugins: [vue(), vueDevTools()],
+    plugins: [
+      vue(),
+      vueDevTools(),
+      // This plugin automatically turns on HTTPS for the dev server
+      command === 'serve' ? basicSsl() : [],
+    ],
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
       },
     },
-    // --- THIS IS THE FIX ---
     server: {
-      // 'true' is the modern alias for '0.0.0.0' and enables auto-detection
-      // for the HMR client, which is what we need.
       host: true,
-      port: 5173, // Keep the port consistent
+      port: 5173,
       allowedHosts: true,
+      // Removed the 'https' line to fix the TypeScript error.
+      // The basicSsl() plugin above will handle the SSL setup for us.
     },
-    // By removing the explicit 'hmr' block, we allow Vite to automatically
-    // configure the client to use the correct network IP instead of 'localhost'.
   }
 })

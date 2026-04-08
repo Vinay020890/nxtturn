@@ -116,3 +116,7 @@ logs
 
 # Ignore local media files for seeding to keep repo size small
 /seed_media/
+
+# Local SSL Certificates
+cert.crt
+cert.key

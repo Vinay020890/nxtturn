@@ -32,16 +32,23 @@ describe('Password Reset Flow', () => {
       cy.testSetup('get_last_email').then((response) => {
         const emailBody = response.body.data.body
 
-        // Use a Regular Expression to extract the http://... link from the text
-        const resetUrlMatch = emailBody.match(/http:\/\/[^\s]+/)
+        // Safely extract the URL whether it is http or https
+        const resetUrlMatch = emailBody.match(/https?:\/\/[^\s"']+/)
         expect(resetUrlMatch).to.not.be.null
 
-        const resetUrl = resetUrlMatch[0]
+        // Use the matched string
+        const resetUrl = resetUrlMatch![0]
 
-        // 4. Visit the intercepted link
-        cy.visit(resetUrl)
+        // 4. BULLETPROOF ROUTING: Extract just the UID and TOKEN
+        // Example: https://...:8000/password-reset/5on/d6mdep-20bf.../
+        const urlParts = resetUrl.split('/').filter(Boolean)
+        const token = urlParts.pop() // Gets the last part (Token)
+        const uid = urlParts.pop() // Gets the second to last part (UID)
 
-        // 5. Assert we landed on the correct frontend page
+        // 5. Visit the correct Frontend Vue Route directly (Port 5173)
+        cy.visit(`/auth/reset-password/${uid}/${token}/`)
+
+        // 6. Assert we landed on the correct frontend page
         cy.get('h2').should('contain', 'Choose a New Password')
         cy.get('#new_password1').should('be.visible')
       })

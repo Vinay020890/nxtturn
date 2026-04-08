@@ -6,6 +6,7 @@ import path from 'path'
 
 export default defineConfig({
   e2e: {
+    chromeWebSecurity: false,
     setupNodeEvents(on, config) {
       console.log('--- Loading Cypress Config ---')
 
