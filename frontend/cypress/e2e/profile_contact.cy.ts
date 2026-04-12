@@ -5,7 +5,7 @@ describe('User Profile Interaction', () => {
     const testUser = {
       username: 'contactTester',
       password: 'password123',
-      email: 'contactTester@test.com',
+      email: 'contactTester@cypresstest.com',
     }
 
     beforeEach(() => {

@@ -1,7 +1,7 @@
 describe('User Profile - Resume Tab', () => {
   const testUser = {
     username: 'resumeTester',
-    email: 'resume_test@example.com',
+    email: 'resume_test@cypresstest.com',
     password: 'password123',
     first_name: 'Resume',
     last_name: 'Expert',

@@ -1,7 +1,7 @@
 describe('Profile Experience Tab', () => {
   const ownerUser = {
     username: 'expOwner',
-    email: 'exp_owner@test.com',
+    email: 'exp_owner@cypresstest.com',
     password: 'password123',
     first_name: 'Owner',
     last_name: 'User',
@@ -9,7 +9,7 @@ describe('Profile Experience Tab', () => {
 
   const visitorUser = {
     username: 'expVisitor',
-    email: 'exp_visitor@test.com',
+    email: 'exp_visitor@cypresstest.com',
     password: 'password123',
     first_name: 'Visitor',
     last_name: 'User',
